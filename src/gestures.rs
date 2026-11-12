@@ -219,8 +219,14 @@ mod tests {
         p.begin(contact(0.05, 0.5, 200), 1);
         assert_eq!(p.moved(contact(0.5, 0.5, 300), 1), None);
         for bad in [
-            Contact { device: 2, ..contact(0.5, 0.5, 600) },
-            Contact { identity: 2, ..contact(0.5, 0.5, 600) },
+            Contact {
+                device: 2,
+                ..contact(0.5, 0.5, 600)
+            },
+            Contact {
+                identity: 2,
+                ..contact(0.5, 0.5, 600)
+            },
             contact(0.5, 0.5, 2001),
             contact(0.5, f64::NAN, 600),
         ] {
