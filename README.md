@@ -1,4 +1,4 @@
-# Kigi Windows — interface principale 0.4.1
+# Kigi Windows — raccourcis configurables 0.5.0
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -24,11 +24,31 @@ peuvent devoir être réaccordées après remplacement.
 | ⌘⇧→ | Même partage en choisissant d'abord la fenêtre droite |
 | ⌃⌥T | Test conservé : moitié droite puis restauration de la même fenêtre |
 
-Les touches désignent les positions physiques macOS. L'enregistrement est
-indépendant ; un conflit ne bloque pas les autres touches. Si nécessaire,
-quitter temporairement Hammerspoon puis **Réenregistrer les raccourcis** depuis
-l’onglet Raccourcis. Son fichier n’est jamais modifié. L’activation des raccourcis
-personnels est mémorisée entre les lancements ; les combinaisons restent fixes.
+Ces combinaisons sont les valeurs initiales. Dans **Raccourcis** :
+
+1. Sélectionner une entrée ou cliquer sur **Ajouter** (nouvelle entrée désactivée).
+2. Cliquer sur **Modifier la combinaison…**, puis presser la combinaison voulue.
+   Utiliser ⌘, ⌥ ou ⌃, avec ⇧ si souhaité ; Échap annule. La saisie se limite
+   à ce champ, sans écoute clavier globale. Les raccourcis Kigi sont suspendus
+   pendant cette saisie, puis rétablis ; délai d’annulation de 15 secondes.
+3. Choisir l’action. **Ouvrir / activer une application** permet de choisir un
+   `.app` installé et, en option, de maximiser après activation. ⌥T peut donc
+   ouvrir Safari, par exemple, ou Teams peut recevoir une autre combinaison.
+4. Cocher **Activer ce raccourci**, puis **Enregistrer**. Les doublons actifs
+   sont refusés ; un conflit Carbon conserve les réglages précédents.
+
+Jusqu’à 32 entrées, suppression, activation individuelle et rétablissement
+confirmé des valeurs initiales. Toutes les entrées et leur activation globale
+sont mémorisées. Le fichier `shortcuts.json` est séparé du catalogue d’espaces ;
+une erreur ou une modification externe bloque son remplacement. Les touches
+restent physiques après choix, avec un libellé issu du clavier au moment de la
+saisie. Les touches média/Fn seules et les raccourcis sans modificateur ne sont
+pas proposés. Certains raccourcis réservés par macOS peuvent être interceptés
+avant Kigi : les essayer après enregistrement.
+
+En cas de conflit, quitter temporairement Hammerspoon puis **Réenregistrer**.
+Son fichier n’est jamais modifié. Les gestes restent liés à Teams/Chrome,
+indépendamment des raccourcis personnalisés.
 
 ## Désactiver le scroll horizontal de la souris (0.3.2)
 
@@ -94,7 +114,7 @@ La demande de consentement peut attendre l'utilisateur ; le timeout AppleScript
 
 ## Gestes de bord (P2 pilote)
 
-Choisir **Kigi → Activer les gestes de bord Teams / Chrome**. Désactivés au
+Dans **Gestes et souris**, cocher **Tester les gestes globaux de bord**. Désactivés au
 lancement et après redémarrage, ils nécessitent Accessibilité et, si macOS la
 demande, Surveillance de l'entrée.
 
@@ -102,6 +122,14 @@ demande, Surveillance de l'entrée.
 | --- | --- |
 | 5 % les plus à gauche, glissement horizontal vers le milieu | Teams au premier plan |
 | 5 % les plus à droite, glissement horizontal vers le milieu | Chrome au premier plan à 100 % |
+
+Le retour utilisateur 0.4.1 signale une absence de détection dans les logs.
+La réception globale n’est donc pas considérée corrigée. Cette version affiche
+les compteurs en direct, journalise la première réception et arrête le test
+après 12 s sans contact avec `trackpad.no_contacts`. Le test local vérifie le
+même geste horizontal à 5 %, sans lancer d’application. Les diagnostics locaux
+et globaux n’utilisent plus l’ancien geste vertical de coin. Une création de
+tap réussie n’est jamais présentée comme une preuve de réception de contacts.
 
 Le départ peut se faire sur **toute la hauteur** : x≤0,05 à gauche ou x≥0,95
 à droite. Le doigt doit atteindre la ligne centrale x=0,50 en ≤1,5 s avec

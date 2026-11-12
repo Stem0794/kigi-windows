@@ -1,8 +1,9 @@
 //! Small native P4 form. Editing/capture actions stay in the application controller.
 use crate::{
-    actions::Action,
     config::{Catalog, Profile},
     geometry::NormalizedRect,
+    shortcut_recorder::Recorder,
+    shortcuts::{Binding, Command, Shortcuts},
 };
 use objc2::{
     rc::Retained,
@@ -13,6 +14,16 @@ use objc2_app_kit::*;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString};
 
 pub struct Preferences {
+    pub shortcut_list: Retained<NSPopUpButton>,
+    pub recorder: Retained<Recorder>,
+    shortcut_enabled: Retained<NSButton>,
+    shortcut_action: Retained<NSPopUpButton>,
+    app_target: Retained<NSTextField>,
+    app_choose: Retained<NSButton>,
+    app_maximize: Retained<NSButton>,
+    shortcut_buttons: Vec<Retained<NSButton>>,
+    draft: std::cell::RefCell<Binding>,
+    trackpad_state: Retained<NSTextField>,
     pub window: Retained<NSWindow>,
     pub profiles: Retained<NSPopUpButton>,
     pub name: Retained<NSTextField>,
@@ -36,6 +47,9 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
 fn label(mtm: MainThreadMarker, root: &NSView, text: &str, frame: NSRect) -> Retained<NSTextField> {
     let field = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
     field.setFrame(frame);
+    if frame.origin.y >= 460.0 && frame.size.height >= 26.0 {
+        field.setFont(Some(&NSFont::boldSystemFontOfSize(20.0)));
+    }
     root.addSubview(&field);
     field
 }
@@ -73,6 +87,7 @@ pub struct RuntimeSettings<'a> {
     pub mouse_active: bool,
     pub accessibility: bool,
     pub input_access: bool,
+    pub trackpad_report: &'a str,
 }
 fn panel(mtm: MainThreadMarker) -> Retained<NSView> {
     NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 620.0, 510.0))
@@ -108,7 +123,7 @@ impl Preferences {
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
-                rect(0.0, 0.0, 680.0, 640.0),
+                rect(0.0, 0.0, 680.0, 710.0),
                 NSWindowStyleMask::Titled
                     | NSWindowStyleMask::Closable
                     | NSWindowStyleMask::Miniaturizable,
@@ -120,9 +135,17 @@ impl Preferences {
             window.setReleasedWhenClosed(false);
         }
         window.setTitle(&NSString::from_str("Kigi Windows"));
-        let shell = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 680.0, 640.0));
+        let shell = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 680.0, 710.0));
         let tabs = NSTabView::initWithFrame(NSTabView::alloc(mtm), rect(16.0, 80.0, 648.0, 540.0));
         shell.addSubview(&tabs);
+        label(mtm, &shell, "Kigi Windows", rect(24.0, 664.0, 620.0, 28.0));
+        let subtitle = label(
+            mtm,
+            &shell,
+            "Vos fenêtres, raccourcis et périphériques, au même endroit.",
+            rect(24.0, 633.0, 620.0, 23.0),
+        );
+        subtitle.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let root = panel(mtm);
         label(
             mtm,
@@ -257,49 +280,131 @@ impl Preferences {
         add_tab(mtm, &tabs, "Espaces", &root);
 
         let keyboard = panel(mtm);
-        label(
-            mtm,
-            &keyboard,
-            "Raccourcis clavier",
-            rect(22.0, 463.0, 576.0, 28.0),
-        );
+        label(mtm, &keyboard, "Raccourcis", rect(22.0, 468.0, 576.0, 28.0));
         let hotkeys = checkbox(
             mtm,
             &keyboard,
             target,
-            "Activer les raccourcis personnels",
+            "Activer mes raccourcis",
             sel!(togglePersonal:),
-            414.0,
+            431.0,
         );
-        let bindings = Action::ALL
-            .iter()
-            .map(|a| a.label())
-            .collect::<Vec<_>>()
-            .join("\n");
-        label(mtm, &keyboard, &bindings, rect(30.0, 233.0, 560.0, 163.0));
-        let shortcuts_state = label(
+        let shortcut_list = popup(mtm, &keyboard, rect(20.0, 384.0, 580.0, 30.0));
+        unsafe {
+            shortcut_list.setTarget(Some(target));
+            shortcut_list.setAction(Some(sel!(shortcutSelected:)));
+        }
+        let shortcut_enabled = checkbox(
             mtm,
             &keyboard,
-            "Vérification des raccourcis…",
-            rect(22.0, 181.0, 576.0, 43.0),
+            target,
+            "Activer ce raccourci",
+            sel!(shortcutDraftChanged:),
+            346.0,
+        );
+        label(
+            mtm,
+            &keyboard,
+            "Combinaison",
+            rect(22.0, 322.0, 576.0, 20.0),
+        );
+        let recorder = Recorder::new(mtm);
+        keyboard.addSubview(&recorder);
+        let record = button(
+            mtm,
+            &keyboard,
+            target,
+            "Modifier la combinaison…",
+            sel!(recordShortcut:),
+            rect(353.0, 277.0, 247.0, 38.0),
+        );
+        label(mtm, &keyboard, "Action", rect(22.0, 247.0, 576.0, 20.0));
+        let shortcut_action = popup(mtm, &keyboard, rect(20.0, 213.0, 580.0, 30.0));
+        for title in [
+            "Ouvrir / activer une application",
+            "Retrouver ChatGPT dans Chrome",
+            "Maximiser la fenêtre",
+            "Partager : gauche puis droite",
+            "Partager : droite puis gauche",
+            "Tester / restaurer la fenêtre",
+        ] {
+            shortcut_action.addItemWithTitle(&NSString::from_str(title));
+        }
+        unsafe {
+            shortcut_action.setTarget(Some(target));
+            shortcut_action.setAction(Some(sel!(shortcutActionChanged:)));
+        }
+        let app_target = label(
+            mtm,
+            &keyboard,
+            "Application",
+            rect(22.0, 175.0, 385.0, 28.0),
+        );
+        let app_choose = button(
+            mtm,
+            &keyboard,
+            target,
+            "Choisir une app…",
+            sel!(chooseShortcutApp:),
+            rect(420.0, 171.0, 180.0, 34.0),
+        );
+        let app_maximize = checkbox(
+            mtm,
+            &keyboard,
+            target,
+            "Maximiser après activation",
+            sel!(shortcutDraftChanged:),
+            137.0,
+        );
+        let apply_shortcut = button(
+            mtm,
+            &keyboard,
+            target,
+            "Enregistrer",
+            sel!(saveShortcut:),
+            rect(18.0, 90.0, 220.0, 36.0),
         );
         button(
             mtm,
             &keyboard,
             target,
-            "Réenregistrer les raccourcis",
-            sel!(retryHotkeys:),
-            rect(18.0, 126.0, 285.0, 36.0),
+            "Ajouter",
+            sel!(addShortcut:),
+            rect(250.0, 90.0, 168.0, 36.0),
+        );
+        let delete_shortcut = button(
+            mtm,
+            &keyboard,
+            target,
+            "Supprimer",
+            sel!(deleteShortcut:),
+            rect(430.0, 90.0, 170.0, 36.0),
         );
         button(
             mtm,
             &keyboard,
             target,
-            "Diagnostic des raccourcis",
+            "Valeurs par défaut…",
+            sel!(resetShortcuts:),
+            rect(18.0, 47.0, 194.0, 34.0),
+        );
+        button(
+            mtm,
+            &keyboard,
+            target,
+            "Diagnostic",
             sel!(shortcutDiagnostics:),
-            rect(315.0, 126.0, 285.0, 36.0),
+            rect(224.0, 47.0, 174.0, 34.0),
         );
-        label(mtm,&keyboard,"Les combinaisons sont fixes à cette étape. En cas de conflit avec Hammerspoon, quittez-le temporairement puis réenregistrez les raccourcis.",rect(22.0,55.0,576.0,58.0));
+        button(
+            mtm,
+            &keyboard,
+            target,
+            "Réenregistrer",
+            sel!(retryHotkeys:),
+            rect(410.0, 47.0, 190.0, 34.0),
+        );
+        let shortcuts_state = label(mtm, &keyboard, "", rect(22.0, 3.0, 576.0, 39.0));
         add_tab(mtm, &tabs, "Raccourcis", &keyboard);
 
         let input = panel(mtm);
@@ -313,28 +418,47 @@ impl Preferences {
             mtm,
             &input,
             target,
-            "Activer les gestes de bord du trackpad",
+            "Tester les gestes globaux de bord (expérimental)",
             sel!(toggleGestures:),
             417.0,
         );
         label(mtm,&input,"Un doigt, départ dans les 5 % extrêmes, mouvement horizontal jusqu'au milieu.\nBord gauche : Teams. Bord droit : Chrome à 100 %.",rect(22.0,337.0,576.0,66.0));
-        label(mtm,&input,"Les gestes sont désactivés au lancement et après une interruption. Réactivez-les ici après la veille.",rect(22.0,279.0,576.0,48.0));
-        label(mtm, &input, "Souris", rect(22.0, 228.0, 576.0, 26.0));
+        label(mtm,&input,"Lancez le test puis passez dans Chrome ou Teams pour faire le geste. Le bilan distingue contacts reçus et gestes reconnus.",rect(22.0,279.0,576.0,48.0));
+        let trackpad_state = label(
+            mtm,
+            &input,
+            "Test global arrêté. Aucun geste global validé.",
+            rect(22.0, 225.0, 576.0, 54.0),
+        );
+        button(
+            mtm,
+            &input,
+            target,
+            "Tester les mêmes gestes en local…",
+            sel!(localProbe:),
+            rect(18.0, 183.0, 582.0, 34.0),
+        );
+        label(mtm, &input, "Souris", rect(22.0, 146.0, 576.0, 26.0));
         let mouse = checkbox(
             mtm,
             &input,
             target,
             "Bloquer le défilement horizontal des souris",
             sel!(toggleMouseHorizontal:),
-            187.0,
+            105.0,
         );
         let mouse_state = label(
             mtm,
             &input,
             "Filtre désactivé",
-            rect(22.0, 125.0, 576.0, 52.0),
+            rect(22.0, 53.0, 576.0, 48.0),
         );
-        label(mtm,&input,"Option mémorisée, compatible Magic Mouse et d'autres souris reconnues. Le vertical est conservé. Les événements identifiés comme trackpad ou incertains sont laissés passer.",rect(22.0,40.0,576.0,68.0));
+        label(
+            mtm,
+            &input,
+            "Mémorisé. Défilement vertical et trackpad conservés.",
+            rect(22.0, 10.0, 576.0, 35.0),
+        );
         add_tab(mtm, &tabs, "Gestes et souris", &input);
 
         let access = panel(mtm);
@@ -476,7 +600,7 @@ impl Preferences {
             rect(22.0, 35.0, 576.0, 43.0),
         );
         add_tab(mtm, &tabs, "Diagnostics", &diagnostics);
-        tabs.selectTabViewItemAtIndex(0);
+        tabs.selectTabViewItemAtIndex(1);
         let status = label(
             mtm,
             &shell,
@@ -486,6 +610,16 @@ impl Preferences {
         window.setContentView(Some(&shell));
         window.center();
         Self {
+            shortcut_list,
+            recorder,
+            shortcut_enabled,
+            shortcut_action,
+            app_target,
+            app_choose,
+            app_maximize,
+            shortcut_buttons: vec![record, apply_shortcut, delete_shortcut],
+            draft: std::cell::RefCell::new(Shortcuts::default().entries[1].clone()),
+            trackpad_state,
             window,
             profiles,
             name,
@@ -504,7 +638,109 @@ impl Preferences {
             selected_buttons: vec![rename, duplicate, apply, geometry, delete],
         }
     }
+    pub fn populate_shortcuts(&self, settings: &Shortcuts, selected: usize) {
+        self.shortcut_list.removeAllItems();
+        for (i, b) in settings.entries.iter().enumerate() {
+            self.shortcut_list
+                .addItemWithTitle(&NSString::from_str(&format!("{}. {}", i + 1, b.caption())));
+        }
+        let selected = selected.min(settings.entries.len().saturating_sub(1));
+        if let Some(b) = settings.entries.get(selected) {
+            self.shortcut_list.selectItemAtIndex(selected as isize);
+            self.draft.replace(b.clone());
+            self.shortcut_enabled.setState(if b.enabled {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+            self.recorder.set_combination(&b.combination());
+            self.shortcut_action.selectItemAtIndex(match b.command {
+                Command::Application { .. } => 0,
+                Command::ChatGpt => 1,
+                Command::Maximize => 2,
+                Command::PairLeft => 3,
+                Command::PairRight => 4,
+                Command::Test => 5,
+            });
+        } else {
+            self.recorder
+                .set_combination("Ajoutez votre premier raccourci");
+        }
+        for b in &self.shortcut_buttons {
+            b.setEnabled(!settings.entries.is_empty());
+        }
+        self.shortcut_action
+            .setEnabled(!settings.entries.is_empty());
+        self.shortcut_enabled
+            .setEnabled(!settings.entries.is_empty());
+        self.app_choose.setEnabled(!settings.entries.is_empty());
+        self.app_maximize.setEnabled(!settings.entries.is_empty());
+        self.update_shortcut_action();
+    }
+    pub fn restore_shortcut_caption(&self) {
+        self.recorder
+            .set_combination(&self.draft.borrow().combination());
+    }
+    pub fn selected_shortcut(&self) -> Option<usize> {
+        usize::try_from(self.shortcut_list.indexOfSelectedItem()).ok()
+    }
+    pub fn update_shortcut_action(&self) {
+        let app = self.shortcut_action.indexOfSelectedItem() == 0;
+        self.app_choose.setHidden(!app);
+        self.app_maximize.setHidden(!app);
+        self.app_target.setHidden(!app);
+        if let Command::Application { name, maximize, .. } = &self.draft.borrow().command {
+            self.app_target.setStringValue(&NSString::from_str(name));
+            self.app_maximize.setState(if *maximize {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+        } else {
+            self.app_target
+                .setStringValue(&NSString::from_str("Choisissez une application…"));
+            self.app_maximize.setState(NSControlStateValueOff);
+        }
+    }
+    pub fn set_shortcut_key(&self, key: u32, modifiers: u32, name: String) {
+        let mut draft = self.draft.borrow_mut();
+        draft.key = key;
+        draft.modifiers = modifiers;
+        draft.key_label = name;
+        self.recorder.set_combination(&draft.combination());
+    }
+    pub fn set_shortcut_app(&self, bundle: String, name: String) {
+        self.draft.borrow_mut().command = Command::Application {
+            bundle,
+            name,
+            maximize: false,
+        };
+        self.shortcut_action.selectItemAtIndex(0);
+        self.update_shortcut_action();
+    }
+    pub fn shortcut_draft(&self) -> Result<Binding, String> {
+        let mut b = self.draft.borrow().clone();
+        b.enabled = self.shortcut_enabled.state() == NSControlStateValueOn;
+        b.command = match self.shortcut_action.indexOfSelectedItem() {
+            0 => match b.command {
+                Command::Application { bundle, name, .. } => Command::Application {
+                    bundle,
+                    name,
+                    maximize: self.app_maximize.state() == NSControlStateValueOn,
+                },
+                _ => return Err("Choisissez une application avant d’enregistrer.".into()),
+            },
+            1 => Command::ChatGpt,
+            2 => Command::Maximize,
+            3 => Command::PairLeft,
+            4 => Command::PairRight,
+            _ => Command::Test,
+        };
+        Ok(b)
+    }
     pub fn update_runtime(&self, state: RuntimeSettings<'_>) {
+        self.trackpad_state
+            .setStringValue(&NSString::from_str(state.trackpad_report));
         self.hotkeys.setState(if state.personal_hotkeys {
             NSControlStateValueOn
         } else {
@@ -526,9 +762,9 @@ impl Preferences {
             .setStringValue(&NSString::from_str(&format!(
                 "{} — {} action(s) reçue(s). {}",
                 if state.personal_hotkeys {
-                    "Raccourcis personnels activés"
+                    "Raccourcis activés"
                 } else {
-                    "Raccourcis personnels suspendus"
+                    "Raccourcis suspendus"
                 },
                 state.shortcuts_received,
                 if conflict {

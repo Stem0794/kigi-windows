@@ -13,7 +13,7 @@
 - **Ne pas inventer les résultats.** Geste trackpad et ancien macOS : GO/PARTIAL/NO-GO basé sur essais réels. Cible macOS 11, Intel + ARM à valider.
 - **Respect des autorisations.** API publiques Apple sauf accord explicite ; aucun contournement TCC/MDM, pas de root.
 - **Migration en sécurité.** Ne modifie ni ne supprime `~/.hammerspoon/init.lua` sans consentement explicite ; audit en lecture seule.
-- **Vie privée.** Ne capture ni frappes, ni contenu des applications, ni screenshots ; pas de titres sensibles dans les logs par défaut.
+- **Vie privée.** Aucune surveillance des frappes, du contenu des applications ou de screenshots ; pas de titres sensibles dans les logs par défaut.
 
 ## Première mission
 
@@ -69,3 +69,12 @@ P5/réunions automatiques ni un éditeur graphique complexe dans cette tranche.
 Ouvrir les réglages au lancement avec présence Dock, cinq onglets natifs et
 menu de statut compact. Fermer conserve les fonctions de fond ; ⌘Q quitte.
 Conserver les options réelles existantes, sans P5 ni capture de raccourcis.
+
+## Demande 0.5.0 — raccourcis, diagnostic des gestes et UX
+
+L’utilisateur demande explicitement de modifier les combinaisons et leur app
+cible, et signale que les gestes 5 % ne sont pas détectés. Saisie d’une seule
+combinaison dans un champ focalisé volontairement, sans moniteur clavier global
+ni journalisation de frappes. Conserver le filtre souris et les espaces.
+Afficher réception/absence de contacts sans annoncer une correction terrain.
+Aucune API multitouch privée ni P5 autorisés par cette demande.

@@ -20,6 +20,7 @@ impl Action {
         Self::PairLeft,
         Self::PairRight,
     ];
+    #[cfg(test)]
     pub fn selector(self) -> &'static str {
         match self {
             Self::Test => "testWindow:",
@@ -31,6 +32,7 @@ impl Action {
             Self::PairRight => "pairRight:",
         }
     }
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             Self::Test => "⌃⌥T — test / restauration",

@@ -8,11 +8,13 @@ pub struct Contact {
     pub ms: u64,
 }
 
+#[cfg(test)]
 #[derive(Default)]
 pub struct CornerProbe {
     start: Option<Contact>,
 }
 
+#[cfg(test)]
 impl CornerProbe {
     pub fn cancel(&mut self) {
         self.start = None;
@@ -48,6 +50,10 @@ impl CornerProbe {
         }
         false
     }
+}
+
+pub fn no_contacts_after_trial(samples: u64, seconds: u64) -> bool {
+    samples == 0 && seconds >= 12
 }
 
 /// Opt-in horizontal gestures: start within the outermost 5% and reach x=0.5.
@@ -144,6 +150,13 @@ mod tests {
             y,
             ms,
         }
+    }
+    #[test]
+    fn contact_trial_waits_and_never_reports_empty_after_a_sample() {
+        assert!(!no_contacts_after_trial(0, 11));
+        assert!(no_contacts_after_trial(0, 12));
+        assert!(!no_contacts_after_trial(1, 12));
+        assert!(!no_contacts_after_trial(100, 60));
     }
     #[test]
     fn downward_only_once_and_requires_begin() {

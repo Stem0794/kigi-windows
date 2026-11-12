@@ -1,10 +1,11 @@
 use crate::{
     actions::Action,
     applications, config, diagnostics,
-    gestures::{Contact, CornerProbe, Edge},
+    gestures::{Contact, Edge, EdgeProbe},
     hotkey::Hotkeys,
     mouse_scroll::MouseScrollTap,
     preferences::{Preferences, RuntimeSettings},
+    shortcuts::{self, Binding, Command, Shortcuts},
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -16,8 +17,8 @@ use objc2::{
 };
 use objc2_app_kit::*;
 use objc2_foundation::{
-    ns_string, MainThreadMarker, NSBundle, NSNotification, NSObject, NSObjectProtocol, NSPoint,
-    NSProcessInfo, NSRect, NSSize, NSString, NSUserDefaults,
+    ns_string, MainThreadMarker, NSArray, NSBundle, NSNotification, NSObject, NSObjectProtocol,
+    NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSUserDefaults,
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -52,7 +53,7 @@ impl PermissionFlow {
 }
 
 struct PendingOpen {
-    action: Action,
+    maximize: bool,
     result: Receiver<Result<i32, isize>>,
     pid: Option<i32>,
     started: Instant,
@@ -64,6 +65,12 @@ struct State {
     layout_snapshot: RefCell<Option<windows::LayoutSnapshot>>,
     hotkeys: RefCell<Option<Hotkeys>>,
     personal_enabled: Cell<bool>,
+    shortcuts: RefCell<Shortcuts>,
+    shortcut_queue: Cell<Option<usize>>,
+    captured: RefCell<Option<Option<(u32, u32, String)>>>,
+    trackpad_last_samples: Cell<u64>,
+    trackpad_empty_reported: Cell<bool>,
+    trackpad_last_summary: RefCell<String>,
     pending: RefCell<Option<PendingOpen>>,
     picking: Cell<bool>,
     menu_open: Cell<bool>,
@@ -91,6 +98,109 @@ define_class!(
     struct Controller;
     unsafe impl NSObjectProtocol for Controller {}
     impl Controller {
+        #[unsafe(method(shortcutSelected:))]
+        fn shortcut_selected(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let selected=self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_shortcut).unwrap_or(0);
+            self.populate_shortcuts(selected);
+            self.status("Modifiez la combinaison ou l’action, puis cliquez sur Enregistrer.");
+        }
+        #[unsafe(method(shortcutDraftChanged:))]
+        fn shortcut_draft_changed(&self,_:Option<&AnyObject>) { self.status("Modifications non enregistrées. Cliquez sur Enregistrer pour les appliquer."); }
+        #[unsafe(method(shortcutActionChanged:))]
+        fn shortcut_action_changed(&self,_:Option<&AnyObject>) {
+            if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.update_shortcut_action();}
+            self.status("Action modifiée. Cliquez sur Enregistrer pour l’appliquer.");
+        }
+        #[unsafe(method(recordShortcut:))]
+        fn record_shortcut(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            self.ivars().hotkeys.borrow_mut().take();
+            let started=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.recorder.start());
+            if started {
+                self.status("Appuyez sur une combinaison avec ⌘, ⌥ ou ⌃. Échap annule. Les raccourcis Kigi sont suspendus pendant la saisie.");
+                unsafe {let _:()=msg_send![self,performSelector:sel!(shortcutCaptureTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:15.0f64];}
+            } else {self.register_hotkeys();}
+        }
+        #[unsafe(method(shortcutCaptureDone:))]
+        fn capture_done(&self,_:Option<&AnyObject>) {
+            let Some(result)=self.ivars().captured.borrow_mut().take() else{return;};
+            self.cancel_capture_timer();
+            let captured=result.is_some();
+            if let Some((key,modifiers,name))=result {
+                if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.set_shortcut_key(key,modifiers,name);}
+            } else {self.restore_shortcut_caption();}
+            self.register_hotkeys();
+            self.status(if captured {"Combinaison choisie. Cliquez sur Enregistrer pour l’appliquer."}else{"Saisie annulée. Vos raccourcis précédents restent actifs."});
+        }
+        #[unsafe(method(shortcutCaptureTimeout:))]
+        fn capture_timeout(&self,_:Option<&AnyObject>) {self.cancel_shortcut_capture();}
+        #[unsafe(method(chooseShortcutApp:))]
+        fn choose_shortcut_app(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let panel=NSOpenPanel::openPanel(self.mtm());
+            panel.setTitle(Some(ns_string!("Choisir une application")));
+            panel.setPrompt(Some(ns_string!("Choisir")));
+            panel.setCanChooseDirectories(false);panel.setCanChooseFiles(true);panel.setAllowsMultipleSelection(false);
+            #[allow(deprecated)] panel.setAllowedFileTypes(Some(&NSArray::from_slice(&[ns_string!("app")])));
+            self.ivars().picking.set(true);
+            let result=panel.runModal();self.ivars().picking.set(false);
+            if result!=NSModalResponseOK{return;}
+            let result=(|| {
+                let url=panel.URL().ok_or("Aucune application sélectionnée.")?;
+                let bundle=NSBundle::bundleWithURL(&url).and_then(|b|b.bundleIdentifier()).ok_or("Cette application ne fournit pas d’identifiant valide.")?;
+                if bundle.to_string()=="io.kigi.windows" {return Err("Choisissez une autre application que Kigi.");}
+                let name=url.lastPathComponent().map(|s|s.to_string().trim_end_matches(".app").to_owned()).ok_or("Nom d’application absent.")?;
+                if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.set_shortcut_app(bundle.to_string(),name);}
+                Ok(())
+            })();
+            match result {Ok(())=>self.status("Application choisie. Cliquez sur Enregistrer pour l’appliquer."),Err(e)=>self.status(e)}
+        }
+        #[unsafe(method(saveShortcut:))]
+        fn save_shortcut(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let draft=self.ivars().preferences.borrow().as_ref().and_then(|p|p.selected_shortcut().map(|i|(i,p.shortcut_draft())));
+            if let Some((index,draft))=draft {
+                match draft {
+                    Ok(binding)=>{let mut settings=self.ivars().shortcuts.borrow().clone();if let Some(slot)=settings.entries.get_mut(index){*slot=binding;self.persist_shortcuts(settings,index);}}
+                    Err(e)=>self.status(&e),
+                }
+            }
+        }
+        #[unsafe(method(addShortcut:))]
+        fn add_shortcut(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let mut settings=self.ivars().shortcuts.borrow().clone();let selected=settings.entries.len();
+            if selected>=32 {self.status("Vous pouvez créer jusqu’à 32 raccourcis.");return;}
+            settings.entries.push(Binding{enabled:false,key:45,modifiers:1<<11,key_label:"N".into(),command:Command::Maximize});
+            self.persist_shortcuts(settings,selected);
+        }
+        #[unsafe(method(deleteShortcut:))]
+        fn delete_shortcut(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let selected=self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_shortcut);
+            if let Some(i)=selected {
+                let mut settings=self.ivars().shortcuts.borrow().clone();
+                if i<settings.entries.len(){settings.entries.remove(i);self.persist_shortcuts(settings,i.saturating_sub(1));}
+            }
+        }
+        #[unsafe(method(resetShortcuts:))]
+        fn reset_shortcuts(&self,_:Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
+            let dialog=NSAlert::new(self.mtm());dialog.setMessageText(ns_string!("Rétablir les raccourcis par défaut ?"));
+            dialog.setInformativeText(ns_string!("Vos combinaisons et applications personnalisées seront remplacées. Les espaces et les options souris sont conservés."));
+            dialog.addButtonWithTitle(ns_string!("Rétablir"));dialog.addButtonWithTitle(ns_string!("Annuler"));
+            self.ivars().picking.set(true);let result=dialog.runModal();self.ivars().picking.set(false);
+            if result==NSAlertFirstButtonReturn{self.persist_shortcuts(Shortcuts::default(),1);}
+        }
+        #[unsafe(method(runShortcut:))]
+        fn run_shortcut(&self,_:Option<&AnyObject>) {
+            let Some(index)=self.ivars().shortcut_queue.take() else{return;};
+            let command=self.ivars().shortcuts.borrow().entries.get(index).filter(|b|b.enabled).map(|b|b.command.clone());
+            if self.ivars().personal_enabled.get(){if let Some(c)=command{self.execute_command(c);}}
+        }
+        #[unsafe(method(trackpadPoll:))]
+        fn trackpad_poll(&self,_:Option<&AnyObject>) {self.poll_trackpad();}
         #[unsafe(method(copyLogs:))]
         fn copy_logs(&self, _: Option<&AnyObject>) {
             self.record_state("diagnostic.copy");
@@ -379,7 +489,7 @@ define_class!(
         }
         #[unsafe(method(localProbe:))]
         fn local_probe(&self, _: Option<&AnyObject>) {
-            diagnostics::record("trackpad.local.open", "mode=top_left_corner width=0.10");
+            diagnostics::record("trackpad.local.open", "mode=edges width=0.05");
             let mtm = self.mtm();
             // New probe each opening; no stale finger identity across sessions.
             let window = unsafe {
@@ -389,9 +499,9 @@ define_class!(
                     NSBackingStoreType::Buffered, false)
             };
             unsafe { window.setReleasedWhenClosed(false) };
-            window.setTitle(ns_string!("Trackpad local — aucun geste global activé"));
+            window.setTitle(ns_string!("Test local — bords du trackpad à 5 %"));
             let view = TouchView::new(mtm);
-            let text = NSTextField::labelWithString(ns_string!("Diagnostic local uniquement.\nGardez le pointeur dans cette fenêtre, puis levez les doigts.\nPosez un doigt dans le coin haut-gauche : les 10 % les plus à gauche. Glissez vers le bas.\nLe résultat s'affiche ici ; aucune fenêtre tierce n'est déplacée."), mtm);
+            let text = NSTextField::labelWithString(ns_string!("Test local : gardez le pointeur dans cette fenêtre et levez les doigts.\nUn doigt depuis les 5 % extrêmes gauche ou droite jusqu’au milieu.\nLes compteurs confirment les contacts et les gestes ; aucune application n’est activée.\nCe test local ne valide pas la réception globale."), mtm);
             text.setFrame(NSRect::new(NSPoint::new(20.0,35.0),NSSize::new(560.0,170.0)));
             view.addSubview(&text);
             // hitTest routes the whole diagnostic area to TouchView.
@@ -414,6 +524,7 @@ define_class!(
             self.update_gesture_label();
             if let Some(tap) = old {
                 let report = tap.report();
+                self.ivars().trackpad_last_summary.replace(format!("Test arrêté. {}",tap.summary()));
                 diagnostics::record("trackpad.global.stop", &report);
                 drop(tap);
                 self.status("Écoute globale arrêtée.");
@@ -423,7 +534,8 @@ define_class!(
                     Ok(tap) => {
                         diagnostics::record("trackpad.global.start", "passive=true actions=false");
                         self.ivars().tap.replace(Some(tap));
-                        self.status("Diagnostic global en cours. Testez le geste dans Chrome/Teams, puis recliquez sur Démarrer/arrêter pour voir le résultat.");
+                        self.begin_trackpad_poll();
+                        self.status("Diagnostic global démarré. Effectuez le geste horizontal à un doigt ; les compteurs apparaissent dans Gestes et souris.");
                     }
                     Err(e) => self.status(&e),
                 }
@@ -439,9 +551,10 @@ define_class!(
             match Tap::start_actions() {
                 Ok(tap) => {
                     self.ivars().tap.replace(Some(tap));
+                    self.begin_trackpad_poll();
                     self.update_gesture_label();
                     diagnostics::record("gestures.start", "left=0.05 right=0.05 target_x=0.50 direction=inward whole_height=true");
-                    self.status("Gestes activés : bord gauche vers milieu → Teams ; bord droit vers milieu → Chrome à 100 %.");
+                    self.status("Test global démarré. Réception des contacts non confirmée ; effectuez un geste puis consultez le bilan.");
                 }
                 Err(e) => self.status(&e),
             }
@@ -507,6 +620,7 @@ define_class!(
         fn context_changed(&self, _: &NSNotification) { self.remember_context(); }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
+            self.cancel_shortcut_capture();
             self.cancel_permission_poll();
             self.cancel_open();
             diagnostics::record("application.quit", "requested=true");
@@ -522,6 +636,12 @@ define_class!(
         fn keep_running(&self, _: &NSApplication) -> bool { false }
         #[unsafe(method(applicationDidBecomeActive:))]
         fn became_active(&self, _: &NSNotification) { self.refresh_permission(); }
+        #[unsafe(method(applicationDidResignActive:))]
+        fn resigned_active(&self,_:&NSNotification) {self.cancel_shortcut_capture();}
+    }
+    unsafe impl NSWindowDelegate for Controller {
+        #[unsafe(method(windowWillClose:))]
+        fn settings_closed(&self,_:&NSNotification){self.cancel_shortcut_capture();}
     }
     unsafe impl NSMenuDelegate for Controller {
         #[unsafe(method(menuWillOpen:))]
@@ -559,7 +679,157 @@ impl Controller {
                 mouse_active: self.mouse_scroll_active(),
                 accessibility: windows::trusted(),
                 input_access: Tap::input_trusted(),
+                trackpad_report: &self
+                    .ivars()
+                    .tap
+                    .borrow()
+                    .as_ref()
+                    .map(Tap::summary)
+                    .unwrap_or_else(|| self.ivars().trackpad_last_summary.borrow().clone()),
             });
+        }
+    }
+    fn populate_shortcuts(&self, index: usize) {
+        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
+            p.populate_shortcuts(&self.ivars().shortcuts.borrow(), index);
+        }
+    }
+    fn restore_shortcut_caption(&self) {
+        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
+            p.restore_shortcut_caption();
+        }
+    }
+    fn cancel_capture_timer(&self) {
+        unsafe {
+            let _: () = msg_send![objc2::class!(NSObject),cancelPreviousPerformRequestsWithTarget:self,selector:sel!(shortcutCaptureTimeout:),object:std::ptr::null::<AnyObject>()];
+        }
+    }
+    fn cancel_shortcut_capture(&self) {
+        self.cancel_capture_timer();
+        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
+            p.recorder.cancel();
+        }
+        // The responder queues cancellation. Finish synchronously before starting
+        // another editor operation, so an old cancellation cannot discard new input.
+        if self.ivars().captured.borrow().is_some() {
+            self.capture_done(sel!(shortcutCaptureDone:), None);
+        }
+    }
+    fn persist_shortcuts(&self, settings: Shortcuts, selected: usize) {
+        self.ivars().shortcut_queue.take();
+        self.cancel_open();
+        if let Err(e) = settings.validate() {
+            self.status(&e);
+            return;
+        }
+        self.ivars().hotkeys.borrow_mut().take();
+        let keys = Hotkeys::register(self.ivars().personal_enabled.get(), &settings);
+        if keys.failed {
+            diagnostics::record("shortcuts.save.rejected", "registration_conflict=true");
+            let report = keys.report.clone();
+            drop(keys);
+            self.register_hotkeys();
+            alert(self.mtm(),"Raccourci indisponible",&format!("macOS a refusé une combinaison. Vos anciens réglages sont conservés.\n\n{report}"));
+            self.status("Enregistrement annulé : conflit de raccourcis. Les anciens réglages sont conservés.");
+            return;
+        }
+        let result = shortcuts_path()
+            .and_then(|p| shortcuts::save(&p, &settings, &self.ivars().shortcuts.borrow()));
+        match result {
+            Ok(()) => {
+                self.ivars().shortcuts.replace(settings);
+                self.ivars().hotkeys.replace(Some(keys));
+                self.populate_shortcuts(selected);
+                self.sync_preferences();
+                self.status(
+                    "Raccourcis enregistrés. Les réglages seront conservés au prochain lancement.",
+                );
+            }
+            Err(e) => {
+                drop(keys);
+                self.register_hotkeys();
+                self.status(&e);
+            }
+        }
+    }
+    fn execute_command(&self, command: Command) {
+        match command {
+            Command::Application {
+                bundle, maximize, ..
+            } => {
+                if self.ivars().picking.get() {
+                    return;
+                }
+                self.cancel_open();
+                self.cancel_gesture_dispatch();
+                let result = if bundle == "com.microsoft.teams2" {
+                    applications::teams_bundle().map(str::to_owned)
+                } else {
+                    Ok(bundle)
+                }
+                .and_then(|b| self.open_application(&b, maximize, Instant::now()));
+                self.status(&result.unwrap_or_else(|e| e));
+            }
+            Command::ChatGpt => self.execute(Action::ChatGpt),
+            Command::Maximize => self.execute(Action::Maximize),
+            Command::PairLeft => self.execute(Action::PairLeft),
+            Command::PairRight => self.execute(Action::PairRight),
+            Command::Test => self.test_window(sel!(testWindow:), None),
+        }
+    }
+    fn open_application(
+        &self,
+        bundle: &str,
+        maximize: bool,
+        started: Instant,
+    ) -> Result<String, String> {
+        applications::open(bundle).map(|result| {
+            self.ivars().pending.replace(Some(PendingOpen {
+                maximize,
+                result,
+                pid: None,
+                started,
+            }));
+            self.schedule_open_poll();
+            "Activation demandée…".into()
+        })
+    }
+    fn begin_trackpad_poll(&self) {
+        unsafe {
+            let _: () = msg_send![objc2::class!(NSObject),cancelPreviousPerformRequestsWithTarget:self,selector:sel!(trackpadPoll:),object:std::ptr::null::<AnyObject>()];
+        }
+        self.ivars().trackpad_last_samples.set(0);
+        self.ivars().trackpad_empty_reported.set(false);
+        self.poll_trackpad();
+    }
+    fn poll_trackpad(&self) {
+        let data = self
+            .ivars()
+            .tap
+            .borrow()
+            .as_ref()
+            .map(|t| (t.contacts(), t.elapsed_seconds(), t.summary(), t.report()));
+        let Some((samples, elapsed, summary, report)) = data else {
+            return;
+        };
+        self.ivars().trackpad_last_summary.replace(summary);
+        if samples > 0 && self.ivars().trackpad_last_samples.replace(samples) == 0 {
+            diagnostics::record("trackpad.contacts.received", "coordinates_recorded=false");
+        }
+        if crate::gestures::no_contacts_after_trial(samples, elapsed)
+            && !self.ivars().trackpad_empty_reported.replace(true)
+        {
+            diagnostics::record("trackpad.no_contacts", report);
+            self.stop_tap();
+            self.ivars().trackpad_last_summary.replace(
+                "Aucun contact global reçu en 12 s. Test arrêté ; essayez le test local.".into(),
+            );
+            self.status("Aucun contact global reçu : les gestes 5 % ne sont pas disponibles avec cet essai. Le test local vérifie séparément les contacts et le seuil.");
+            return;
+        }
+        self.sync_preferences();
+        unsafe {
+            let _: () = msg_send![self,performSelector:sel!(trackpadPoll:),withObject:std::ptr::null::<AnyObject>(),afterDelay:1.0f64];
         }
     }
     fn remember_context(&self) {
@@ -624,6 +894,9 @@ impl Controller {
             self.ivars()
                 .preferences
                 .replace(Some(Preferences::new(self.mtm(), self)));
+            if let Some(p) = self.ivars().preferences.borrow().as_ref() {
+                p.window.setDelegate(Some(ProtocolObject::from_ref(self)));
+            }
         }
         let visible = self
             .ivars()
@@ -640,6 +913,7 @@ impl Controller {
                 .and_then(Preferences::selected_id)
                 .or_else(|| self.ivars().catalog.borrow().profiles.first().map(|p| p.id));
             self.refresh_profiles(selected);
+            self.populate_shortcuts(1);
         }
         self.refresh_permission();
         if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
@@ -754,10 +1028,16 @@ impl Controller {
     fn stop_tap(&self) {
         self.cancel_gesture_dispatch();
         let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(trackpadPoll:), object:std::ptr::null::<AnyObject>()]
+        };
+        let _: () = unsafe {
             msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(pauseGestures:), object:std::ptr::null::<AnyObject>()]
         };
         let tap = self.ivars().tap.borrow_mut().take();
         if let Some(tap) = tap {
+            self.ivars()
+                .trackpad_last_summary
+                .replace(format!("Test arrêté. {}", tap.summary()));
             diagnostics::record("trackpad.stop", tap.report());
             drop(tap);
         }
@@ -768,7 +1048,10 @@ impl Controller {
     }
     fn register_hotkeys(&self) {
         self.ivars().hotkeys.borrow_mut().take(); // unregister before reacquiring
-        let keys = Hotkeys::register(self.ivars().personal_enabled.get());
+        let keys = Hotkeys::register(
+            self.ivars().personal_enabled.get(),
+            &self.ivars().shortcuts.borrow(),
+        );
         diagnostics::record("shortcut.registration", &keys.report);
         self.ivars().hotkeys.replace(Some(keys));
         self.update_shortcut_label();
@@ -804,20 +1087,11 @@ impl Controller {
         let result = match action {
             Action::Teams | Action::Browser => {
                 let bundle = if action == Action::Teams {
-                    applications::teams_bundle()
+                    applications::teams_bundle().map(str::to_owned)
                 } else {
-                    Ok(applications::CHROME)
+                    Ok(applications::CHROME.to_owned())
                 };
-                bundle.and_then(applications::open).map(|result| {
-                    self.ivars().pending.replace(Some(PendingOpen {
-                        action,
-                        result,
-                        pid: None,
-                        started,
-                    }));
-                    self.schedule_open_poll();
-                    "Activation demandée…".to_owned()
-                })
+                bundle.and_then(|b| self.open_application(&b, action == Action::Browser, started))
             }
             Action::ChatGpt => {
                 // Apple Events may run a consent modal loop. Ignore reentrant
@@ -860,33 +1134,31 @@ impl Controller {
             }
         }
         let result = if let Some(pid) = pending.pid {
-            match pending.action {
-                Action::Teams => Some(Ok(
-                    "Teams activé (aucune nouvelle fenêtre demandée).".to_owned()
-                )),
-                _ => {
-                    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid);
-                    if let Some(app) = app {
-                        // Do not reposition an app after the user has switched elsewhere.
-                        if !app.isActive() {
-                            Some(Err(
-                                "Chrome n'est plus actif : maximisation annulée. Réessayez ⌥B."
-                                    .into(),
-                            ))
-                        } else {
-                            if !windows::trusted() || windows::application_window_ready(&app) {
-                                if self.window_permission() {
-                                    Some(windows::maximize(self.mtm(), Some(&app)))
-                                } else {
-                                    return;
-                                }
-                            } else {
-                                None
-                            } // wait for a window, never repeat geometry writes
-                        }
+            if !pending.maximize {
+                Some(Ok(
+                    "Application activée (aucune nouvelle fenêtre demandée).".to_owned(),
+                ))
+            } else {
+                let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid);
+                if let Some(app) = app {
+                    // Do not reposition an app after the user has switched elsewhere.
+                    if !app.isActive() {
+                        Some(Err(
+                            "L’application n’est plus active : maximisation annulée.".into(),
+                        ))
                     } else {
-                        Some(Err("Chrome a quitté avant le positionnement.".into()))
+                        if !windows::trusted() || windows::application_window_ready(&app) {
+                            if self.window_permission() {
+                                Some(windows::maximize(self.mtm(), Some(&app)))
+                            } else {
+                                return;
+                            }
+                        } else {
+                            None
+                        } // wait for a window, never repeat geometry writes
                     }
+                } else {
+                    Some(Err("L’application a quitté avant le positionnement.".into()))
                 }
             }
         } else {
@@ -896,8 +1168,8 @@ impl Controller {
             diagnostics::record(
                 "action.complete",
                 format!(
-                    "action={:?} success={} elapsed_ms={}",
-                    pending.action,
+                    "application=true maximize={} success={} elapsed_ms={}",
+                    pending.maximize,
                     result.is_ok(),
                     pending.started.elapsed().as_millis()
                 ),
@@ -1175,7 +1447,8 @@ impl Controller {
 }
 
 struct TouchState {
-    probe: RefCell<CornerProbe>,
+    samples: Cell<u64>,
+    probe: RefCell<EdgeProbe>,
     clock: Instant,
     count: Cell<u64>,
     last_ui: Cell<Instant>,
@@ -1199,7 +1472,10 @@ define_class!(
         #[unsafe(method(touchesMovedWithEvent:))]
         fn moved(&self, event: &NSEvent) { self.touch(event, false); }
         #[unsafe(method(touchesEndedWithEvent:))]
-        fn ended(&self, _: &NSEvent) { self.ivars().probe.borrow_mut().cancel(); }
+        fn ended(&self,event:&NSEvent) {
+            if event.touchesMatchingPhase_inView(NSTouchPhase::Touching,Some(self)).count()==0{self.ivars().probe.borrow_mut().release();}
+            else{self.ivars().probe.borrow_mut().cancel();}
+        }
         #[unsafe(method(touchesCancelledWithEvent:))]
         fn cancelled(&self, _: &NSEvent) { self.ivars().probe.borrow_mut().cancel(); }
     }
@@ -1207,7 +1483,8 @@ define_class!(
 impl TouchView {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TouchState {
-            probe: RefCell::new(CornerProbe::default()),
+            samples: Cell::new(0),
+            probe: RefCell::new(EdgeProbe::default()),
             clock: Instant::now(),
             count: Cell::new(0),
             last_ui: Cell::new(Instant::now()),
@@ -1232,6 +1509,14 @@ impl TouchView {
         let Some(touch) = touches.anyObject() else {
             return;
         };
+        let samples = self.ivars().samples.get() + 1;
+        self.ivars().samples.set(samples);
+        if samples == 1 {
+            diagnostics::record(
+                "trackpad.local.contacts",
+                "received=true coordinates_recorded=false",
+            );
+        }
         let point = touch.normalizedPosition();
         let identity = touch.identity();
         let key: usize = unsafe { msg_send![&*identity, hash] };
@@ -1251,18 +1536,18 @@ impl TouchView {
             } else {
                 probe.cancel();
             }
-        } else if probe.moved(contact, 1) {
+        } else if let Some(edge) = probe.moved(contact, 1) {
             self.ivars().count.set(self.ivars().count.get() + 1);
             diagnostics::record(
                 "trackpad.local.candidate",
-                format!("count={}", self.ivars().count.get()),
+                format!("edge={edge:?} count={}", self.ivars().count.get()),
             );
         }
         if self.ivars().last_ui.get().elapsed().as_millis() >= 33 {
             self.ivars().last_ui.set(Instant::now());
             if let Some(label) = self.ivars().label.get() {
                 label.setStringValue(&NSString::from_str(&format!(
-                    "Diagnostic LOCAL : x={:.2}, y={:.2}, phase={:?}.\nGeste(s) haut-gauche vers bas : {}.\nLevez les doigts pour recommencer. Aucune action globale.",
+                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 5 % vers milieu : {}.\nLevez les doigts pour recommencer. Aucune action globale.",
                     point.x, point.y, touch.phase(), self.ivars().count.get()
                 )));
             }
@@ -1359,20 +1644,28 @@ pub fn queue_tap_interrupted() {
         }
     });
 }
-pub fn schedule_action(action: Action) {
+pub fn schedule_shortcut(index: usize) {
     CONTROLLER.with(|slot| {
-        if let Some(controller) = slot.borrow().as_ref() {
-            if controller.ivars().picking.get() { return; }
-            let count = controller.ivars().hotkey_count.get() + 1;
-            controller.ivars().hotkey_count.set(count);
+        if let Some(controller)=slot.borrow().as_ref(){
+            if controller.ivars().picking.get(){return;}
+            controller.ivars().hotkey_count.set(controller.ivars().hotkey_count.get()+1);
+            controller.ivars().shortcut_queue.set(Some(index));
             controller.cancel_gesture_dispatch();
-            diagnostics::record("shortcut.received", format!("action={action:?} count={count}"));
-            controller.update_shortcut_label();
-            let selector = Sel::register(std::ffi::CString::new(action.selector()).unwrap().as_c_str());
-            // Carbon callback only queues; never perform AX or modal UI here.
-            let _: () = unsafe { msg_send![&**controller, performSelectorOnMainThread:selector, withObject:std::ptr::null::<AnyObject>(), waitUntilDone:false] };
+            diagnostics::record("shortcut.received",format!("slot={index}"));
+            unsafe{let _:()=msg_send![&**controller,performSelectorOnMainThread:sel!(runShortcut:),withObject:std::ptr::null::<AnyObject>(),waitUntilDone:false];}
         }
     });
+}
+pub fn shortcut_captured(value: Option<(u32, u32, String)>) {
+    CONTROLLER.with(|slot| {
+        if let Some(controller)=slot.borrow().as_ref(){
+            controller.ivars().captured.replace(Some(value));
+            unsafe{let _:()=msg_send![&**controller,performSelector:sel!(shortcutCaptureDone:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}
+        }
+    });
+}
+fn shortcuts_path() -> Result<std::path::PathBuf, String> {
+    Ok(config::path()?.with_file_name("shortcuts.json"))
 }
 fn other_instances() -> Vec<Retained<NSRunningApplication>> {
     NSRunningApplication::runningApplicationsWithBundleIdentifier(ns_string!("io.kigi.windows"))
@@ -1414,6 +1707,10 @@ pub fn run() {
             return;
         }
         let controller = Controller::new(mtm);
+        controller
+            .ivars()
+            .trackpad_last_summary
+            .replace("Test global arrêté. Aucun geste global validé.".into());
         controller.remember_context();
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         let status_bar = NSStatusBar::systemStatusBar();
@@ -1510,6 +1807,12 @@ pub fn run() {
                 .is_none()
                 || defaults.boolForKey(ns_string!("personalHotkeysEnabled")),
         );
+        match shortcuts_path().and_then(|p| shortcuts::load(&p)) {
+            Ok(settings) => {
+                controller.ivars().shortcuts.replace(settings);
+            }
+            Err(e) => controller.status(&e),
+        }
         controller.register_hotkeys();
         controller.ivars().mouse_scroll_requested.set(
             NSUserDefaults::standardUserDefaults()
@@ -1574,6 +1877,7 @@ pub fn run() {
         controller.stop_tap();
         controller.stop_mouse_scroll();
         if let Some(prefs) = controller.ivars().preferences.borrow_mut().take() {
+            prefs.window.setDelegate(None);
             prefs.window.close();
         }
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {

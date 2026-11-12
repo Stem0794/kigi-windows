@@ -36,6 +36,25 @@ jobs:
           fi
       - name: Build universal application
         run: bash scripts/bundle.sh universal
+      - name: Verify native settings startup
+        run: |
+          python3 - <<'PYTHON'
+          import subprocess, time
+          app = subprocess.Popen(["dist/Kigi Windows.app/Contents/MacOS/kigi-windows"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          try:
+              time.sleep(4)
+              if app.poll() is not None:
+                  raise RuntimeError("Kigi exited during settings startup: " + app.communicate()[0].decode(errors="replace"))
+              print("Native process stayed alive through settings startup; no input, AX action or screenshot taken.")
+          finally:
+              if app.poll() is None:
+                  app.terminate()
+                  try:
+                      app.wait(timeout=5)
+                  except subprocess.TimeoutExpired:
+                      app.kill()
+                      app.wait()
+          PYTHON
       - name: Archive application
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"

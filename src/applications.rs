@@ -41,7 +41,7 @@ pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
 
 /// Completion runs on Apple's concurrent queue. Only send a small result to main;
 /// AppKit UI, AX and the session's diagnostic log remain on the main thread.
-pub fn open(bundle: &'static str) -> Result<Receiver<Result<i32, isize>>, String> {
+pub fn open(bundle: &str) -> Result<Receiver<Result<i32, isize>>, String> {
     let (sender, receiver) = mpsc::channel();
     if let Some(app) = running(bundle) {
         activate(&app)?;

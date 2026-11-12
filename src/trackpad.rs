@@ -1,7 +1,7 @@
 //! Opt-in passive contact delivery. Queue recognized actions; never run AX in the tap.
 use crate::{
     diagnostics,
-    gestures::{Contact, CornerProbe, Edge, EdgeProbe},
+    gestures::{Contact, Edge, EdgeProbe},
 };
 use objc2::{msg_send, rc::Retained};
 use objc2_app_kit::{NSEvent, NSEventType, NSTouchPhase};
@@ -41,7 +41,6 @@ struct Stats {
     recognized: u64,
     disabled: bool,
     started: Option<Instant>,
-    probe: CornerProbe,
     edges: EdgeProbe,
     actions: bool,
     left: u64,
@@ -107,15 +106,39 @@ impl Tap {
             })
         }
     }
+    pub fn contacts(&self) -> u64 {
+        self.stats.with_touches
+    }
+    pub fn elapsed_seconds(&self) -> u64 {
+        self.stats
+            .started
+            .as_ref()
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0)
+    }
+    pub fn summary(&self) -> String {
+        format!(
+            "{} événements · {} avec contacts · {} gestes gauche / {} droite. {}",
+            self.stats.events,
+            self.stats.with_touches,
+            self.stats.left,
+            self.stats.right,
+            if self.stats.with_touches == 0 {
+                "Réception globale non confirmée (test de 12 s)."
+            } else {
+                "Contacts reçus ; gestes à vérifier sur ce Mac."
+            }
+        )
+    }
     pub fn report(&self) -> String {
         if self.stats.actions {
-            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Contacts : {}. Tap interrompu : {}.\nGauche 5 % vers milieu → Teams ; droite 5 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle depuis le menu. Résultats propres à ce Mac.",
-                self.stats.left, self.stats.right, self.stats.with_touches, self.stats.disabled);
+            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Événements : {} ; avec contacts : {} ; échantillons : {}. Tap interrompu : {}.\nGauche 5 % vers milieu → Teams ; droite 5 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle dans Gestes et souris. Résultats propres à ce Mac.",
+                self.stats.left, self.stats.right, self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.disabled);
         }
-        format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} candidat(s) haut-gauche → bas. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
+        format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} geste(s) bords 5 % → milieu. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
             self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.recognized,
             self.stats.disabled,
-            if self.stats.samples == 0 { "Aucun contact reçu : geste global NON VALIDÉ. Utilisez le test local pour vérifier le trackpad." } else { "Des contacts ont été reçus : validation terrain encore nécessaire (phases, veille, Intel/ARM, faux positifs)." })
+            if self.stats.with_touches == 0 { "Aucun contact reçu : geste global NON VALIDÉ. Utilisez le test local pour vérifier le trackpad." } else if self.stats.samples == 0 { "Contacts reçus, mais aucun échantillon valide à un seul doigt." } else { "Des contacts ont été reçus : validation terrain encore nécessaire (phases, veille, Intel/ARM, faux positifs)." })
     }
 }
 impl Drop for Tap {
@@ -140,7 +163,6 @@ unsafe extern "C" fn callback(
     if kind == u32::MAX || kind == u32::MAX - 1 {
         // Fail closed; explicit restart rather than automatic reenable loops.
         stats.disabled = true;
-        stats.probe.cancel();
         stats.edges.cancel();
         crate::app::queue_tap_interrupted();
         return event;
@@ -168,7 +190,6 @@ unsafe extern "C" fn callback(
         .filter(|t| t.phase().intersects(NSTouchPhase::Touching))
         .count();
     if fingers != 1 || NSEvent::pressedMouseButtons() != 0 {
-        stats.probe.cancel();
         if fingers == 0 {
             stats.edges.release();
         } else {
@@ -182,14 +203,12 @@ unsafe extern "C" fn callback(
         t.phase()
             .intersects(NSTouchPhase::Ended | NSTouchPhase::Cancelled)
     }) {
-        stats.probe.cancel();
         stats.edges.cancel();
         return event;
     }
     for touch in touches.iter().take(8) {
         let phase = touch.phase();
         if phase.intersects(NSTouchPhase::Ended | NSTouchPhase::Cancelled) {
-            stats.probe.cancel();
             continue;
         }
         let position = touch.normalizedPosition();
@@ -208,22 +227,19 @@ unsafe extern "C" fn callback(
             ms: stats.started.as_ref().unwrap().elapsed().as_millis() as u64,
         };
         stats.samples += 1;
-        if stats.actions {
-            if phase == NSTouchPhase::Began {
-                stats.edges.begin(sample, fingers);
-            } else if phase == NSTouchPhase::Moved {
-                if let Some(edge) = stats.edges.moved(sample, fingers) {
-                    match edge {
-                        Edge::Left => stats.left += 1,
-                        Edge::Right => stats.right += 1,
-                    }
+        if phase == NSTouchPhase::Began {
+            stats.edges.begin(sample, fingers);
+        } else if phase == NSTouchPhase::Moved {
+            if let Some(edge) = stats.edges.moved(sample, fingers) {
+                stats.recognized += 1;
+                match edge {
+                    Edge::Left => stats.left += 1,
+                    Edge::Right => stats.right += 1,
+                }
+                if stats.actions {
                     crate::app::queue_gesture(edge);
                 }
             }
-        } else if phase == NSTouchPhase::Began {
-            stats.probe.begin(sample, fingers);
-        } else if phase == NSTouchPhase::Moved && stats.probe.moved(sample, fingers) {
-            stats.recognized += 1;
         }
     }
     // No AX, Apple Events, logs or window activation in this callback.

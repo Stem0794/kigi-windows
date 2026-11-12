@@ -86,3 +86,29 @@ L'écoute s'arrête après veille/session inactive/interruption et reste désact
 branchement Magic Trackpad n'a encore été testé. Les tests purs de cooldown,
 contact unique et annulation ne démontrent pas l'absence de faux positifs réels.
 Verdict terrain reste PARTIAL ; ne pas présenter 0.2.0 comme support universel.
+
+## Retour 0.4.1 et diagnostic 0.5.0
+
+L’utilisateur indique que le geste horizontal 5 % ne fonctionne pas et ne voit
+pas de détection dans les logs. Aucun nouveau rapport chiffré reçu à ce stade.
+Cela ne permet pas de distinguer écoute non démarrée, absence de contacts ou
+contacts rejetés. Ne pas annuler les observations positives historiques, ni
+les considérer comme une validation du profil actuel.
+
+0.5.0 : compteurs visibles, première réception et absence de contacts après
+12 s dans le journal. Le timeout porte sur les événements avec contacts, pas
+uniquement les échantillons à un doigt : les contacts multi-doigts ne sont pas
+faussement déclarés absents. Modes diagnostic/action et test local partagent
+maintenant EdgeProbe 5 % horizontal ; le local ne déclenche aucune action.
+Aucun seuil élargi ou départ artificiel sur un Moved tardif.
+
+Le transport CGEventTap avec masque NSEvent Gesture reste expérimental et ne
+constitue pas une API publique documentée de contacts globaux. Apple documente
+la réception des contacts trackpad par la vue qui les demande et précise que
+les moniteurs AppKit ne reçoivent pas les événements tactiles :
+https://developer.apple.com/documentation/appkit/nsresponder/touchesbegan(with:)
+https://developer.apple.com/documentation/technotes/tn3212-adopting-gesture-recognizers-for-sidecar-touch-support
+Ces limites ne suffisent pas à expliquer les anciens compteurs positifs.
+Pas d’ajout d’un moniteur global concurrent ni d’API privée sans autorisation.
+Prochain essai : test local puis test global pendant 12 s et copie du rapport.
+Geste global actuel : NON RÉSOLU, résultat terrain encore requis.

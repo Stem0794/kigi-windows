@@ -1,8 +1,9 @@
 //! Public Carbon hotkey registration; no keyboard event monitoring.
-use crate::actions::Action;
+use crate::shortcuts::Shortcuts;
 use std::{
     ffi::{c_ulong, c_void},
     ptr,
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 type Handle = *mut c_void;
@@ -17,7 +18,11 @@ struct HotkeyId {
     signature: u32,
     id: u32,
 }
-const SIGNATURE: u32 = u32::from_be_bytes(*b"Kigi");
+static GENERATION: AtomicU32 = AtomicU32::new(u32::from_be_bytes(*b"Kigi"));
+struct Context {
+    down: Vec<bool>,
+    signature: u32,
+}
 #[link(name = "Carbon", kind = "framework")]
 extern "C" {
     fn GetEventDispatcherTarget() -> Handle;
@@ -54,16 +59,21 @@ extern "C" {
 pub struct Hotkeys {
     keys: Vec<Handle>,
     handler: Handle,
-    down: Box<[bool; 7]>,
+    context: Box<Context>,
     pub report: String,
+    pub failed: bool,
 }
 impl Hotkeys {
-    pub fn register(personal: bool) -> Self {
+    pub fn register(personal: bool, settings: &Shortcuts) -> Self {
         let mut this = Self {
             keys: Vec::new(),
             handler: ptr::null_mut(),
-            down: Box::new([false; 7]),
+            context: Box::new(Context {
+                down: vec![false; settings.entries.len()],
+                signature: GENERATION.fetch_add(1, Ordering::Relaxed),
+            }),
             report: String::new(),
+            failed: false,
         };
         unsafe {
             let target = GetEventDispatcherTarget();
@@ -82,27 +92,28 @@ impl Hotkeys {
                 on_hotkey,
                 events.len() as c_ulong,
                 events.as_ptr(),
-                this.down.as_mut_ptr().cast(),
+                (&mut *this.context as *mut Context).cast(),
                 &mut this.handler,
             );
             if code != 0 {
+                this.failed = personal;
                 this.report = format!(
                     "Installation du gestionnaire refusée ({code}). Les menus restent utilisables."
                 );
                 return this;
             }
-            for action in Action::ALL {
-                if action != Action::Test && !personal {
+            for (index, binding) in settings.entries.iter().enumerate() {
+                if !binding.enabled || !personal {
                     continue;
                 }
-                let (key, modifiers) = action.binding();
+                let (key, modifiers) = (binding.key, binding.modifiers);
                 let mut handle = ptr::null_mut();
                 let code = RegisterEventHotKey(
                     key,
                     modifiers,
                     HotkeyId {
-                        signature: SIGNATURE,
-                        id: action as u32,
+                        signature: this.context.signature,
+                        id: index as u32,
                     },
                     target,
                     1,
@@ -112,10 +123,11 @@ impl Hotkeys {
                     this.keys.push(handle);
                     "enregistré".to_owned()
                 } else {
+                    this.failed = true;
                     format!("indisponible ({code}) — conflit possible avec macOS ou Hammerspoon")
                 };
                 this.report
-                    .push_str(&format!("{} : {state}\n", action.label()));
+                    .push_str(&format!("Raccourci {} : {state}\n", index + 1));
             }
         }
         this
@@ -151,12 +163,20 @@ unsafe extern "C" fn on_hotkey(_: Handle, event: Handle, user: Handle) -> i32 {
         crate::diagnostics::record("shortcut.parameter_error", format!("code={code}"));
         return code;
     }
-    if id.signature != SIGNATURE || id.id as usize >= Action::ALL.len() || user.is_null() {
+    if user.is_null() {
+        return -9874;
+    }
+    // Events queued before a remap must never execute a new slot assignment.
+    let context = &mut *user.cast::<Context>();
+    if id.signature != context.signature {
         return -9874;
     }
     let index = id.id as usize;
-    if press_transition(&mut *user.cast::<bool>().add(index), GetEventKind(event)) {
-        crate::app::schedule_action(Action::ALL[index]);
+    let Some(pressed) = context.down.get_mut(index) else {
+        return -9874;
+    };
+    if press_transition(pressed, GetEventKind(event)) {
+        crate::app::schedule_shortcut(index);
     }
     0
 }

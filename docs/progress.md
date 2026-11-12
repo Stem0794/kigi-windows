@@ -484,3 +484,33 @@ signature/plist/lipo. Source d53009c773260490b4a02350c1cc8af1b6d2ee9a.
 SHA256 de l’artefact et CRC des deux archives vérifiés ; paquet universel
 0.4.1/build14, LSUIElement=false, 681251 octets. L’affichage, la réouverture
 Dock et les interactions de la fenêtre restent à confirmer sur le Mac pilote.
+
+## 0.5.0 — Raccourcis personnalisables et retour des gestes
+
+Demande utilisateur : absence de détection 5 %, changer les touches et l’app
+cible, améliorer UX/UI. Éditeur natif de 32 raccourcis : ajout/suppression,
+activation individuelle/globale, une combinaison saisie volontairement dans un
+NSView focalisé, choix `.app` via NSOpenPanel, maximisation facultative, actions
+fenêtre ou ChatGPT. Détection des doublons ; essai Carbon avant écriture et
+retour aux anciens réglages si refus. Écriture JSON atomique séparée du
+catalogue, validation stricte et garde contre modification externe. Les noms
+d’apps et caractères saisis ne sont pas ajoutés au rapport des raccourcis.
+
+Annulation par Échap, changement de focus/app, fermeture de fenêtre ou délai
+15 s ; réenregistrement des touches après saisie. Aucun moniteur clavier global.
+En-tête, hiérarchie typographique et formulaire action/application/combinaison,
+état réel visible et onglet Raccourcis ouvert au lancement. Aucune nouvelle
+dépendance ; fonctionnalités AppKit existantes complétées.
+
+Trackpad : le diagnostic local utilisait encore le coin vertical ; il partage
+désormais le reconnaisseur horizontal 5 % avec le global. Compteurs visibles,
+log de première réception, bilan automatique et arrêt après 12 s sans contact
+(y compris détection des contacts multi-doigts). Aucun contact reçu n’est plus
+confondu avec un geste valide. Réception globale encore NON RÉSOLUE sur le Mac
+utilisateur : il faut son nouveau rapport pour localiser la panne. API privées
+non ajoutées. Souris, gestes de base Teams/Chrome et espaces conservés.
+
+Trois tests purs ciblés : validation/affectation/doublons, persistance et refus
+d’écrasement invalide/externe, limite du diagnostic sans contacts. Vérifications
+locales réussies : 16 tests hôte, code/tests macOS ARM/Intel. Validation native
+et archive à consigner après build. UI/saisie/trackpad réels à tester sur Mac.
