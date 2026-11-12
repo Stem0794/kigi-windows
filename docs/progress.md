@@ -85,6 +85,7 @@ Hammerspoon ni implémenter l'action Teams de P1. Le conflit n'est pas prouvé
 par une inspection du Mac. Relancer Kigi après arrêt d'un concurrent si besoin :
 l'enregistrement se fait au lancement. Un échec est affiché dans le menu.
 
-Version du bundle incrémentée à 0.0.2. Vérifications prévues pendant le packaging macOS : fmt, cargo check, trois
-tests et construction native Release Intel/ARM. La nouvelle zone et le nouveau
+Version du bundle incrémentée à 0.0.2. Vérifications exécutées avec succès sur le runner macOS : fmt, cargo check,
+trois tests (3/3) et construction native Release Intel/ARM. ZIP universel signé
+ad hoc, plist et lipo vérifiés : [run 43243429859](https://github.com/Stem0794/kigi-windows/actions/runs/43243429859). La nouvelle zone et le nouveau
 raccourci restent à essayer sur le Mac utilisateur. P1 non commencé.

@@ -1,9 +1,10 @@
 # Spike trackpad — P0
 
 2026-11-12. **Verdict : PARTIAL documentaire et prototype ; aucun GO matériel.**
-L'environnement disponible est Linux x86_64. Aucun événement réel du trackpad,
-aucune permission TCC et aucune fonction native n'ont été testés sur Mac.
-La compilation de types macOS ne prouve pas leur fonctionnement.
+Le développement a commencé sous Linux x86_64 ; les binaires sont maintenant
+construits sur un runner macOS. Le premier retour utilisateur confirme un test
+local réussi et des contacts globaux reçus sur son Mac (détails ci-dessous).
+Les nouveaux seuils 0.0.2 et le comportement après veille restent à valider.
 
 ## Ce que le prototype permet de mesurer
 
@@ -22,8 +23,8 @@ dérive ou délai excessif annulent le candidat. Les seuils sont expérimentaux.
 |---|---|
 | Vérification des signatures publiques objc2/AppKit | Faite sur les sources des crates résolues |
 | Typage cible Intel et Apple Silicon, déploiement 11.0 | Vérifié, sans édition de liens Apple |
-| Contacts dans une NSView locale sur Mac | Non exécuté |
-| Contacts globaux pendant Chrome/Teams au premier plan | Non exécuté ; pas de garantie API |
+| Contacts dans une NSView locale sur Mac | Réussite rapportée par l'utilisateur avec 0.0.1 |
+| Contacts globaux sur le Mac utilisateur | 1 793 événements avec contacts et 3 candidats rapportés avec 0.0.1 ; app au premier plan non relevée |
 | Avec/sans AX et Surveillance de l'entrée | Non exécuté |
 | Trackpad intégré / Magic Trackpad, Intel / ARM | Non exécuté |
 | Verrouillage, veille, reconnexion et coût CPU | Non exécuté |
