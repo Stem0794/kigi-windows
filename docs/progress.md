@@ -325,3 +325,11 @@ par la scène elle-même ni JSON persistant. La configuration versionnée,
 Meeting+Chat et l'éditeur attendent les sous-étapes suivantes. Ne pas activer
 de détection de réunion automatique avant audit terrain. Aucun nouveau
 crate, dépendance ou service.
+
+Validation native P3 : [run 43274091660](https://github.com/Stem0794/kigi-windows/actions/runs/43274091660)
+réussi sur macOS : formatage, vérification Rust, tests unitaires,
+compilation du script Chrome, construction universelle Intel/ARM, assemblage
+et archive. L'archive applicative extraite a passé le contrôle CRC ; Info.plist
+indique 0.3.0 / build 10. Les trois commandes P3 restent à essayer sur le Mac
+pilote, tout comme le geste horizontal P2 et la permission Automatisation Chrome.
+Aucune preuve de compatibilité matérielle ancienne ni de performance p95/RSS.
