@@ -288,3 +288,16 @@ sur le contenu final. Packaging natif et essais réels à consigner séparément
 Prochain sous-ticket : valider réutilisation ChatGPT et gestes en usage courant
 sur le Mac pilote avant de considérer P2 fiable. Éditeur générique/config JSON,
 calibration graphique et scènes restent pour les étapes suivantes.
+
+## 2026-11-12 — P2 0.2.1 : gestes horizontaux depuis les bords à 5 %
+
+À la demande de l'utilisateur : départ sur les 5 % extrêmes gauche/droite
+sur toute la hauteur, arrivée au centre x=0,50 (gauche → Teams, droite →
+Chrome 100 %). Écart vertical limité à 0,12, recul extérieur toléré de 0,03,
+durée ≤1,5 s. Conservation du cooldown global 1 s, de l'annulation
+multi-doigts, des permissions et de la réactivation volontaire après interruption.
+Le diagnostic vertical haut-gauche reste séparé, sans déclencher d'action.
+
+Tests unitaires ciblés : seuils 5 %, centre, direction, cooldown et annulations.
+Pas de nouvelle dépendance ni d'infrastructure. Validation sur Mac nécessaire
+pour confirmer la détection réelle et mesurer d'éventuels faux positifs.

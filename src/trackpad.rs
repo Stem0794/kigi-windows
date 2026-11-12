@@ -109,7 +109,7 @@ impl Tap {
     }
     pub fn report(&self) -> String {
         if self.stats.actions {
-            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Contacts : {}. Tap interrompu : {}.\nGauche 10 % → Teams ; droite 20 % → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle depuis le menu. Résultats propres à ce Mac.",
+            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Contacts : {}. Tap interrompu : {}.\nGauche 5 % vers milieu → Teams ; droite 5 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle depuis le menu. Résultats propres à ce Mac.",
                 self.stats.left, self.stats.right, self.stats.with_touches, self.stats.disabled);
         }
         format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} candidat(s) haut-gauche → bas. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",

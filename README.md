@@ -1,4 +1,4 @@
-# Kigi Windows — pilote gestes 0.2.0
+# Kigi Windows — pilote gestes 0.2.1
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -50,11 +50,12 @@ demande, Surveillance de l'entrée.
 
 | Départ et mouvement, un seul doigt | Action |
 | --- | --- |
-| 10 % les plus à gauche, glissement vers le bas | Teams au premier plan |
-| 20 % les plus à droite, glissement vers le bas | Chrome au premier plan à 100 % |
+| 5 % les plus à gauche, glissement horizontal vers le milieu | Teams au premier plan |
+| 5 % les plus à droite, glissement horizontal vers le milieu | Chrome au premier plan à 100 % |
 
-Le départ peut se faire sur **toute la hauteur**, conformément à la référence
-Hammerspoon, puis descente ≥0,22, dérive horizontale ≤0,12 et durée ≤1,5 s.
+Le départ peut se faire sur **toute la hauteur** : x≤0,05 à gauche ou x≥0,95
+à droite. Le doigt doit atteindre la ligne centrale x=0,50 en ≤1,5 s avec
+une dérive verticale ≤0,12 ; tolérance de recul vers l'extérieur de 0,03.
 Une action par contact, cooldown global 1 s. Deux doigts, clic/drag observé,
 identité/device différent, mauvaise direction, délai ou début manquant annulent.
 Une séquence annulée doit se terminer par retrait de tous les doigts avant de
@@ -109,8 +110,9 @@ d'apps, URL d'onglets, identité des contacts ou coordonnées de doigts. Aucun e
 réseau, aucun journal persistant automatique.
 
 Sur le Mac pilote : ⌥C deux fois avec ChatGPT déjà ouvert (nombre d'onglets
-inchangé), avec ChatGPT absent (un seul nouvel onglet), puis un geste volontaire
-de chaque bord. Essayer aussi un départ central, deux doigts et l'usage ordinaire
+inchangé), avec ChatGPT absent (un seul nouvel onglet), puis un geste horizontal volontaire
+de chaque bord jusqu'au milieu. Essayer aussi un départ central, deux doigts, un
+glissement vertical depuis un bord et l'usage ordinaire
 pour relever les faux positifs ; désactiver si nécessaire. Après veille,
 confirmer l'arrêt puis réactiver volontairement. Les nouveaux comportements
 restent à valider sur matériel ; p95/RSS n'ont pas été mesurés ici.

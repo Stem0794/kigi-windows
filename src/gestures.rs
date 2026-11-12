@@ -50,7 +50,7 @@ impl CornerProbe {
     }
 }
 
-/// Personal profile from the supplied Hammerspoon reference: whole-height edges.
+/// Opt-in horizontal gestures: start within the outermost 5% and reach x=0.5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Edge {
     Left,
@@ -67,7 +67,7 @@ impl EdgeProbe {
         self.start = None;
         self.blocked = true;
     }
-    /// Only an observed all-fingers-up boundary rearms a cancelled/fired sequence.
+    /// A cancelled or fired gesture requires all fingers lifted to rearm.
     pub fn release(&mut self) {
         self.start = None;
         self.blocked = false;
@@ -86,9 +86,9 @@ impl EdgeProbe {
             self.cancel();
             return;
         }
-        let edge = if (0.0..=0.1).contains(&c.x) {
+        let edge = if (0.0..=0.05).contains(&c.x) {
             Some(Edge::Left)
-        } else if (0.8..=1.0).contains(&c.x) {
+        } else if (0.95..=1.0).contains(&c.x) {
             Some(Edge::Right)
         } else {
             None
@@ -110,13 +110,20 @@ impl EdgeProbe {
             || !(0.0..=1.0).contains(&c.y)
             || c.ms < start.ms
             || c.ms - start.ms > 1500
-            || (c.x - start.x).abs() > 0.12
-            || c.y > start.y + 0.03
+            || (c.y - start.y).abs() > 0.12
+            || match edge {
+                Edge::Left => c.x < start.x - 0.03,
+                Edge::Right => c.x > start.x + 0.03,
+            }
         {
             self.cancel();
             return None;
         }
-        if start.y - c.y >= 0.22 {
+        let reached_center = match edge {
+            Edge::Left => c.x >= 0.5,
+            Edge::Right => c.x <= 0.5,
+        };
+        if reached_center {
             self.cancel();
             self.cooldown_until = c.ms.saturating_add(1000);
             Some(edge)
@@ -165,44 +172,62 @@ mod tests {
         assert!(!p.moved(contact(0.1, 0.6, 1501), 1));
     }
     #[test]
-    fn edges_fire_once_with_shared_cooldown_and_accept_middle_height() {
+    fn edges_require_center_and_share_cooldown() {
         let mut p = EdgeProbe::default();
-        p.begin(contact(0.1, 0.5, 0), 1);
-        assert_eq!(p.moved(contact(0.12, 0.2, 100), 1), Some(Edge::Left));
-        p.begin(contact(0.1, 0.5, 200), 1); // duplicate begin cannot rearm
-        assert_eq!(p.moved(contact(0.1, 0.2, 300), 1), None);
+        p.begin(contact(0.05, 0.5, 0), 1);
+        assert_eq!(p.moved(contact(0.45, 0.55, 100), 1), None);
+        assert_eq!(p.moved(contact(0.5, 0.56, 140), 1), Some(Edge::Left));
+        assert_eq!(p.moved(contact(0.7, 0.56, 200), 1), None);
+        p.begin(contact(0.05, 0.5, 210), 1);
+        assert_eq!(p.moved(contact(0.5, 0.5, 240), 1), None);
         p.release();
-        p.begin(contact(0.8, 0.9, 400), 1); // other edge shares cooldown
-        assert_eq!(p.moved(contact(0.8, 0.6, 500), 1), None);
+        p.begin(contact(0.95, 0.6, 400), 1);
+        assert_eq!(p.moved(contact(0.5, 0.6, 500), 1), None);
         p.release();
-        p.begin(contact(0.8, 0.9, 1100), 1);
-        assert_eq!(p.moved(contact(0.8, 0.6, 1200), 1), Some(Edge::Right));
+        p.begin(contact(0.95, 0.4, 1200), 1);
+        assert_eq!(p.moved(contact(0.5, 0.42, 1300), 1), Some(Edge::Right));
     }
     #[test]
-    fn edges_cancel_until_lift_and_reject_invalid_or_interrupted_sequences() {
+    fn edges_five_percent_bounds_and_direction() {
         let mut p = EdgeProbe::default();
-        assert_eq!(p.moved(contact(0.05, 0.3, 100), 1), None);
-        p.begin(contact(0.05, 0.8, 200), 1);
-        assert_eq!(p.moved(contact(0.05, 0.7, 250), 2), None);
-        p.begin(contact(0.05, 0.8, 300), 1);
-        assert_eq!(p.moved(contact(0.05, 0.4, 400), 1), None);
-        for start in [contact(0.1001, 0.8, 500), contact(f64::NAN, 0.8, 500)] {
+        for x in [0.05001, 0.5, 0.94999] {
             p.release();
-            p.begin(start, 1);
-            assert_eq!(p.moved(contact(0.05, 0.4, 600), 1), None);
+            p.begin(contact(x, 0.5, 0), 1);
+            assert_eq!(p.moved(contact(0.5, 0.5, 100), 1), None);
         }
+        p.release();
+        p.begin(contact(0.04, 0.8, 0), 1);
+        assert_eq!(p.moved(contact(0.3, 0.6, 100), 1), None); // vertical drift
+        assert_eq!(p.moved(contact(0.5, 0.8, 200), 1), None);
+        p.release();
+        p.begin(contact(0.04, 0.5, 0), 1);
+        assert_eq!(p.moved(contact(0.0, 0.5, 100), 1), None); // outward motion
+        assert_eq!(p.moved(contact(0.5, 0.5, 200), 1), None);
+        p.release();
+        p.begin(contact(0.95, 0.9, 0), 1);
+        assert_eq!(p.moved(contact(0.5, 0.9, 200), 1), Some(Edge::Right));
+        p.release();
+        p.begin(contact(0.05, 0.1, 2000), 1);
+        assert_eq!(p.moved(contact(0.5, 0.1, 2100), 1), Some(Edge::Left));
+    }
+    #[test]
+    fn edges_block_until_lift_after_invalid_contact() {
+        let mut p = EdgeProbe::default();
+        assert_eq!(p.moved(contact(0.5, 0.5, 100), 1), None);
+        p.begin(contact(0.05, 0.5, 0), 1);
+        assert_eq!(p.moved(contact(0.5, 0.5, 100), 2), None);
+        p.begin(contact(0.05, 0.5, 200), 1);
+        assert_eq!(p.moved(contact(0.5, 0.5, 300), 1), None);
         for bad in [
-            Contact {
-                device: 2,
-                ..contact(0.05, 0.4, 600)
-            },
-            contact(0.05, 0.9, 600),
-            contact(0.3, 0.4, 600),
-            contact(0.05, 0.4, 2001),
+            Contact { device: 2, ..contact(0.5, 0.5, 600) },
+            Contact { identity: 2, ..contact(0.5, 0.5, 600) },
+            contact(0.5, 0.5, 2001),
+            contact(0.5, f64::NAN, 600),
         ] {
             p.release();
-            p.begin(contact(0.05, 0.8, 500), 1);
+            p.begin(contact(0.05, 0.5, 500), 1);
             assert_eq!(p.moved(bad, 1), None);
+            assert_eq!(p.moved(contact(0.5, 0.5, 700), 1), None);
         }
     }
 }

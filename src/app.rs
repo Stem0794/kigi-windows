@@ -279,8 +279,8 @@ define_class!(
                 Ok(tap) => {
                     self.ivars().tap.replace(Some(tap));
                     self.update_gesture_label();
-                    diagnostics::record("gestures.start", "left=0.10 right=0.20 whole_height=true");
-                    self.status("Gestes activés : bord gauche vers bas → Teams ; bord droit → Chrome à 100 %.");
+                    diagnostics::record("gestures.start", "left=0.05 right=0.05 target_x=0.50 direction=inward whole_height=true");
+                    self.status("Gestes activés : bord gauche vers milieu → Teams ; bord droit vers milieu → Chrome à 100 %.");
                 }
                 Err(e) => self.status(&e),
             }
