@@ -648,7 +648,8 @@ pub fn meeting_browser(
     let right = display.right_half();
     let prior_pid = NSWorkspace::sharedWorkspace()
         .frontmostApplication()
-        .map(|app| app.processIdentifier());
+        .map(|app| app.processIdentifier())
+        .filter(|pid| *pid != std::process::id() as i32);
     // Both windows and their positions are captured before any write.
     let teams_result = teams.set_frame(left);
     let chrome_result = chrome.set_frame(right);
@@ -695,7 +696,15 @@ pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
     let chrome_app = crate::applications::running(crate::applications::CHROME)
         .ok_or("Ouvrez Chrome avec ⌥B avant d'activer Travail.")?;
     require_permission()?;
+    let window = preferred_window(&chrome_app)?;
+    window.unminimize()?;
+    window.ensure_normal()?;
+    let target = visible_frame(mtm, window.frame()?)?;
     crate::applications::activate(&chrome_app)?;
-    maximize(mtm, Some(&chrome_app))?;
+    let actual = window.set_frame(target)?;
+    if !actual.approximately(target) {
+        return Err("Chrome ne couvre pas toute la zone visible : disposition précédente conservée.".into());
+    }
+    window.raise()?;
     Ok("Travail : Chrome au premier plan à 100 %, Teams conservé derrière.".into())
 }

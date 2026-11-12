@@ -1031,7 +1031,6 @@ pub fn run() {
             sel!(testWindow:),
         );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu.addItem(&NSMenuItem::separatorItem(mtm));
         menu_action(
             &menu,
             &controller,
