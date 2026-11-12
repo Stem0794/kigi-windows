@@ -52,6 +52,11 @@ impl PermissionFlow {
     }
 }
 
+struct PendingMaximize {
+    request: windows::MaximizeRequest,
+    started: Instant,
+    activation_started: Option<Instant>,
+}
 struct PendingOpen {
     maximize: bool,
     result: Receiver<Result<i32, isize>>,
@@ -72,6 +77,9 @@ struct State {
     trackpad_empty_reported: Cell<bool>,
     trackpad_last_summary: RefCell<String>,
     pending: RefCell<Option<PendingOpen>>,
+    pending_maximize: RefCell<Option<PendingMaximize>>,
+    launch_validation: RefCell<String>,
+    previous_launch_known: Cell<bool>,
     picking: Cell<bool>,
     menu_open: Cell<bool>,
     mouse_scroll_requested: Cell<bool>,
@@ -201,6 +209,17 @@ define_class!(
         }
         #[unsafe(method(trackpadPoll:))]
         fn trackpad_poll(&self,_:Option<&AnyObject>) {self.poll_trackpad();}
+        #[unsafe(method(maximizePoll:))]
+        fn maximize_poll(&self,_:Option<&AnyObject>){self.poll_maximize();}
+        #[unsafe(method(performanceReport:))]
+        fn performance_report(&self,_:Option<&AnyObject>){
+            alert(self.mtm(),"Mesures de cette session",&format!("{}\n\n{}",diagnostics::performance_report(),self.ivars().launch_validation.borrow()));
+        }
+        #[unsafe(method(startupReport:))]
+        fn startup_report(&self,_:Option<&AnyObject>){
+            let visible=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.window.isVisible());
+            println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
+        }
         #[unsafe(method(copyLogs:))]
         fn copy_logs(&self, _: Option<&AnyObject>) {
             self.record_state("diagnostic.copy");
@@ -803,29 +822,34 @@ impl Controller {
         self.poll_trackpad();
     }
     fn poll_trackpad(&self) {
-        let data = self
-            .ivars()
-            .tap
-            .borrow()
-            .as_ref()
-            .map(|t| (t.contacts(), t.elapsed_seconds(), t.summary(), t.report()));
-        let Some((samples, elapsed, summary, report)) = data else {
+        let data = self.ivars().tap.borrow().as_ref().map(|t| {
+            (
+                t.contacts(),
+                t.elapsed_seconds(),
+                t.summary(),
+                t.report(),
+                t.evidence(),
+                t.active_actions(),
+            )
+        });
+        let Some((samples, elapsed, summary, report, evidence, actions)) = data else {
             return;
         };
         self.ivars().trackpad_last_summary.replace(summary);
         if samples > 0 && self.ivars().trackpad_last_samples.replace(samples) == 0 {
             diagnostics::record("trackpad.contacts.received", "coordinates_recorded=false");
         }
-        if crate::gestures::no_contacts_after_trial(samples, elapsed)
-            && !self.ivars().trackpad_empty_reported.replace(true)
-        {
-            diagnostics::record("trackpad.no_contacts", report);
-            self.stop_tap();
-            self.ivars().trackpad_last_summary.replace(
-                "Aucun contact global reçu en 12 s. Test arrêté ; essayez le test local.".into(),
-            );
-            self.status("Aucun contact global reçu : les gestes 10 % ne sont pas disponibles avec cet essai. Le test local vérifie séparément les contacts et le seuil.");
-            return;
+        if elapsed >= 12 && !self.ivars().trackpad_empty_reported.replace(true) {
+            diagnostics::record("trackpad.trial.complete", &report);
+            if !actions || evidence.recognized == 0 {
+                self.stop_tap();
+                self.ivars()
+                    .trackpad_last_summary
+                    .replace(format!("Test arrêté. {}", evidence.diagnosis()));
+                self.status(evidence.diagnosis());
+                return;
+            }
+            self.status(evidence.diagnosis());
         }
         self.sync_preferences();
         unsafe {
@@ -1060,9 +1084,108 @@ impl Controller {
         if self.ivars().pending.borrow_mut().take().is_some() {
             diagnostics::record("application.open.cancelled", "superseded_or_shutdown=true");
         }
+        if self.ivars().pending_maximize.borrow_mut().take().is_some() {
+            diagnostics::record("window.maximize.cancelled", "superseded_or_shutdown=true");
+        }
+        unsafe {
+            let _: () = msg_send![objc2::class!(NSObject),cancelPreviousPerformRequestsWithTarget:self,selector:sel!(maximizePoll:),object:std::ptr::null::<AnyObject>()];
+        }
         let _: () = unsafe {
             msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(openPoll:), object:std::ptr::null::<AnyObject>()]
         };
+    }
+    fn remember_launch(&self) {
+        let defaults = NSUserDefaults::standardUserDefaults();
+        let previous = defaults.stringForKey(ns_string!("validationLastVersion"));
+        self.ivars().previous_launch_known.set(previous.is_some());
+        let text = if let Some(version) = previous {
+            format!("Relance : version précédente {version}, actuelle {} ; Accessibilité précédente={}, actuelle={} ; surveillance précédente={}, actuelle={}. Une mise à jour ad hoc peut nécessiter une nouvelle autorisation.",env!("CARGO_PKG_VERSION"),defaults.boolForKey(ns_string!("validationLastAX")),windows::trusted(),defaults.boolForKey(ns_string!("validationLastInput")),Tap::input_trusted())
+        } else {
+            "Relance : premier relevé disponible. Quittez puis relancez cette même copie pour comparer les permissions.".into()
+        };
+        self.ivars().launch_validation.replace(text.clone());
+        diagnostics::record("application.launch.validation", text);
+        unsafe {
+            defaults.setObject_forKey(
+                Some(&NSString::from_str(env!("CARGO_PKG_VERSION"))),
+                ns_string!("validationLastVersion"),
+            );
+        }
+        self.remember_permissions();
+    }
+    fn remember_permissions(&self) {
+        let defaults = NSUserDefaults::standardUserDefaults();
+        defaults.setBool_forKey(windows::trusted(), ns_string!("validationLastAX"));
+        defaults.setBool_forKey(Tap::input_trusted(), ns_string!("validationLastInput"));
+    }
+    fn begin_maximize(
+        &self,
+        app: Option<&NSRunningApplication>,
+        activation_started: Option<Instant>,
+    ) -> Result<String, String> {
+        let started = Instant::now();
+        let request = match windows::MaximizeRequest::start(self.mtm(), app) {
+            Ok(request) => request,
+            Err(e) => {
+                diagnostics::timing(diagnostics::Metric::Maximize, started.elapsed(), false);
+                if let Some(t) = activation_started {
+                    diagnostics::timing(diagnostics::Metric::Activation, t.elapsed(), false);
+                }
+                return Err(e);
+            }
+        };
+        self.ivars().pending_maximize.replace(Some(PendingMaximize {
+            request,
+            started,
+            activation_started,
+        }));
+        match self.advance_maximize() {
+            Some(result) => result,
+            None => {
+                self.schedule_maximize_poll();
+                Ok("Transition de fenêtre en cours. Le placement suivra sans bloquer Kigi.".into())
+            }
+        }
+    }
+    fn schedule_maximize_poll(&self) {
+        unsafe {
+            let _: () = msg_send![self,performSelector:sel!(maximizePoll:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.1f64];
+        }
+    }
+    fn advance_maximize(&self) -> Option<Result<String, String>> {
+        let mut pending = self.ivars().pending_maximize.borrow_mut().take()?;
+        let result = match pending.request.poll(self.mtm()) {
+            Ok(None) => {
+                self.ivars().pending_maximize.replace(Some(pending));
+                return None;
+            }
+            Ok(Some(text)) => Ok(text),
+            Err(e) => Err(e),
+        };
+        diagnostics::timing(
+            diagnostics::Metric::Maximize,
+            pending.started.elapsed(),
+            result.is_ok(),
+        );
+        if let Some(t) = pending.activation_started {
+            diagnostics::timing(diagnostics::Metric::Activation, t.elapsed(), result.is_ok());
+        }
+        diagnostics::record(
+            "window.maximize.complete",
+            format!(
+                "success={} elapsed_ms={}",
+                result.is_ok(),
+                pending.started.elapsed().as_millis()
+            ),
+        );
+        Some(result)
+    }
+    fn poll_maximize(&self) {
+        if let Some(result) = self.advance_maximize() {
+            self.status(&result.unwrap_or_else(|e| e));
+        } else if self.ivars().pending_maximize.borrow().is_some() {
+            self.schedule_maximize_poll();
+        }
     }
     fn schedule_open_poll(&self) {
         let _: () = unsafe {
@@ -1101,7 +1224,7 @@ impl Controller {
                 self.ivars().picking.set(false);
                 result
             }
-            Action::Maximize => windows::maximize(self.mtm(), None),
+            Action::Maximize => self.begin_maximize(None, None),
             Action::PairLeft | Action::PairRight => self.pick_pair(action == Action::PairLeft),
             Action::Test => return,
         };
@@ -1123,10 +1246,20 @@ impl Controller {
             match pending.result.try_recv() {
                 Ok(Ok(pid)) => pending.pid = Some(pid),
                 Ok(Err(code)) => {
+                    diagnostics::timing(
+                        diagnostics::Metric::Activation,
+                        pending.started.elapsed(),
+                        false,
+                    );
                     self.status(&format!("Ouverture refusée par macOS (code {code})."));
                     return;
                 }
                 Err(TryRecvError::Disconnected) => {
+                    diagnostics::timing(
+                        diagnostics::Metric::Activation,
+                        pending.started.elapsed(),
+                        false,
+                    );
                     self.status("Réponse d'ouverture interrompue.");
                     return;
                 }
@@ -1149,8 +1282,15 @@ impl Controller {
                     } else {
                         if !windows::trusted() || windows::application_window_ready(&app) {
                             if self.window_permission() {
-                                Some(windows::maximize(self.mtm(), Some(&app)))
+                                let result = self.begin_maximize(Some(&app), Some(pending.started));
+                                self.status(&result.unwrap_or_else(|e| e));
+                                return;
                             } else {
+                                diagnostics::timing(
+                                    diagnostics::Metric::Activation,
+                                    pending.started.elapsed(),
+                                    false,
+                                );
                                 return;
                             }
                         } else {
@@ -1165,6 +1305,11 @@ impl Controller {
             None
         };
         if let Some(result) = result {
+            diagnostics::timing(
+                diagnostics::Metric::Activation,
+                pending.started.elapsed(),
+                result.is_ok(),
+            );
             diagnostics::record(
                 "action.complete",
                 format!(
@@ -1176,6 +1321,11 @@ impl Controller {
             );
             self.status(&result.unwrap_or_else(|e| e));
         } else if pending.started.elapsed() >= Duration::from_secs(3) {
+            diagnostics::timing(
+                diagnostics::Metric::Activation,
+                pending.started.elapsed(),
+                false,
+            );
             self.status(
                 "Ouverture non confirmée après 3 secondes. Réessayez une fois l'application prête.",
             );
@@ -1350,6 +1500,7 @@ impl Controller {
     }
     fn refresh_permission(&self) -> bool {
         let trusted = windows::trusted();
+        self.remember_permissions();
         let previous = self.ivars().last_permission.replace(Some(trusted));
         if previous != Some(trusted) {
             diagnostics::record(
@@ -1432,7 +1583,9 @@ impl Controller {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        diagnostics::report(&format!("macOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\nmouse_scroll={mouse_scroll}\npermission_probe={probe}\nprofiles_count={}",
+        let performance = diagnostics::performance_report();
+        let launch = self.ivars().launch_validation.borrow();
+        diagnostics::report(&format!("performance={performance}\nlaunch_validation={launch}\nmacOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\nmouse_scroll={mouse_scroll}\npermission_probe={probe}\nprofiles_count={}",
             std::env::consts::ARCH, std::process::id(), windows::trusted(), self.ivars().catalog.borrow().profiles.len()))
     }
 
@@ -1711,6 +1864,7 @@ pub fn run() {
             .ivars()
             .trackpad_last_summary
             .replace("Test global arrêté. Aucun geste global validé.".into());
+        controller.remember_launch();
         controller.remember_context();
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         let status_bar = NSStatusBar::systemStatusBar();
@@ -1863,7 +2017,13 @@ pub fn run() {
             );
             let _: () = msg_send![&*controller, performSelector:sel!(openProfiles:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64];
         }
+        if std::env::args().any(|a| a == "--startup-report") {
+            unsafe {
+                let _: () = msg_send![&*controller,performSelector:sel!(startupReport:),withObject:std::ptr::null::<AnyObject>(),afterDelay:2.0f64];
+            }
+        }
         app.run();
+        controller.remember_permissions();
         app.setDelegate(None);
         unsafe {
             center.removeObserver(&controller);

@@ -1,4 +1,4 @@
-# Kigi Windows — raccourcis configurables 0.5.1
+# Kigi Windows — raccourcis configurables 0.5.2
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -49,6 +49,30 @@ avant Kigi : les essayer après enregistrement.
 En cas de conflit, quitter temporairement Hammerspoon puis **Réenregistrer**.
 Son fichier n’est jamais modifié. Les gestes restent liés à Teams/Chrome,
 indépendamment des raccourcis personnalisés.
+
+## Fiabilité P0/P1 — 0.5.2
+
+La maximisation directe et celle demandée après activation d’une app peuvent
+sortir du plein écran natif si l’application expose son bouton Accessibility.
+Kigi presse ce bouton une seule fois, attend la sortie et un rectangle stable,
+puis maximise géométriquement. Attente de transition bornée à 4 s, annulée si
+vous changez d’app. Aucun raccourci clavier synthétique, nouvelle fenêtre ou
+écriture de l’attribut AXFullScreen. En cas de refus du bouton, sortir du plein
+écran manuellement. Les sélecteurs 50/50 continuent de proposer des fenêtres
+ordinaires ; les scénarios automatiques ne sont pas ajoutés.
+
+**Diagnostics → Mémoire, latences et relance…** affiche la RSS actuelle, son
+maximum depuis le lancement, et le p95 des 64 derniers succès par catégorie.
+Les erreurs sont comptées séparément ; zéro succès indique « non mesuré ».
+La géométrie AX exclut dialogues/lancement ; l’activation et la maximisation
+incluent l’attente correspondante. Le rapport copiable contient ces valeurs
+et le dernier état des permissions de la session précédente. Il ne mesure
+ni le CPU au repos, ni la latence physique du trackpad.
+
+Pour vérifier les permissions : remplacer l’app au même emplacement, autoriser
+cette copie, quitter puis relancer sans nouveau remplacement. Comparer le bilan
+de relance. La signature ad hoc n’assure pas la stabilité TCC entre builds ;
+aucune permission n’est accordée ou modifiée par Kigi.
 
 ## Désactiver le scroll horizontal de la souris (0.3.2)
 
@@ -126,7 +150,7 @@ demande, Surveillance de l'entrée.
 Le retour utilisateur 0.4.1 signale une absence de détection dans les logs.
 La réception globale n’est donc pas considérée corrigée. Cette version affiche
 les compteurs en direct, journalise la première réception et arrête le test
-après 12 s sans contact avec `trackpad.no_contacts`. Le test local vérifie le
+après 12 s sans geste reconnu avec `trackpad.trial.complete`. Le test local vérifie le
 même geste horizontal à 10 %, sans lancer d’application. Les diagnostics locaux
 et globaux n’utilisent plus l’ancien geste vertical de coin. Une création de
 tap réussie n’est jamais présentée comme une preuve de réception de contacts.

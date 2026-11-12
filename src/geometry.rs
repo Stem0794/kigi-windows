@@ -122,9 +122,48 @@ pub fn restore_decision(current: Rect, before: Rect, applied: Option<Rect>) -> R
     }
 }
 
+/// Wait for a stable AX rectangle after an asynchronous native transition.
+#[derive(Default)]
+pub struct Settling {
+    last: Option<(Rect, u64)>,
+}
+impl Settling {
+    pub fn reset(&mut self) {
+        self.last = None;
+    }
+    pub fn ready(&mut self, frame: Rect, ms: u64) -> bool {
+        if let Some((previous, since)) = self.last {
+            if frame.approximately(previous) && ms >= since {
+                return ms - since >= 200;
+            }
+        }
+        self.last = Some((frame, ms));
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transition_requires_stability_and_resets_after_movement_or_busy_state() {
+        let a = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 600.0,
+        };
+        let b = Rect { x: 50.0, ..a };
+        let mut settling = Settling::default();
+        assert!(!settling.ready(a, 0));
+        assert!(!settling.ready(a, 100));
+        assert!(!settling.ready(b, 200));
+        assert!(!settling.ready(b, 300));
+        assert!(settling.ready(b, 400));
+        settling.reset();
+        assert!(!settling.ready(b, 500));
+        assert!(settling.ready(b, 700));
+    }
     #[test]
     fn negative_origin_and_vertical_display_conversion() {
         let r = Rect::from_appkit(-1440.0, 120.0, 1440.0, 860.0, 1080.0).right_half();

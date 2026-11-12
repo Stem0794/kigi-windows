@@ -52,8 +52,33 @@ impl CornerProbe {
     }
 }
 
-pub fn no_contacts_after_trial(samples: u64, seconds: u64) -> bool {
-    samples == 0 && seconds >= 12
+#[derive(Default, Clone, Copy)]
+pub struct TrialEvidence {
+    pub events: u64,
+    pub contacts: u64,
+    pub samples: u64,
+    pub began: u64,
+    pub edge_starts: u64,
+    pub recognized: u64,
+}
+impl TrialEvidence {
+    pub fn diagnosis(self) -> &'static str {
+        if self.events == 0 {
+            "Aucun événement global reçu. Testez d’abord en local, puis vérifiez la surveillance de l’entrée."
+        } else if self.contacts == 0 {
+            "Événements reçus sans contacts tactiles. Élargir la zone ne résout pas ce transport."
+        } else if self.samples == 0 {
+            "Contacts reçus, mais aucun échantillon à un seul doigt sans clic. Levez les autres doigts et recommencez."
+        } else if self.began == 0 {
+            "Contacts reçus sans début de contact à un doigt. Levez tous les doigts avant l’essai."
+        } else if self.edge_starts == 0 {
+            "Débuts de contacts reçus hors des bords à 10 %. Essayez le test local pour voir le point de départ."
+        } else if self.recognized == 0 {
+            "Départ dans un bord reçu, mais aucun geste complet. Rejoignez le milieu en 1,5 s, horizontalement, à un doigt."
+        } else {
+            "Au moins un geste global a été observé. La fiabilité et les faux positifs restent à valider sur ce Mac."
+        }
+    }
 }
 
 /// Opt-in horizontal gestures: start within the outermost 10% and reach x=0.5.
@@ -152,11 +177,21 @@ mod tests {
         }
     }
     #[test]
-    fn contact_trial_waits_and_never_reports_empty_after_a_sample() {
-        assert!(!no_contacts_after_trial(0, 11));
-        assert!(no_contacts_after_trial(0, 12));
-        assert!(!no_contacts_after_trial(1, 12));
-        assert!(!no_contacts_after_trial(100, 60));
+    fn trial_distinguishes_transport_phases_zones_and_recognition() {
+        let mut e = TrialEvidence::default();
+        assert!(e.diagnosis().starts_with("Aucun événement"));
+        e.events = 1;
+        assert!(e.diagnosis().contains("sans contacts"));
+        e.contacts = 1;
+        assert!(e.diagnosis().contains("aucun échantillon"));
+        e.samples = 1;
+        assert!(e.diagnosis().contains("sans début"));
+        e.began = 1;
+        assert!(e.diagnosis().contains("hors des bords"));
+        e.edge_starts = 1;
+        assert!(e.diagnosis().contains("aucun geste complet"));
+        e.recognized = 1;
+        assert!(e.diagnosis().contains("fiabilité"));
     }
     #[test]
     fn downward_only_once_and_requires_begin() {

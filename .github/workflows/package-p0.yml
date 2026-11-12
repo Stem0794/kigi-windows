@@ -36,24 +36,38 @@ jobs:
           fi
       - name: Build universal application
         run: bash scripts/bundle.sh universal
-      - name: Verify native settings startup
+      - name: Verify same-bundle relaunch and collect startup RSS
         run: |
           python3 - <<'PYTHON'
-          import subprocess, time
-          app = subprocess.Popen(["dist/Kigi Windows.app/Contents/MacOS/kigi-windows"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          try:
-              time.sleep(4)
-              if app.poll() is not None:
-                  raise RuntimeError("Kigi exited during settings startup: " + app.communicate()[0].decode(errors="replace"))
-              print("Native process stayed alive through settings startup; no input, AX action or screenshot taken.")
-          finally:
-              if app.poll() is None:
-                  app.terminate()
-                  try:
-                      app.wait(timeout=5)
-                  except subprocess.TimeoutExpired:
-                      app.kill()
-                      app.wait()
+          import json, platform, subprocess, time
+          results = []
+          for attempt in range(2):
+              app = subprocess.Popen(["dist/Kigi Windows.app/Contents/MacOS/kigi-windows", "--startup-report"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              try:
+                  time.sleep(4)
+                  if app.poll() is not None:
+                      raise RuntimeError("Kigi exited during startup: " + app.communicate()[0].decode(errors="replace"))
+              finally:
+                  if app.poll() is None:
+                      app.terminate()
+                      try:
+                          app.wait(timeout=5)
+                      except subprocess.TimeoutExpired:
+                          app.kill()
+                          app.wait()
+              output = app.communicate()[0].decode(errors="replace")
+              print(output)
+              rows = [json.loads(line.removeprefix("KIGI_STARTUP ")) for line in output.splitlines() if line.startswith("KIGI_STARTUP ")]
+              assert len(rows) == 1, "Missing native startup evidence"
+              row = rows[0]
+              assert row["window_visible"], "Settings window did not open"
+              assert row["rss_bytes"] > 0 and row["peak_rss_bytes"] > 0
+              results.append(row)
+          assert results[1]["previous_launch_known"], "Second launch did not see the previous session"
+          assert results[0]["accessibility"] == results[1]["accessibility"]
+          assert results[0]["input_access"] == results[1]["input_access"]
+          print("NATIVE_VALIDATION " + json.dumps({"macOS": platform.mac_ver()[0], "machine": platform.machine(), "launches": results}))
+          print("Two same-bundle startups verified; permission flags compared without requesting access. No AX action, input or screenshot. Granted TCC and physical trackpad still require the pilot Mac.")
           PYTHON
       - name: Archive application
         run: |

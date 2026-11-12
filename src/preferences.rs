@@ -584,7 +584,14 @@ impl Preferences {
             sel!(globalProbe:),
             rect(315.0, 210.0, 285.0, 36.0),
         );
-        label(mtm,&diagnostics,"Le diagnostic global remplace l'écoute active des gestes. Relancez les gestes depuis leur onglet après l'essai.",rect(22.0,149.0,576.0,45.0));
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Mémoire, latences et relance…",
+            sel!(performanceReport:),
+            rect(18.0, 149.0, 582.0, 36.0),
+        );
         button(
             mtm,
             &diagnostics,

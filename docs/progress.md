@@ -541,3 +541,34 @@ réussi sur 0579d6b564855ae9ae2497a9b215d24372549312 : 19 tests, construction
 universelle, signature/plist/lipo et démarrage natif 4 s sans erreur signalée.
 SHA256 artefact, CRC ZIP, version 0.5.1/build16 et Mach-O universel vérifiés.
 La détection physique au nouveau seuil reste à essayer sur le Mac utilisateur.
+
+## 0.5.2 — Retour aux critères P0/P1
+
+Après revue, demande explicite de traiter P0 et P1. Bilan global de 12 s :
+événements/contacts/échantillons à un doigt, Began/Moved, débuts dans les bords,
+gestes et échecs de conversion. Diagnostic de l’étape manquante, arrêt si aucun
+geste reconnu, aucune coordonnée/identité exportée. Le seuil 10 % est conservé.
+Un geste reconnu n’est pas présenté comme preuve de fiabilité ni de GO général.
+
+Comparaison locale entre relances de cette copie (version, AX, surveillance),
+écriture uniquement des derniers états, aucun changement de TCC. Test natif
+ciblé de deux lancements successifs : fenêtre visible, RSS propre au processus
+et flags de permissions comparés. Sans gestes/AX sur app tierce en CI.
+
+P1 : requête de maximisation conserve la fenêtre ciblée ; déminimisation et
+sortie du plein écran demandée via AXFullScreenButton/AXPress public, état
+système public currentSystemPresentationOptions. Pas d’écriture AXFullScreen
+ni de frappe synthétique. Attente asynchrone bornée à 4 s, rectangle stable
+200 ms après transition, annulation au changement d’app/commande/veille. Les
+sélecteurs/scènes conservent leurs limites pour fenêtres normales.
+
+RSS actuelle via proc_pidinfo du propre PID ; pic RSS via getrusage Darwin
+(octets). p95 borné aux 64 derniers succès par catégorie, erreurs séparées,
+aucun succès = non mesuré. Géométrie AX, activation, maximisation mesurées
+séparément sans inclure le temps de choix utilisateur dans la géométrie. libc
+était déjà dans le graphe ; dépendance directe pour ses bindings système.
+Pas de benchmark CPU ni résultat p95 inventé. Trois tests ciblés : p95/bornes/
+échecs, attente de stabilisation et diagnostic des étapes du trackpad.
+
+P0 trackpad et P1 plein écran nécessitent encore le Mac pilote ; rien n’est
+déclaré clos à partir de la seule compilation. Validation finale à consigner.

@@ -84,3 +84,13 @@ Aucune API multitouch privée ni P5 autorisés par cette demande.
 L’utilisateur demande d’essayer 10 % par bord. Appliquer le même seuil aux
 gestes actifs et aux diagnostics local/global, sans changer l’arrivée au
 milieu ni les autres critères. Ne pas conclure que le transport est réparé.
+
+## Retour sur P0/P1 — 0.5.2
+
+L’utilisateur demande de traiter P0 et P1 après revue du plan. Fermer les écarts
+réalisables : bilan des essais trackpad, permissions entre relances, mesures
+RSS/p95 réelles et maximisation après sortie du plein écran via bouton AX
+public. Ne pas ajouter P3/P4/P5 ni d’API multitouch privée. Les validations
+physiques, permissions accordées et performances du Mac pilote restent à
+relever ; deux lancements en CI avec permission refusée ne prouvent pas un
+maintien des autorisations accordées.

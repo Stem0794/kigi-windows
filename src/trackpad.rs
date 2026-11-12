@@ -1,7 +1,7 @@
 //! Opt-in passive contact delivery. Queue recognized actions; never run AX in the tap.
 use crate::{
     diagnostics,
-    gestures::{Contact, Edge, EdgeProbe},
+    gestures::{Contact, Edge, EdgeProbe, TrialEvidence},
 };
 use objc2::{msg_send, rc::Retained};
 use objc2_app_kit::{NSEvent, NSEventType, NSTouchPhase};
@@ -39,6 +39,11 @@ struct Stats {
     with_touches: u64,
     samples: u64,
     recognized: u64,
+    began: u64,
+    moved: u64,
+    edge_starts: u64,
+    conversion_failed: u64,
+    wrong_type: u64,
     disabled: bool,
     started: Option<Instant>,
     edges: EdgeProbe,
@@ -106,6 +111,16 @@ impl Tap {
             })
         }
     }
+    pub fn evidence(&self) -> TrialEvidence {
+        TrialEvidence {
+            events: self.stats.events,
+            contacts: self.stats.with_touches,
+            samples: self.stats.samples,
+            began: self.stats.began,
+            edge_starts: self.stats.edge_starts,
+            recognized: self.stats.recognized,
+        }
+    }
     pub fn contacts(&self) -> u64 {
         self.stats.with_touches
     }
@@ -131,14 +146,8 @@ impl Tap {
         )
     }
     pub fn report(&self) -> String {
-        if self.stats.actions {
-            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Événements : {} ; avec contacts : {} ; échantillons : {}. Tap interrompu : {}.\nGauche 10 % vers milieu → Teams ; droite 10 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle dans Gestes et souris. Résultats propres à ce Mac.",
-                self.stats.left, self.stats.right, self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.disabled);
-        }
-        format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} geste(s) bords 10 % → milieu. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
-            self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.recognized,
-            self.stats.disabled,
-            if self.stats.with_touches == 0 { "Aucun contact reçu : geste global NON VALIDÉ. Utilisez le test local pour vérifier le trackpad." } else if self.stats.samples == 0 { "Contacts reçus, mais aucun échantillon valide à un seul doigt." } else { "Des contacts ont été reçus : validation terrain encore nécessaire (phases, veille, Intel/ARM, faux positifs)." })
+        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, arrivée au milieu, durée 1,5 s. Aucune coordonnée ni identité conservée dans ce bilan.",
+            self.stats.events,self.stats.with_touches,self.stats.samples,self.stats.began,self.stats.moved,self.stats.edge_starts,self.stats.left,self.stats.right,self.stats.conversion_failed,self.stats.wrong_type,self.stats.disabled,self.stats.actions,self.evidence().diagnosis())
     }
 }
 impl Drop for Tap {
@@ -175,10 +184,12 @@ unsafe extern "C" fn callback(
     }
     stats.events += 1;
     let Some(ns) = NSEvent::eventWithCGEvent(&*event) else {
+        stats.conversion_failed += 1;
         return event;
     };
     // Never ask a mouse/scroll event for touches (AppKit can raise an exception).
     if ns.r#type() != NSEventType::Gesture {
+        stats.wrong_type += 1;
         return event;
     }
     let touches = ns.allTouches();
@@ -228,8 +239,13 @@ unsafe extern "C" fn callback(
         };
         stats.samples += 1;
         if phase == NSTouchPhase::Began {
+            stats.began += 1;
+            if (0.0..=0.10).contains(&sample.x) || (0.90..=1.0).contains(&sample.x) {
+                stats.edge_starts += 1;
+            }
             stats.edges.begin(sample, fingers);
         } else if phase == NSTouchPhase::Moved {
+            stats.moved += 1;
             if let Some(edge) = stats.edges.moved(sample, fingers) {
                 stats.recognized += 1;
                 match edge {

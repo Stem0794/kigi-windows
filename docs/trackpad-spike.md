@@ -112,3 +112,13 @@ Ces limites ne suffisent pas à expliquer les anciens compteurs positifs.
 Pas d’ajout d’un moniteur global concurrent ni d’API privée sans autorisation.
 Prochain essai : test local puis test global pendant 12 s et copie du rapport.
 Geste global actuel : NON RÉSOLU, résultat terrain encore requis.
+
+## 0.5.2 — Décision instrumentée de l’essai
+
+Le bilan est produit après 12 s pour tous les cas, pas seulement zéro contact.
+Il distingue zéro événement, événements sans contacts, contacts sans sample à
+un doigt, absence de Began, départs hors bords et geste incomplet. Une conversion
+CG→NSEvent impossible ou un type différent est compté. Aucun début n’est inventé
+à partir d’un Moved. Un échec de reconnaissance arrête l’essai ; une détection
+unique autorise seulement la poursuite du pilote, pas une conclusion de GO.
+Toujours pas de nouveau résultat terrain depuis le retour utilisateur négatif.

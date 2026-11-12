@@ -2,10 +2,12 @@
 use crate::{
     config::{SavedLayout, SavedWindow},
     diagnostics,
-    geometry::{restore_decision, NormalizedRect, Rect, RestoreDecision},
+    geometry::{restore_decision, NormalizedRect, Rect, RestoreDecision, Settling},
 };
-use objc2::MainThreadMarker;
-use objc2_app_kit::{NSRunningApplication, NSScreen, NSWorkspace};
+use objc2::{MainThreadMarker, Message};
+use objc2_app_kit::{
+    NSApplication, NSApplicationPresentationOptions, NSRunningApplication, NSScreen, NSWorkspace,
+};
 use objc2_foundation::NSString;
 use std::{
     ffi::c_void,
@@ -130,6 +132,18 @@ impl Element {
         Ok(())
     }
     fn set_frame(&self, frame: Rect) -> Result<Rect, String> {
+        let started = Instant::now();
+        let result = self.set_frame_inner(frame);
+        diagnostics::timing(
+            diagnostics::Metric::Geometry,
+            started.elapsed(),
+            result
+                .as_ref()
+                .is_ok_and(|actual| actual.approximately(frame)),
+        );
+        result
+    }
+    fn set_frame_inner(&self, frame: Rect) -> Result<Rect, String> {
         require_permission()?;
         self.ensure_normal()?;
         diagnostics::record(
@@ -460,25 +474,99 @@ fn preferred_window(app: &NSRunningApplication) -> Result<Element, String> {
 pub fn application_window_ready(app: &NSRunningApplication) -> bool {
     preferred_window(app).is_ok()
 }
-pub fn maximize(
-    mtm: MainThreadMarker,
-    app: Option<&NSRunningApplication>,
-) -> Result<String, String> {
-    require_permission()?;
-    let foreground;
-    let app = if let Some(app) = app {
-        app
-    } else {
-        foreground = frontmost()?;
-        &foreground
-    };
-    let window = preferred_window(app)?;
-    window.unminimize()?;
-    window.ensure_normal()?;
-    let target = visible_frame(mtm, window.frame()?)?;
-    let actual = window.set_frame(target)?;
-    window.raise()?;
-    Ok(result_message(actual, target, "maximisée"))
+pub struct MaximizeRequest {
+    window: Element,
+    app: objc2::rc::Retained<NSRunningApplication>,
+    started: Instant,
+    transitioned: bool,
+    settling: Settling,
+}
+fn active_fullscreen(mtm: MainThreadMarker) -> bool {
+    NSApplication::sharedApplication(mtm)
+        .currentSystemPresentationOptions()
+        .contains(NSApplicationPresentationOptions::FullScreen)
+}
+impl MaximizeRequest {
+    pub fn start(
+        mtm: MainThreadMarker,
+        app: Option<&NSRunningApplication>,
+    ) -> Result<Self, String> {
+        require_permission()?;
+        let app = if let Some(app) = app {
+            app.retain()
+        } else {
+            frontmost()?
+        };
+        if !app.isActive() {
+            return Err("L’application n’est plus active : placement annulé.".into());
+        }
+        let window = preferred_window(&app)?;
+        let minimized = window
+            .attribute("AXMinimized")
+            .is_ok_and(|v| unsafe { CFBooleanGetValue(v.0) != 0 });
+        window.unminimize()?;
+        let fullscreen = active_fullscreen(mtm);
+        if fullscreen {
+            // Public system presentation state + public AX button/action. Never
+            // toggle blindly or write the undocumented AXFullScreen attribute.
+            let button=window.attribute("AXFullScreenButton").map_err(|_|"Cette app ne fournit pas de bouton plein écran accessible. Quittez le plein écran manuellement.")?;
+            let press = NSString::from_str("AXPress");
+            check(unsafe { AXUIElementPerformAction(button.0, name_ref(&press)) })?;
+            diagnostics::record("window.fullscreen.exit_requested", "public_button=true");
+        }
+        Ok(Self {
+            window,
+            app,
+            started: Instant::now(),
+            transitioned: minimized || fullscreen,
+            settling: Settling::default(),
+        })
+    }
+    pub fn poll(&mut self, mtm: MainThreadMarker) -> Result<Option<String>, String> {
+        require_permission()?;
+        if self.app.isTerminated() || !self.app.isActive() {
+            return Err("Placement annulé : la fenêtre cible a quitté le premier plan.".into());
+        }
+        if self.started.elapsed() >= Duration::from_secs(4) {
+            return Err("La transition de fenêtre n’est pas terminée après 4 s. Aucun placement supplémentaire demandé ; réessayez après l’animation.".into());
+        }
+        if active_fullscreen(mtm) {
+            self.settling.reset();
+            return Ok(None);
+        }
+        if self
+            .window
+            .attribute("AXMinimized")
+            .is_ok_and(|v| unsafe { CFBooleanGetValue(v.0) != 0 })
+        {
+            self.settling.reset();
+            return Ok(None);
+        }
+        let frame = self.window.frame()?;
+        if self.transitioned
+            && !self
+                .settling
+                .ready(frame, self.started.elapsed().as_millis() as u64)
+        {
+            return Ok(None);
+        }
+        if let Ok(focused) = Element::app(self.app.processIdentifier()).attribute("AXFocusedWindow")
+        {
+            if focused.is_standard() && unsafe { CFEqual(focused.0, self.window.0) } == 0 {
+                return Err(
+                    "Placement annulé : une autre fenêtre de cette application est devenue active."
+                        .into(),
+                );
+            }
+        }
+        let target = visible_frame(mtm, frame)?;
+        let actual = self.window.set_frame(target)?;
+        self.window.raise()?;
+        if !actual.approximately(target) {
+            return Err(result_message(actual, target, "maximisée"));
+        }
+        Ok(Some(result_message(actual, target, "maximisée")))
+    }
 }
 
 /// Titles exist only in memory for this explicit picker; never diagnostic logs.
