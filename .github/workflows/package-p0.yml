@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
