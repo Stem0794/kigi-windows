@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "settings": {
+    "launch_at_login": false,
+    "automations_enabled": true,
+    "trackpad_gestures_enabled": false,
+    "respect_manual_window_movements": true,
+    "diagnostics_enabled": false
+  },
+  "actions": [
+    { "id": "focus_teams", "type": "focus_app", "bundle_id": "com.microsoft.teams2", "launch_if_missing": true },
+    { "id": "focus_browser", "type": "activate_workspace", "workspace_id": "work" },
+    { "id": "open_chatgpt", "type": "open_url", "url": "https://chatgpt.com/", "browser_bundle_id": "com.google.Chrome" },
+    { "id": "right_half", "type": "resize_active_window", "target": { "x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0 } },
+    { "id": "maximize", "type": "resize_active_window", "target": { "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0 } },
+    { "id": "workspace_meeting", "type": "activate_workspace", "workspace_id": "meeting-browser" },
+    { "id": "restore_previous", "type": "restore_previous_layout" }
+  ],
+  "hotkeys": [
+    { "id": "hk-teams", "key": "Alt+T", "action_id": "focus_teams", "enabled": true },
+    { "id": "hk-browser", "key": "Alt+B", "action_id": "focus_browser", "enabled": true },
+    { "id": "hk-chatgpt", "key": "Alt+C", "action_id": "open_chatgpt", "enabled": true },
+    { "id": "hk-right-half", "key": "Super+Shift+ArrowDown", "action_id": "right_half", "enabled": true },
+    { "id": "hk-maximize", "key": "Super+Shift+ArrowUp", "action_id": "maximize", "enabled": true }
+  ],
+  "workspaces": [
+    {
+      "id": "work",
+      "name": "Travail",
+      "is_temporary": false,
+      "restore_strategy": "none",
+      "steps": [
+        { "target": { "bundle_id": "com.google.Chrome", "window_preference": "focused" }, "on_missing_app": "launch", "on_missing_window": "wait", "display": "primary", "geometry": { "x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0 }, "focus_at_end": true }
+      ]
+    },
+    {
+      "id": "meeting-browser",
+      "name": "Réunion + navigateur",
+      "is_temporary": true,
+      "restore_strategy": "snapshot",
+      "steps": [
+        { "target": { "bundle_id": "com.microsoft.teams2", "window_preference": "focused" }, "on_missing_app": "launch", "on_missing_window": "wait", "display": "primary", "geometry": { "x": 0.0, "y": 0.0, "w": 0.5, "h": 1.0 }, "focus_at_end": false },
+        { "target": { "bundle_id": "com.google.Chrome", "window_preference": "focused" }, "on_missing_app": "launch", "on_missing_window": "wait", "display": "primary", "geometry": { "x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0 }, "focus_at_end": true }
+      ]
+    },
+    {
+      "id": "meeting-chat",
+      "name": "Réunion + chat Teams",
+      "is_temporary": true,
+      "restore_strategy": "snapshot",
+      "steps": [
+        { "target": { "bundle_id": "com.microsoft.teams2", "window_preference": "meeting_window" }, "on_missing_app": "launch", "on_missing_window": "error", "display": "primary", "geometry": { "x": 0.0, "y": 0.0, "w": 0.5, "h": 1.0 }, "focus_at_end": false },
+        { "target": { "bundle_id": "com.microsoft.teams2", "window_preference": "popped_out_chat" }, "on_missing_app": "launch", "on_missing_window": "error", "display": "primary", "geometry": { "x": 0.5, "y": 0.0, "w": 0.5, "h": 1.0 }, "focus_at_end": true }
+      ]
+    }
+  ],
+  "gestures": [
+    {
+      "id": "swipe_top_left_down",
+      "enabled": false,
+      "source": "trackpad",
+      "fingers": 1,
+      "start_zone": { "x_min": 0.0, "x_max": 0.2, "y_min": 0.8, "y_max": 1.0 },
+      "direction": "down",
+      "min_distance": 0.22,
+      "max_perpendicular_drift": 0.12,
+      "max_duration_ms": 1500,
+      "cooldown_ms": 1000,
+      "trigger_policy": "once_per_touch_sequence",
+      "action_id": "workspace_meeting"
+    },
+    {
+      "id": "swipe_top_right_down",
+      "enabled": false,
+      "source": "trackpad",
+      "fingers": 1,
+      "start_zone": { "x_min": 0.8, "x_max": 1.0, "y_min": 0.8, "y_max": 1.0 },
+      "direction": "down",
+      "min_distance": 0.22,
+      "max_perpendicular_drift": 0.12,
+      "max_duration_ms": 1500,
+      "cooldown_ms": 1000,
+      "trigger_policy": "once_per_touch_sequence",
+      "action_id": "focus_browser"
+    }
+  ],
+  "rules": []
+}
