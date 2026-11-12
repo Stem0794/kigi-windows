@@ -3,6 +3,7 @@ use crate::{
     applications, config, diagnostics,
     gestures::{Contact, CornerProbe, Edge},
     hotkey::Hotkeys,
+    mouse_scroll::MouseScrollTap,
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -15,7 +16,7 @@ use objc2::{
 use objc2_app_kit::*;
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSBundle, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo,
-    NSRect, NSSize, NSString,
+    NSRect, NSSize, NSString, NSUserDefaults,
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -67,6 +68,10 @@ struct State {
     picking: Cell<bool>,
     menu_open: Cell<bool>,
     gesture_item: OnceCell<Retained<NSMenuItem>>,
+    mouse_scroll_item: OnceCell<Retained<NSMenuItem>>,
+    mouse_scroll_requested: Cell<bool>,
+    mouse_scroll_filter: RefCell<Option<MouseScrollTap>>,
+    mouse_scroll_last: RefCell<String>,
     queued_gesture: Cell<Option<Edge>>,
     status: OnceCell<Retained<NSMenuItem>>,
     hotkey_status: OnceCell<Retained<NSMenuItem>>,
@@ -368,12 +373,50 @@ define_class!(
                 self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Réactivez-la depuis le menu.");
             }
         }
+        #[unsafe(method(toggleMouseHorizontal:))]
+        fn toggle_mouse_horizontal(&self, _: Option<&AnyObject>) {
+            if self.ivars().mouse_scroll_requested.get() {
+                self.ivars().mouse_scroll_requested.set(false);
+                self.stop_mouse_scroll();
+                NSUserDefaults::standardUserDefaults().setBool_forKey(false, ns_string!("disableMouseHorizontalScroll"));
+                self.status("Défilement horizontal des souris rétabli.");
+            } else {
+                if !self.window_permission() { return; }
+                match self.start_mouse_scroll() {
+                    Ok(()) => {
+                        self.ivars().mouse_scroll_requested.set(true);
+                        NSUserDefaults::standardUserDefaults().setBool_forKey(true, ns_string!("disableMouseHorizontalScroll"));
+                        self.status("Blocage horizontal souris activé. Le vertical est conservé ; testez aussi le trackpad.");
+                    },
+                    Err(e) => self.status(&e),
+                }
+            }
+            self.update_mouse_scroll_label();
+        }
+        #[unsafe(method(mouseFilterInterrupted:))]
+        fn mouse_filter_interrupted(&self, _: Option<&AnyObject>) {
+            self.stop_mouse_scroll();
+            self.status("Filtre souris interrompu par macOS. Désactivez puis réactivez l'option pour réessayer.");
+        }
+        #[unsafe(method(suspendInputs:))]
+        fn suspend_inputs(&self, _: Option<&AnyObject>) {
+            self.pause_gestures(sel!(pauseGestures:), None);
+            self.stop_mouse_scroll();
+        }
+        #[unsafe(method(resumeMouseScroll:))]
+        fn resume_mouse_scroll(&self, _: Option<&AnyObject>) {
+            if self.ivars().mouse_scroll_requested.get() && !self.mouse_scroll_active() {
+                if let Err(e) = self.start_mouse_scroll() { self.status(&e); }
+                self.update_mouse_scroll_label();
+            }
+        }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
             self.cancel_permission_poll();
             self.cancel_open();
             diagnostics::record("application.quit", "requested=true");
             self.stop_tap();
+            self.stop_mouse_scroll();
             NSApplication::sharedApplication(self.mtm()).stop(None);
         }
     }
@@ -384,6 +427,7 @@ define_class!(
             self.cancel_gesture_dispatch();
             self.refresh_permission();
             self.update_gesture_label();
+            self.update_mouse_scroll_label();
         }
         #[unsafe(method(menuDidClose:))]
         fn menu_did_close(&self, _: &NSMenu) { self.ivars().menu_open.set(false); }
@@ -393,6 +437,59 @@ impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
+    }
+    fn mouse_scroll_active(&self) -> bool {
+        self.ivars()
+            .mouse_scroll_filter
+            .borrow()
+            .as_ref()
+            .is_some_and(MouseScrollTap::active)
+    }
+    fn update_mouse_scroll_label(&self) {
+        if let Some(item) = self.ivars().mouse_scroll_item.get() {
+            let requested = self.ivars().mouse_scroll_requested.get();
+            item.setState(if requested {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+            item.setTitle(&NSString::from_str(if self.mouse_scroll_active() {
+                "Blocage horizontal souris : actif — désactiver"
+            } else if requested {
+                "Blocage horizontal souris : inactif — désactiver"
+            } else {
+                "Bloquer le scroll horizontal des souris (Magic Mouse…)"
+            }));
+        }
+    }
+    fn stop_mouse_scroll(&self) {
+        let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(mouseFilterInterrupted:), object:std::ptr::null::<AnyObject>()]
+        };
+        let filter = self.ivars().mouse_scroll_filter.borrow_mut().take();
+        if let Some(filter) = filter {
+            let report = filter.report();
+            diagnostics::record("mouse_scroll.stop", &report);
+            self.ivars().mouse_scroll_last.replace(report);
+            drop(filter);
+        }
+        self.update_mouse_scroll_label();
+    }
+    fn start_mouse_scroll(&self) -> Result<(), String> {
+        if self.mouse_scroll_active() {
+            return Ok(());
+        }
+        self.stop_mouse_scroll();
+        if !windows::trusted() {
+            return Err("Filtre souris inactif : autorisez l'Accessibilité de la copie actuelle de Kigi, puis réactivez l'option.".into());
+        }
+        let filter = MouseScrollTap::start(self.mtm())?;
+        diagnostics::record(
+            "mouse_scroll.start",
+            "horizontal_only=true classification=public_phases scope=all_apps no_vendor_id=true",
+        );
+        self.ivars().mouse_scroll_filter.replace(Some(filter));
+        Ok(())
     }
     fn gestures_active(&self) -> bool {
         self.ivars()
@@ -814,6 +911,18 @@ impl Controller {
             .as_ref()
             .map(|t| t.report())
             .unwrap_or_else(|| "diagnostic global arrêté".into());
+        let mouse_scroll = self
+            .ivars()
+            .mouse_scroll_filter
+            .borrow()
+            .as_ref()
+            .map(MouseScrollTap::report)
+            .unwrap_or_else(|| {
+                format!(
+                    "inactive; last_session=[{}]",
+                    self.ivars().mouse_scroll_last.borrow()
+                )
+            });
         let probe = windows::permission_probe();
         let peers = other_instances().len();
         let translocated = executable.contains("/AppTranslocation/");
@@ -822,7 +931,7 @@ impl Controller {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        diagnostics::report(&format!("macOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\npermission_probe={probe}",
+        diagnostics::report(&format!("macOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\nmouse_scroll={mouse_scroll}\npermission_probe={probe}",
             std::env::consts::ARCH, std::process::id(), windows::trusted()))
     }
 
@@ -998,6 +1107,15 @@ pub fn queue_gesture(edge: Edge) {
                     msg_send![&**controller, performSelector:sel!(gestureAction:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64]
                 };
             }
+        }
+    });
+}
+pub fn queue_mouse_filter_interrupted() {
+    CONTROLLER.with(|slot| {
+        if let Some(controller) = slot.borrow().as_ref() {
+            let _: () = unsafe {
+                msg_send![&**controller, performSelector:sel!(mouseFilterInterrupted:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64]
+            };
         }
     });
 }
@@ -1179,6 +1297,13 @@ pub fn run() {
             "Afficher la configuration dans Finder",
             sel!(revealConfig:),
         );
+        let mouse_scroll = menu_action(
+            &menu,
+            &controller,
+            "Bloquer le scroll horizontal des souris (Magic Mouse…)",
+            sel!(toggleMouseHorizontal:),
+        );
+        controller.ivars().mouse_scroll_item.set(mouse_scroll).ok();
         let gestures = menu_action(
             &menu,
             &controller,
@@ -1212,6 +1337,16 @@ pub fn run() {
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
         controller.ivars().personal_enabled.set(true);
         controller.register_hotkeys();
+        controller.ivars().mouse_scroll_requested.set(
+            NSUserDefaults::standardUserDefaults()
+                .boolForKey(ns_string!("disableMouseHorizontalScroll")),
+        );
+        if controller.ivars().mouse_scroll_requested.get() {
+            if let Err(e) = controller.start_mouse_scroll() {
+                controller.status(&e);
+            }
+        }
+        controller.update_mouse_scroll_label();
         let center = NSWorkspace::sharedWorkspace().notificationCenter();
         unsafe {
             for name in [
@@ -1221,7 +1356,21 @@ pub fn run() {
             ] {
                 center.addObserver_selector_name_object(
                     &controller,
-                    sel!(pauseGestures:),
+                    sel!(suspendInputs:),
+                    Some(name),
+                    None,
+                );
+            }
+        }
+        unsafe {
+            for name in [
+                NSWorkspaceDidWakeNotification,
+                NSWorkspaceScreensDidWakeNotification,
+                NSWorkspaceSessionDidBecomeActiveNotification,
+            ] {
+                center.addObserver_selector_name_object(
+                    &controller,
+                    sel!(resumeMouseScroll:),
                     Some(name),
                     None,
                 );
@@ -1238,6 +1387,7 @@ pub fn run() {
         controller.cancel_open();
         CONTROLLER.with(|c| c.borrow_mut().take());
         controller.stop_tap();
+        controller.stop_mouse_scroll();
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
         }

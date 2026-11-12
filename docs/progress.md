@@ -380,3 +380,33 @@ package : a10d60ae26bb2a7d4d455ed85541f396e84921d1. Artefact téléchargé et
 SHA256 vérifié, ZIP applicatif CRC vérifié, Info.plist 0.3.1/build11 et Mach-O
 Intel/ARM relus. ZIP 576485 octets. Capture/Finder/redémarrage/placement et
 restauration n'ont pas été exécutés interactivement ici : essai Mac nécessaire.
+
+## 2026-11-12 — Option souris 0.3.2
+
+Demande explicite de désactiver en option le scroll horizontal des souris Apple.
+Implémentation native opt-in, préférence NSUserDefaults séparée du JSON de
+scènes. Tap session modifiable, masque ScrollWheel seulement, indépendant du
+tap Gesture passif. Aucun processus, crate, API privée ou boucle au repos ajouté.
+Les champs publics horizontaux ligne/fixe/pixel sont annulés, le vertical,
+profondeur, phases et modificateurs sont préservés. Les événements purement
+horizontaux sans frontière de séquence sont supprimés sans réémission.
+
+MayBegin public permet de préserver le trackpad, Magic Mouse n'émettant pas ce
+préambule selon Apple. L'inertie suit uniquement une séquence connue récente ;
+inconnus, phases manquantes et séquences périmées passent. Marqueur MayBegin
+conservé si les doigts restent posés longtemps avant de scroller. Ce n'est pas
+une identification de marque : d'autres souris compatibles sont aussi filtrées,
+et les usages simultanés/événements réécrits restent ambigus. Option pilote.
+
+Activation explicite et reprise au lancement/retour de session seulement si
+préférence active et permission AX déjà accordée, sinon état inactif visible.
+Veille retire le filtre ; tap interrompu laisse passer et demande une relance
+manuelle par l'option. Arrêt Kigi/désactivation libèrent port/source/context.
+Aucune action AX/I/O ou log de déplacement dans le callback. Compteurs
+structurels exportables, ni coordonnées ni identifiants de matériel.
+
+Tests ciblés : trackpad/Mouse/inertie, séquences incomplètes/périmées et marqueur
+trackpad après repos. Test natif CG : les trois axes X à zéro avec Y/Z et phases
+inchangés, sans installer un tap ni poster d'événements. Fonctionnement matériel
+Magic Mouse/Minecraft, préférences natives et reprise après veille à confirmer
+sur le Mac pilote. Les scènes et gestes 5 % sont conservés.

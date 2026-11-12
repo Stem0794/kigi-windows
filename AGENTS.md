@@ -45,3 +45,12 @@ de poursuivre depuis GitHub. Conserver ces gestes et avancer dans P3 : capture
 persistante d'une disposition personnelle de deux fenêtres sur un même écran,
 JSON versionné/atomique, restauration fiable. Ne pas activer de détection Teams
 ni développer l'éditeur complet P4 dans cette sous-étape.
+
+## Option souris demandée — 0.3.2
+
+L'utilisateur demande explicitement une option de désactivation du scroll
+horizontal des souris Apple. Filtre natif ScrollWheel activable/mémorisable,
+distinction conservatrice par phases publiques et passage des inconnus. Ne pas
+prétendre identifier la marque avec CGEvent, ne pas utiliser d'API privée, ne
+pas affecter le tap passif des gestes. Valider Magic Mouse/trackpad sur matériel
+avant toute garantie ; pas de fonctionnalités de remappage supplémentaires.

@@ -1,4 +1,4 @@
-# Kigi Windows — P3 dispositions enregistrées 0.3.1
+# Kigi Windows — 0.3.2
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -25,6 +25,52 @@ indépendant ; un conflit ne bloque pas les autres touches. Si nécessaire,
 quitter temporairement Hammerspoon puis **Réenregistrer les raccourcis** depuis
 Kigi. Son fichier n'est jamais modifié. Le menu propose aussi toutes les actions
 et la suspension des raccourcis personnels, pour la session.
+
+## Désactiver le scroll horizontal de la souris (0.3.2)
+
+Choisir **Kigi → Bloquer le scroll horizontal des souris (Magic Mouse…)**.
+Option désactivée par défaut, mémorisée via les préférences natives macOS.
+Elle agit dans toutes les applications pendant que Kigi tourne. Décocher
+l'option ou quitter Kigi rétablit immédiatement le défilement normal.
+
+Le filtre annule les trois représentations publiques de l'axe horizontal des
+événements reconnus comme souris ; il conserve les axes vertical/profondeur,
+les modificateurs et les limites des séquences. Un événement exclusivement
+horizontal sans rôle de début/fin est supprimé, pour éviter les callbacks
+parasites dans les jeux. Il ne réémet aucun événement synthétique.
+
+La distinction souris/trackpad utilise les phases publiques : MayBegin marque
+la préparation d'un scroll de trackpad, contrairement à la Magic Mouse.
+Les événements du trackpad et leur inertie sont laissés passer. Les séquences
+incomplètes ou incertaines sont aussi laissées passer. Un doigt posé longtemps
+sur le trackpad ne fait pas expirer son marqueur préalable. Aucun périphérique
+n'est identifié par marque/numéro de série : d'autres souris compatibles sont
+également concernées. Les outils qui réécrivent les phases ou l'utilisation
+simultanée de plusieurs dispositifs peuvent rendre la classification ambiguë.
+Cela reste une option pilote à vérifier avec la Magic Mouse et le trackpad réels.
+
+Un tap modifiable, limité aux événements ScrollWheel, est créé uniquement quand
+l'option est demandée. Accessibilité est nécessaire. Il est indépendant du tap
+passif des gestes à 5 % ; aucun clavier/clic/mouvement de pointeur n'est surveillé.
+En cas d'interruption par macOS, les événements passent et le menu indique le
+filtre inactif ; désactiver/réactiver l'option pour le relancer. Après veille/
+retour de session, un seul essai de reprise est fait à chaque notification
+pertinente si la préférence était active, sans nouvelle demande d'autorisation
+ni polling au repos. Une permission absente laisse le filtre inactif.
+
+Les logs exportables ajoutent uniquement des compteurs : souris, trackpad,
+inconnus, horizontaux filtrés et événements supprimés. Aucune valeur de
+mouvement, frappe, cible d'application ou identifiant de souris n'est enregistré.
+
+Essai conseillé : activer, tester horizontal/vertical/diagonal dans Minecraft
+et une page défilante, puis vérifier le scroll horizontal à deux doigts et son
+inertie sur le trackpad. Désactiver pour confirmer le retour immédiat, puis
+relancer Kigi pour vérifier la préférence. Le test natif de géométrie CG ne
+remplace pas cet essai matériel.
+
+Sources API : [NSEvent.phase](https://developer.apple.com/documentation/appkit/nsevent/phase-swift.property),
+[NSEvent.momentumPhase](https://developer.apple.com/documentation/appkit/nsevent/momentumphase),
+[Apple Event Handling Guide](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/HandlingTouchEvents/HandlingTouchEvents.html).
 
 ## ChatGPT : onglet existant
 
