@@ -193,3 +193,10 @@ géométrie finale toujours relue et snapshot conservé si résultat partiel.
 Pas de nouveau test simulant macOS : les six tests existants et la compilation
 seront exécutés ; essai fonctionnel requis sur le Mac : 100 % / droite / 100 %
 avec deux appuis. Le geste et ses seuils ne sont pas modifiés. P0 uniquement.
+
+Validation 0.0.6 : fmt/check, 4 tests hôte et 6 tests sur runner macOS Intel
+réussis ; Release Intel/ARM, signature ad hoc/plist/lipo et intégrité ZIP
+vérifiés. [Run 43259628603](https://github.com/Stem0794/kigi-windows/actions/runs/43259628603),
+source du package : 7533eeb39f227f513d92aa7caabca8e2222629cd.
+L'efficacité du nouvel ordre contre la restauration partielle reste à confirmer
+sur le Mac utilisateur ; aucun test unitaire ne simule les contraintes AX.
