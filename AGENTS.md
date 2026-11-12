@@ -1,0 +1,20 @@
+# Consignes Codex — `kigi-windows`
+
+**Dépôt unique :** https://github.com/Stem0794/kigi-windows
+**Cahier des charges :** lire `HANDOVER_CODEX.md`. Le JSON dans `examples/default-config.json` est indicatif, pas une fonctionnalité déjà implémentée.
+
+## Règles non négociables
+
+- **Travaille dans ce dépôt existant uniquement.** Inspecte ses fichiers et son historique avant de modifier. Ne crée pas de dépôt concurrent et n'initialise pas de code hors du répertoire `kigi-windows`.
+- **KISS / pas d'overengineering.** Un seul crate Rust pour commencer ; quelques modules, du code direct, le minimum de dépendances. N'introduis aucun framework interne, abstractions génériques, microservices, daemon, base de données ou système de plugins sans besoin réel démontré.
+- **Pas de 10 000 smoke tests.** Ne construis pas de suite E2E ou CI lourde. Lance `cargo fmt --check`, `cargo check` et les tests utiles après changement significatif ; ajoute quelques tests unitaires seulement pour les logiques présentant un vrai risque. Contrôle manuellement sur Mac les fonctions Accessibility, raccourcis et trackpad. Pas de campagnes répétitives sans bug à investiguer.
+- **Une phase à la fois.** N'implémente que la phase demandée, avec un commit cohérent et quelques lignes de suivi dans `docs/progress.md`. Ne code aucune fonction future « au cas où ».
+- **Rust-first, API natives macOS.** AppKit `objc2`, pas Electron, WebView, Hammerspoon embarqué, Lua ni service cloud. Un seul processus menu bar.
+- **Ne pas inventer les résultats.** Geste trackpad et ancien macOS : GO/PARTIAL/NO-GO basé sur essais réels. Cible macOS 11, Intel + ARM à valider.
+- **Respect des autorisations.** API publiques Apple sauf accord explicite ; aucun contournement TCC/MDM, pas de root.
+- **Migration en sécurité.** Ne modifie ni ne supprime `~/.hammerspoon/init.lua` sans consentement explicite ; audit en lecture seule.
+- **Vie privée.** Ne capture ni frappes, ni contenu des applications, ni screenshots ; pas de titres sensibles dans les logs par défaut.
+
+## Première mission
+
+**P0 uniquement :** application barre de menus minimale, un raccourci, test Accessibility, spike du trackpad. Rapport bref `docs/trackpad-spike.md`, puis s'arrêter. Pas d'éditeur de scènes, de réunion Teams automatique, de licensing ou de CI avancée pendant P0.
