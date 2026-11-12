@@ -758,8 +758,10 @@ impl Preferences {
         });
         let conflict =
             state.registration.contains("indisponible") || state.registration.contains("refusée");
-        self.shortcuts_state
-            .setStringValue(&NSString::from_str(&format!(
+        let keyboard_status = if self.recorder.is_recording() {
+            "Saisie en cours : raccourcis Kigi suspendus. Échap annule.".to_owned()
+        } else {
+            format!(
                 "{} — {} action(s) reçue(s). {}",
                 if state.personal_hotkeys {
                     "Raccourcis activés"
@@ -772,7 +774,10 @@ impl Preferences {
                 } else {
                     ""
                 }
-            )));
+            )
+        };
+        self.shortcuts_state
+            .setStringValue(&NSString::from_str(&keyboard_status));
         self.mouse_state.setStringValue(&NSString::from_str(if state.mouse_active { "Filtre actif" } else if state.mouse_requested {
             "Filtre demandé mais inactif. Désactivez puis réactivez l'option après vérification des autorisations."
         } else { "Filtre désactivé" }));

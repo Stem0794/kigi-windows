@@ -17,7 +17,7 @@ define_class!(
     unsafe impl NSObjectProtocol for Recorder {}
     impl Recorder {
         #[unsafe(method(acceptsFirstResponder))]
-        fn accepts_first(&self)->bool { true }
+        fn accepts_first(&self)->bool { self.ivars().recording.get() }
         #[unsafe(method(resignFirstResponder))]
         fn resign(&self)->bool {
             if self.ivars().recording.replace(false) { crate::app::shortcut_captured(None); }
@@ -74,7 +74,14 @@ impl Recorder {
             crate::app::shortcut_captured(None);
         }
     }
+    pub fn is_recording(&self) -> bool {
+        self.ivars().recording.get()
+    }
     fn capture(&self, event: &NSEvent) {
+        if self.isHiddenOrHasHiddenAncestor() || self.window().is_none() {
+            self.cancel();
+            return;
+        }
         if !self.ivars().recording.get() || event.isARepeat() {
             return;
         }
