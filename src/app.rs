@@ -25,6 +25,8 @@ thread_local! { static CONTROLLER: RefCell<Option<Retained<Controller>>> = const
 struct State {
     snapshot: RefCell<Option<Snapshot>>,
     status: OnceCell<Retained<NSMenuItem>>,
+    hotkey_status: OnceCell<Retained<NSMenuItem>>,
+    hotkey_count: Cell<u64>,
     local_window: RefCell<Option<Retained<NSWindow>>>,
     tap: RefCell<Option<Tap>>,
 }
@@ -36,6 +38,16 @@ define_class!(
     struct Controller;
     unsafe impl NSObjectProtocol for Controller {}
     impl Controller {
+        #[unsafe(method(shortcutDiagnostics:))]
+        fn shortcut_diagnostics(&self, _: Option<&AnyObject>) {
+            let registration = self.ivars().hotkey_status.get().map(|i| i.title().to_string()).unwrap_or_default();
+            let result = self.ivars().status.get().map(|i| i.title().to_string()).unwrap_or_default();
+            alert(self.mtm(), "Diagnostic du raccourci", &format!(
+                "Kigi Windows {}\n{}\nAccessibilité : {}\nDernier résultat : {}\n\nAppuyez sur Control + Option + T depuis Chrome. Le compteur doit augmenter à l'appui.\nCompteur inchangé : raccourci non reçu (conflit ou routage).\nCompteur augmenté : consultez le dernier résultat AX ci-dessus.\nLe menu Tester / restaurer permet d'essayer la même action sans raccourci.",
+                env!("CARGO_PKG_VERSION"), registration,
+                if windows::trusted() { "autorisée" } else { "non autorisée" }, result
+            ));
+        }
         #[unsafe(method(permission:))]
         fn permission(&self, _: Option<&AnyObject>) {
             let granted = windows::request_permission();
@@ -224,7 +236,12 @@ fn alert(mtm: MainThreadMarker, title: &str, text: &str) {
     alert.setInformativeText(&NSString::from_str(text));
     alert.runModal();
 }
-fn menu_action(menu: &NSMenu, controller: &Controller, title: &str, action: Sel) {
+fn menu_action(
+    menu: &NSMenu,
+    controller: &Controller,
+    title: &str,
+    action: Sel,
+) -> Retained<NSMenuItem> {
     let item = unsafe {
         NSMenuItem::initWithTitle_action_keyEquivalent(
             NSMenuItem::alloc(controller.mtm()),
@@ -237,12 +254,29 @@ fn menu_action(menu: &NSMenu, controller: &Controller, title: &str, action: Sel)
         item.setTarget(Some(controller));
     }
     menu.addItem(&item);
+    item
+}
+pub fn shortcut_event(error: Option<i32>) {
+    CONTROLLER.with(|slot| {
+        if let Some(controller) = slot.borrow().as_ref() {
+            let text = if let Some(code) = error {
+                format!("Raccourci : événement reçu, lecture ID refusée ({code})")
+            } else {
+                let count = controller.ivars().hotkey_count.get() + 1;
+                controller.ivars().hotkey_count.set(count);
+                format!("Raccourci ⌃⌥T : enregistré — reçu {count} fois")
+            };
+            if let Some(item) = controller.ivars().hotkey_status.get() {
+                item.setTitle(&NSString::from_str(&text));
+            }
+        }
+    });
 }
 pub fn schedule_test() {
     CONTROLLER.with(|slot| {
         if let Some(controller) = slot.borrow().as_ref() {
-            // NSObject schedules this on its current main run loop.
-            let _: () = unsafe { msg_send![&**controller, performSelector:sel!(testWindow:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64] };
+            // Use the documented main-thread queue, including common run-loop modes.
+            let _: () = unsafe { msg_send![&**controller, performSelectorOnMainThread:sel!(testWindow:), withObject:std::ptr::null::<AnyObject>(), waitUntilDone:false] };
         }
     });
 }
@@ -265,6 +299,13 @@ pub fn run() {
         status.setEnabled(false);
         menu.addItem(&status);
         controller.ivars().status.set(status).ok();
+        let shortcut = menu_action(
+            &menu,
+            &controller,
+            "Raccourci ⌃⌥T : enregistrement en cours",
+            sel!(shortcutDiagnostics:),
+        );
+        controller.ivars().hotkey_status.set(shortcut).ok();
         menu_action(
             &menu,
             &controller,
@@ -301,6 +342,13 @@ pub fn run() {
         status_item.setMenu(Some(&menu));
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
         let hotkey = Hotkey::register();
+        let registration = match &hotkey {
+            Ok(_) => "Raccourci ⌃⌥T : enregistré — reçu 0 fois".to_owned(),
+            Err(e) => format!("Raccourci non enregistré : {e}"),
+        };
+        if let Some(item) = controller.ivars().hotkey_status.get() {
+            item.setTitle(&NSString::from_str(&registration));
+        }
         if let Err(e) = &hotkey {
             controller.status(e);
         }

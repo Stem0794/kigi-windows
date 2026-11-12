@@ -89,3 +89,22 @@ Version du bundle incrémentée à 0.0.2. Vérifications exécutées avec succè
 trois tests (3/3) et construction native Release Intel/ARM. ZIP universel signé
 ad hoc, plist et lipo vérifiés : [run 43243429859](https://github.com/Stem0794/kigi-windows/actions/runs/43243429859). La nouvelle zone et le nouveau
 raccourci restent à essayer sur le Mac utilisateur. P1 non commencé.
+
+## 2026-11-12 — P0 0.0.3 : raccourci sans effet
+
+L'utilisateur confirme « trackpad ok » après 0.0.2, mais Control+Option+T
+semble sans effet. Pas de preuve supplémentaire sur les autres Mac/OS.
+Le backend précédent écoutait uniquement le relâchement sur la cible Application.
+Le correctif écoute appui/relâchement sur la cible Event Dispatcher, déclenche
+une fois à l'appui, puis réarme au relâchement. L'action est postée via
+performSelectorOnMainThread au lieu d'un sélecteur temporisé en mode par défaut.
+Ces modifications ciblent le routage suspecté ; la cause exacte sur le Mac de
+l'utilisateur n'est pas établie. Aucun nouveau changement de combinaison.
+
+Ajout d'une ligne permanente avec état d'enregistrement et compteur de
+raccourcis reçus, cliquable pour afficher version, permission AX et dernier
+résultat. Aucune frappe arbitraire n'est surveillée ou stockée. Un seul test
+de régression ajouté pour éviter le double déplacement à l'appui/relâchement
+ou pendant une touche maintenue. Packaging et quatre tests natifs prévus
+sur le runner macOS ; fonctionnement interactif du correctif à retester.
+Trackpad et ses seuils inchangés. P0 uniquement.

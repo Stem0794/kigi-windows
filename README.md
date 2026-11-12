@@ -25,8 +25,8 @@ Aucun package commercial signé/notarisé n'est fourni à ce stade.
 2. Ouvrir Chrome ou Teams, puis « Détecter les fenêtres ». Seuls les bundles,
    nombres de fenêtres et géométrie sont affichés, sans lire les titres/contenus.
    L'inventaire est ponctuel et peut être partiel pour les apps AX inaccessibles.
-3. Activer une fenêtre normale, puis relâcher **⌃⌥T** : elle passe à droite dans
-   la zone visible de son écran. Relâcher **⌃⌥T** de nouveau restaure **cette même
+3. Activer une fenêtre normale, puis appuyer sur **⌃⌥T** : elle passe à droite dans
+   la zone visible de son écran. Appuyer sur **⌃⌥T** de nouveau restaure **cette même
    fenêtre**, même si le focus a changé. Le menu offre la même action ; son
    premier élément affiche le dernier résultat ou l'erreur.
 4. Tester le diagnostic local du trackpad. Le pointeur doit rester dans la
@@ -62,11 +62,24 @@ MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target aarch64-apple-darwin
 bash scripts/bundle.sh universal
 ```
 
-Les trois tests portent sur la conversion d'écrans et les cas critiques du
-classifieur diagnostic. `cargo check` ne valide ni l'édition de liens Apple,
+Les quatre tests sur Mac portent sur la conversion d'écrans et les cas critiques du
+classifieur diagnostic et le déclenchement unique du raccourci. `cargo check` ne valide ni l'édition de liens Apple,
 ni TCC, ni les appels exécutés, ni la détection du trackpad.
 
 Voir [le rapport trackpad](docs/trackpad-spike.md), la
 [décision API](docs/adr-001-trackpad.md) et le [suivi P0](docs/progress.md).
 Le JSON du handover reste indicatif et n'est pas chargé par P0. Aucun éditeur,
 workspace, automatisme Teams, lancement de navigateur ou système commercial.
+
+## Si le raccourci semble sans effet (0.0.3)
+
+Le menu contient une ligne permanente « Raccourci ⌃⌥T : enregistré — reçu N fois ».
+Cliquer dessus ouvre un diagnostic avec la version, l'état Accessibilité et le
+dernier résultat de l'action. Le compteur augmente à l'appui, une seule fois
+même si la touche reste enfoncée. Une erreur d'enregistrement reste visible.
+
+Compteur à zéro après un essai : le raccourci n'a pas été reçu ; essayer sans
+autre gestionnaire et relancer Kigi si nécessaire. Compteur augmenté sans
+déplacement : consulter l'erreur AX, vérifier l'accès Accessibilité pour le
+bundle remplacé et fermer le diagnostic local avant de réactiver Chrome.
+Le menu « Tester / restaurer » exécute la même action indépendamment du clavier.

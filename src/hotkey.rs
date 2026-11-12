@@ -22,7 +22,8 @@ const ID: HotkeyId = HotkeyId {
 };
 #[link(name = "Carbon", kind = "framework")]
 extern "C" {
-    fn GetApplicationEventTarget() -> Handle;
+    fn GetEventDispatcherTarget() -> Handle;
+    fn GetEventKind(event: Handle) -> u32;
     fn InstallEventHandler(
         target: Handle,
         callback: unsafe extern "C" fn(Handle, Handle, Handle) -> i32,
@@ -55,26 +56,35 @@ extern "C" {
 pub struct Hotkey {
     key: Handle,
     handler: Handle,
+    down: Box<bool>,
 }
 impl Hotkey {
     pub fn register() -> Result<Self, String> {
         unsafe {
-            let target = GetApplicationEventTarget();
-            // Released only: one action per press, no auto-repeat on long holds.
-            let event = EventType {
-                class: u32::from_be_bytes(*b"keyb"),
-                kind: 6,
-            };
+            // Dispatch target receives the registered shortcut before AppKit's
+            // application handlers. Handle both phases, act on press only.
+            let target = GetEventDispatcherTarget();
+            let events = [
+                EventType {
+                    class: u32::from_be_bytes(*b"keyb"),
+                    kind: 5,
+                },
+                EventType {
+                    class: u32::from_be_bytes(*b"keyb"),
+                    kind: 6,
+                },
+            ];
             let mut this = Self {
                 key: ptr::null_mut(),
                 handler: ptr::null_mut(),
+                down: Box::new(false),
             };
             let code = InstallEventHandler(
                 target,
                 on_hotkey,
-                1,
-                &event,
-                ptr::null_mut(),
+                events.len() as c_ulong,
+                events.as_ptr(),
+                (&mut *this.down as *mut bool).cast(),
                 &mut this.handler,
             );
             if code != 0 {
@@ -101,7 +111,7 @@ impl Drop for Hotkey {
         }
     }
 }
-unsafe extern "C" fn on_hotkey(_: Handle, event: Handle, _: Handle) -> i32 {
+unsafe extern "C" fn on_hotkey(_: Handle, event: Handle, user: Handle) -> i32 {
     let mut id = HotkeyId {
         signature: 0,
         id: 0,
@@ -115,11 +125,42 @@ unsafe extern "C" fn on_hotkey(_: Handle, event: Handle, _: Handle) -> i32 {
         ptr::null_mut(),
         (&mut id as *mut HotkeyId).cast(),
     );
-    if code == 0 && id.signature == ID.signature && id.id == ID.id {
-        // Callback runs on the application/main event loop. Defer AX until it returns.
+    if code != 0 {
+        crate::app::shortcut_event(Some(code));
+        return code;
+    }
+    if id.signature != ID.signature || id.id != ID.id || user.is_null() {
+        return -9874; // eventNotHandledErr
+    }
+    if press_transition(&mut *user.cast::<bool>(), GetEventKind(event)) {
+        crate::app::shortcut_event(None);
+        // No AX in this callback; queue the action on the main run loop.
         crate::app::schedule_test();
-        0
-    } else {
-        -9874
-    } // eventNotHandledErr
+    }
+    0
+}
+
+fn press_transition(down: &mut bool, kind: u32) -> bool {
+    match kind {
+        5 => !std::mem::replace(down, true),
+        6 => {
+            *down = false;
+            false
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::press_transition;
+    #[test]
+    fn one_action_per_press_even_when_held() {
+        let mut down = false;
+        assert!(!press_transition(&mut down, 6));
+        assert!(press_transition(&mut down, 5));
+        assert!(!press_transition(&mut down, 5));
+        assert!(!press_transition(&mut down, 6));
+        assert!(press_transition(&mut down, 5));
+    }
 }
