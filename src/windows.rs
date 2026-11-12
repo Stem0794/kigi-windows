@@ -12,8 +12,8 @@ use std::{
 type Ref = *const c_void;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
-    fn AXIsProcessTrusted() -> bool;
-    fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
+    fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: Ref) -> u8;
     static kAXTrustedCheckOptionPrompt: Ref;
     fn AXUIElementCreateApplication(pid: i32) -> Ref;
     fn AXUIElementSetMessagingTimeout(element: Ref, timeout: f32) -> i32;
@@ -21,7 +21,7 @@ extern "C" {
     fn AXUIElementIsAttributeSettable(element: Ref, name: Ref, result: *mut u8) -> i32;
     fn AXUIElementSetAttributeValue(element: Ref, name: Ref, value: Ref) -> i32;
     fn AXValueCreate(kind: u32, value: *const c_void) -> Ref;
-    fn AXValueGetValue(value: Ref, kind: u32, result: *mut c_void) -> bool;
+    fn AXValueGetValue(value: Ref, kind: u32, result: *mut c_void) -> u8;
 }
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
@@ -37,7 +37,7 @@ extern "C" {
         key_callbacks: Ref,
         value_callbacks: Ref,
     ) -> Ref;
-    fn CFBooleanGetValue(value: Ref) -> bool;
+    fn CFBooleanGetValue(value: Ref) -> u8;
     static kCFBooleanTrue: Ref;
 }
 
@@ -84,7 +84,7 @@ impl Element {
     fn pair(&self, name: &str, kind: u32) -> Result<[f64; 2], String> {
         let value = self.attribute(name)?;
         let mut pair = [0.0; 2];
-        if unsafe { AXValueGetValue(value.0, kind, pair.as_mut_ptr().cast()) } {
+        if unsafe { AXValueGetValue(value.0, kind, pair.as_mut_ptr().cast()) } != 0 {
             Ok(pair)
         } else {
             Err(format!("Type AX inattendu : {name}."))
@@ -113,7 +113,7 @@ impl Element {
     fn ensure_normal(&self) -> Result<(), String> {
         for name in ["AXMinimized", "AXFullScreen"] {
             if let Ok(value) = self.attribute(name) {
-                if unsafe { CFBooleanGetValue(value.0) } {
+                if unsafe { CFBooleanGetValue(value.0) } != 0 {
                     return Err("Test refusé : fenêtre minimisée ou en plein écran natif.".into());
                 }
             }
@@ -160,7 +160,8 @@ fn check(code: i32) -> Result<(), String> {
     }
 }
 pub fn trusted() -> bool {
-    unsafe { AXIsProcessTrusted() }
+    // Apple Boolean is UInt8, not a Rust/C _Bool. Accept any non-zero value.
+    unsafe { AXIsProcessTrusted() != 0 }
 }
 pub fn request_permission() -> bool {
     // Dictionary lives only for this synchronous call. Static CF strings/bools
@@ -180,9 +181,46 @@ pub fn request_permission() -> bool {
             return false;
         }
         let options = Element(dictionary);
-        AXIsProcessTrustedWithOptions(options.0)
+        AXIsProcessTrustedWithOptions(options.0) != 0
     }
 }
+/// Explicit diagnostic only: no titles/content, no writes and no TCC changes.
+pub fn permission_probe() -> String {
+    let raw = unsafe { AXIsProcessTrusted() };
+    let raw_options = unsafe { AXIsProcessTrustedWithOptions(ptr::null()) };
+    let workspace = NSWorkspace::sharedWorkspace();
+    let own_pid = std::process::id() as i32;
+    let app = workspace
+        .frontmostApplication()
+        .filter(|a| a.processIdentifier() != own_pid)
+        .or_else(|| {
+            workspace.runningApplications().iter().find(|a| {
+                a.processIdentifier() != own_pid
+                    && a.bundleIdentifier()
+                        .is_some_and(|b| b.to_string() == "com.google.Chrome")
+            })
+        });
+    let Some(app) = app else {
+        return format!(
+            "trusted_raw={raw} trusted_options_raw={raw_options} probe=no_foreign_application"
+        );
+    };
+    let target = Element::app(app.processIdentifier());
+    let key = NSString::from_str("AXWindows");
+    let mut value = ptr::null();
+    let code = unsafe { AXUIElementCopyAttributeValue(target.0, name_ref(&key), &mut value) };
+    let windows = if code == 0 && !value.is_null() {
+        let array = Element(value);
+        Some(unsafe { CFArrayGetCount(array.0) })
+    } else {
+        None
+    };
+    let result = format!("trusted_raw={raw} trusted_options_raw={raw_options} target_bundle={} AXWindows_code={code} window_count={windows:?}",
+        app.bundleIdentifier().map(|b| b.to_string()).unwrap_or_else(|| "unknown".into()));
+    diagnostics::record("permission.ax.probe", &result);
+    result
+}
+
 fn require_permission() -> Result<(), String> {
     if trusted() {
         Ok(())

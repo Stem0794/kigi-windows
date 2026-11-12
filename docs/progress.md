@@ -140,3 +140,30 @@ ZIP vérifiés. [Run 43249225076](https://github.com/Stem0794/kigi-windows/actio
 source du package : ef7f831916f9fe3fb881f613157c8fcb5643b75b.
 Les commandes presse-papiers/enregistrement et la nouvelle explication AX sont
 compilées, mais leur interaction sur le Mac utilisateur reste à vérifier.
+
+## 2026-11-12 — P0 0.0.5 : demande et état Accessibilité
+
+L'utilisateur indique que la case autorisée n'est pas reconnue et que la
+permission est redemandée. Deux problèmes concrets dans le parcours précédent :
+le bouton appelait à chaque clic l'API avec prompt, et interprétait son retour
+immédiat alors que le prompt est asynchrone. Demande unique par session,
+revérifications sans prompt, actualisation à l'ouverture du menu et sur l'action,
+et suivi temporaire borné à 15 contrôles / 30 secondes après demande.
+
+Audit ABI : les fonctions AX/CF déclarées avec Apple `Boolean` passent maintenant
+par `u8` (UInt8), puis comparaison explicite à zéro. Les autres API CG en C `bool`
+restent inchangées. Cette correction de signature n'est pas déclarée cause
+confirmée du problème terrain.
+
+Ajout d'un menu Finder pour repérer la copie en cours, d'un contrôle des autres
+instances au lancement, et d'un diagnostic AX explicite en lecture seule :
+valeurs brutes des deux précontrôles, bundle cible et code `AXWindows` / compte.
+Les logs ajoutent PID, autres instances et indicateur AppTranslocation.
+Pas de lecture de TCC, pas de modification d'autorisations, pas d'API privée,
+pas d'affaiblissement des exigences de signature. La signature ad hoc reste une
+limite réelle entre builds ; une case cochée ne suffit pas à conclure à la
+confiance du processus courant. Attendre les nouveaux logs si le refus persiste.
+
+Un test de régression vérifie demande unique, arrêt au grant et budget épuisé.
+Le parcours TCC interactif, Finder et garde multi-instance restent à essayer
+sur le Mac ; aucune promesse de permission désormais accordée. P0 uniquement.

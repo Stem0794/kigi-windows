@@ -1,13 +1,13 @@
 [package]
 name = "kigi-windows"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 rust-version = "1.85"
 publish = false
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSString", "NSArray", "NSSet", "NSGeometry", "NSThread", "NSEnumerator", "NSProcessInfo", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSString", "NSArray", "NSSet", "NSGeometry", "NSThread", "NSEnumerator", "NSProcessInfo", "NSBundle", "NSURL"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSGraphics", "libc", "objc2-core-foundation", "NSApplication", "NSResponder", "NSView", "NSWindow", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSScreen", "NSWorkspace", "NSRunningApplication", "NSEvent", "NSTouch", "NSAlert", "NSPasteboard", "NSSavePanel", "NSPanel", "NSTextField", "objc2-core-graphics"] }
 
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGEvent", "CGEventTypes"] }

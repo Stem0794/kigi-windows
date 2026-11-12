@@ -62,8 +62,8 @@ MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target aarch64-apple-darwin
 bash scripts/bundle.sh universal
 ```
 
-Les cinq tests sur Mac portent sur la conversion d'écrans et les cas critiques du
-classifieur diagnostic et le déclenchement unique du raccourci, ainsi que la borne du journal de diagnostic. `cargo check` ne valide ni l'édition de liens Apple,
+Les six tests sur Mac portent sur la conversion d'écrans et les cas critiques du
+classifieur diagnostic et le déclenchement unique du raccourci, ainsi que la borne du journal de diagnostic et la demande unique d’Accessibilité. `cargo check` ne valide ni l'édition de liens Apple,
 ni TCC, ni les appels exécutés, ni la détection du trackpad.
 
 Voir [le rapport trackpad](docs/trackpad-spike.md), la
@@ -107,3 +107,37 @@ La configuration Hammerspoon fournie est conservée dans
 [examples/hammerspoon-reference.lua](examples/hammerspoon-reference.lua).
 Le [relevé de migration](docs/migration-audit.md) distingue ses comportements
 exacts de ceux du prototype P0 : elle n'est pas exécutée ni importée comme code.
+
+## Accessibilité cochée mais non reconnue (0.0.5)
+
+Le premier clic sur la ligne Accessibilité peut demander l'autorisation. Les
+clics suivants **vérifient sans relancer la demande**. Après le premier clic,
+Kigi vérifie toutes les deux secondes pendant environ 30 secondes (15 contrôles au maximum), puis arrête
+ce suivi ; ouvrir le menu ou tester une fenêtre effectue aussi une vérification
+à jour. Il n'y a pas de scrutation permanente au repos.
+
+- « Afficher la copie active dans Finder » sélectionne l'application qui tourne
+  réellement : c'est cette copie qu'il faut ajouter dans les réglages macOS.
+- « Diagnostic Accessibilité » affiche version, PID, chemin et résultat brut
+  des deux API de confiance, sans demander à nouveau l'autorisation. Un essai
+  AX en lecture seule indique le code renvoyé par macOS pour `AXWindows` d'une
+  application tierce ; aucun titre ou contenu n'est lu, aucune fenêtre déplacée.
+- Les logs incluent aussi le nombre d'autres processus Kigi et la présence
+  d'un chemin temporaire `AppTranslocation`. Une nouvelle copie refuse de
+  démarrer si une autre instance du même bundle est encore active.
+
+Pour un essai propre : quitter Kigi, conserver une seule copie dans Applications,
+la lancer, la sélectionner avec le menu Finder, puis autoriser cette application
+actuelle dans Accessibilité. Si macOS exige une relance, quitter puis rouvrir
+cette même copie. Si le refus persiste, copier les logs avant toute nouvelle
+mise à jour ; ils permettent de distinguer le précontrôle du refus AX réel.
+
+La signature des packages reste **ad hoc**. Elle ne garantit pas la conservation
+des autorisations entre deux builds. Une identité de signature Apple stable
+sera nécessaire pour fiabiliser les mises à jour ; ce correctif ne remplace
+pas cette identité et ne modifie ni la signature de confiance ni la base TCC.
+
+Sources : [retour asynchrone AXIsProcessTrustedWithOptions](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions),
+[explication Apple des changements d'identité ad hoc](https://developer.apple.com/forums/thread/819406)
+(dans un cas ScreenCapture ; piste d'identité à vérifier ici, sans cause AX
+confirmée sur le Mac utilisateur).
