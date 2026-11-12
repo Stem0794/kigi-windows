@@ -36,3 +36,12 @@ P2 peut maintenant relier les gestes aux actions Teams/Chrome, sur activation
 volontaire, avec les bords de la référence (gauche 10 %, droite 20 %). Distinguer
 les tests purs et la compilation des essais terrain encore requis. Les scènes
 P3 et les réunions automatiques P5 restent hors de cette étape.
+
+## État GitHub repris — P3 0.3.1
+
+La branche main contient désormais P2 horizontal (5 % à chaque extrême vers le
+centre) et P3 manuel Travail/Réunion/restauration en 0.3.0. L'utilisateur demande
+de poursuivre depuis GitHub. Conserver ces gestes et avancer dans P3 : capture
+persistante d'une disposition personnelle de deux fenêtres sur un même écran,
+JSON versionné/atomique, restauration fiable. Ne pas activer de détection Teams
+ni développer l'éditeur complet P4 dans cette sous-étape.

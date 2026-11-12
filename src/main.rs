@@ -5,6 +5,8 @@ mod app;
 #[cfg(target_os = "macos")]
 mod applications;
 #[cfg(any(target_os = "macos", test))]
+mod config;
+#[cfg(any(target_os = "macos", test))]
 mod diagnostics;
 #[cfg(any(target_os = "macos", test))]
 mod geometry;

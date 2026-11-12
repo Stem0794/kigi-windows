@@ -1,5 +1,9 @@
 //! Small owned CoreFoundation wrapper around the public Accessibility C API.
-use crate::{diagnostics, geometry::Rect};
+use crate::{
+    config::{SavedLayout, SavedWindow},
+    diagnostics,
+    geometry::{restore_decision, NormalizedRect, Rect, RestoreDecision},
+};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSRunningApplication, NSScreen, NSWorkspace};
 use objc2_foundation::NSString;
@@ -43,6 +47,7 @@ extern "C" {
     static kCFBooleanFalse: Ref;
     fn CFGetTypeID(value: Ref) -> usize;
     fn CFStringGetTypeID() -> usize;
+    fn CFEqual(a: Ref, b: Ref) -> u8;
 }
 
 pub struct Element(Ref);
@@ -479,6 +484,7 @@ pub fn maximize(
 /// Titles exist only in memory for this explicit picker; never diagnostic logs.
 pub struct Choice {
     pub label: String,
+    pub bundle_id: String,
     window: Element,
     app: objc2::rc::Retained<NSRunningApplication>,
 }
@@ -527,6 +533,10 @@ pub fn pair_candidates(mtm: MainThreadMarker) -> Result<(Rect, Vec<Choice>, bool
                 .unwrap_or_else(|| "Application".into());
             choices.push(Choice {
                 label: format!("{name} — {title}"),
+                bundle_id: app
+                    .bundleIdentifier()
+                    .map(|b| b.to_string())
+                    .unwrap_or_default(),
                 window,
                 app: app.clone(),
             });
@@ -576,120 +586,227 @@ pub fn arrange_pair(
     }
 }
 
-/// Manual P3 pilot: one in-memory return point for two already-open windows.
-/// Geometry only; no window titles or session data are retained.
-pub struct MeetingSnapshot {
-    teams: LayoutFrame,
-    chrome: LayoutFrame,
+/// One transient return point, shared by Meeting and the saved personal layout.
+/// Capture before any AX write; a failed read-back must never masquerade as before.
+pub struct LayoutSnapshot {
+    parts: [LayoutFrame; 2],
     prior_pid: Option<i32>,
 }
 struct LayoutFrame {
     window: Element,
     before: Rect,
-    applied: Rect,
+    applied: Option<Rect>,
 }
-impl MeetingSnapshot {
-    pub fn restore(&self) -> Result<String, String> {
-        require_permission()?;
-        let mut restored = 0;
-        let mut skipped = 0;
-        for part in [&self.teams, &self.chrome] {
-            match part.window.frame() {
-                Ok(current) if current.approximately(part.before) => {}
-                Ok(current) if current.approximately(part.applied) => {
-                    let actual = part.window.set_frame(part.before)?;
-                    if !actual.approximately(part.before) {
-                        return Err(
-                            "Restauration partielle : l'application impose ses dimensions. Réessayez.".into()
-                        );
-                    }
-                    restored += 1;
-                }
-                _ => skipped += 1, // closed or manually moved since scene applied
+impl Element {
+    fn confirmed_gone(&self) -> bool {
+        let key = NSString::from_str("AXRole");
+        let mut value = ptr::null();
+        let code = unsafe { AXUIElementCopyAttributeValue(self.0, name_ref(&key), &mut value) };
+        if !value.is_null() {
+            unsafe {
+                CFRelease(value);
             }
         }
-        if let Some(pid) = self.prior_pid {
-            if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
-                let _ = crate::applications::activate(&app);
-            }
-        }
-        Ok(format!(
-            "Disposition précédente : {restored} fenêtre(s) restaurée(s), {skipped} ignorée(s) car fermée(s) ou déplacée(s) manuellement."
-        ))
+        code == -25202 // invalid element, not timeout or permission refusal
     }
 }
-
-pub fn meeting_browser(
-    mtm: MainThreadMarker,
-    snapshot: &mut Option<MeetingSnapshot>,
+impl LayoutSnapshot {
+    pub fn restore(&mut self) -> Result<String, String> {
+        require_permission()?;
+        let (mut restored, mut skipped, mut pending) = (0, 0, 0);
+        for part in &mut self.parts {
+            let current = match part.window.frame() {
+                Ok(frame) => frame,
+                Err(_) if part.window.confirmed_gone() => {
+                    skipped += 1;
+                    continue;
+                }
+                Err(_) => {
+                    pending += 1;
+                    continue;
+                }
+            };
+            match restore_decision(current, part.before, part.applied) {
+                RestoreDecision::AlreadyRestored => {}
+                RestoreDecision::UserMoved => skipped += 1,
+                RestoreDecision::Unknown => pending += 1,
+                RestoreDecision::Restore => match part.window.set_frame(part.before) {
+                    Ok(actual) if actual.approximately(part.before) => restored += 1,
+                    Ok(actual) => {
+                        part.applied = Some(actual);
+                        pending += 1;
+                    }
+                    Err(_) => {
+                        part.applied = part.window.frame().ok();
+                        pending += 1;
+                    }
+                },
+            }
+        }
+        diagnostics::record(
+            "workspace.restore.result",
+            format!("restored={restored} skipped={skipped} pending={pending}"),
+        );
+        if pending > 0 {
+            return Err(format!("Restauration incomplète : {pending} fenêtre(s) en erreur ou de position incertaine. Le retour est conservé ; les autres fenêtres ont été traitées."));
+        }
+        if let Some(app) = self
+            .prior_pid
+            .and_then(NSRunningApplication::runningApplicationWithProcessIdentifier)
+        {
+            let _ = crate::applications::activate(&app);
+        }
+        Ok(format!("Disposition précédente : {restored} fenêtre(s) restaurée(s), {skipped} ignorée(s) car fermée(s) ou déplacée(s) manuellement."))
+    }
+}
+fn apply_workspace(
+    choices: [Choice; 2],
+    targets: [Rect; 2],
+    snapshot: &mut Option<LayoutSnapshot>,
+    prior_pid: Option<i32>,
 ) -> Result<String, String> {
     require_permission()?;
     if snapshot.is_some() {
-        return Ok("Scène réunion déjà active. Restaurez-la avant d'en créer une autre.".into());
+        return Err("Une disposition temporaire est déjà active. Restaurez-la ou choisissez Travail avant d'en appliquer une autre.".into());
     }
-    // This first pilot deliberately does not launch applications or guess
-    // which Teams pop-out is a meeting. The user opens the wanted windows.
-    let teams_bundle = crate::applications::teams_bundle()?;
-    let teams_app = crate::applications::running(teams_bundle)
+    if unsafe { CFEqual(choices[0].window.0, choices[1].window.0) } != 0 {
+        return Err("Choisissez deux fenêtres distinctes.".into());
+    }
+    for choice in &choices {
+        choice.window.ensure_normal()?;
+        choice.window.can_set("AXPosition")?;
+        choice.window.can_set("AXSize")?;
+    }
+    let before = [choices[0].window.frame()?, choices[1].window.frame()?];
+    let focus = choices[1].app.clone();
+    let [left, right] = choices;
+    *snapshot = Some(LayoutSnapshot {
+        parts: [
+            LayoutFrame {
+                window: left.window,
+                before: before[0],
+                applied: Some(before[0]),
+            },
+            LayoutFrame {
+                window: right.window,
+                before: before[1],
+                applied: Some(before[1]),
+            },
+        ],
+        prior_pid,
+    });
+    let mut complete = true;
+    for (part, target) in snapshot.as_mut().unwrap().parts.iter_mut().zip(targets) {
+        match part.window.set_frame(target) {
+            Ok(actual) => {
+                part.applied = Some(actual);
+                complete &= actual.approximately(target);
+            }
+            Err(_) => {
+                part.applied = part.window.frame().ok();
+                complete = false;
+            }
+        }
+    }
+    diagnostics::record(
+        "workspace.apply",
+        format!("geometry_ok={complete} snapshot=true"),
+    );
+    if !complete {
+        return Err(
+            "Placement incomplet. Le retour est conservé : utilisez Restaurer la disposition."
+                .into(),
+        );
+    }
+    crate::applications::activate(&focus)?;
+    snapshot.as_ref().unwrap().parts[1].window.raise()?;
+    Ok("Disposition appliquée aux deux fenêtres.".into())
+}
+pub fn meeting_browser(
+    mtm: MainThreadMarker,
+    snapshot: &mut Option<LayoutSnapshot>,
+) -> Result<String, String> {
+    let teams_app = crate::applications::running(crate::applications::teams_bundle()?)
         .ok_or("Ouvrez Teams avec ⌥T avant d'activer la scène.")?;
     let chrome_app = crate::applications::running(crate::applications::CHROME)
         .ok_or("Ouvrez Chrome avec ⌥B avant d'activer la scène.")?;
     let teams = preferred_window(&teams_app)?;
     let chrome = preferred_window(&chrome_app)?;
-    for window in [&teams, &chrome] {
-        window.ensure_normal()?;
-        window.can_set("AXPosition")?;
-        window.can_set("AXSize")?;
-    }
-    let before_teams = teams.frame()?;
-    let before_chrome = chrome.frame()?;
-    let display = visible_frame(mtm, before_chrome)?;
-    let left = display.left_half();
-    let right = display.right_half();
-    let prior_pid = NSWorkspace::sharedWorkspace()
-        .frontmostApplication()
-        .map(|app| app.processIdentifier())
-        .filter(|pid| *pid != std::process::id() as i32);
-    // Both windows and their positions are captured before any write.
-    let teams_result = teams.set_frame(left);
-    let chrome_result = chrome.set_frame(right);
-    let applied_teams = teams.frame().unwrap_or(before_teams);
-    let applied_chrome = chrome.frame().unwrap_or(before_chrome);
-    diagnostics::record(
-        "workspace.meeting.apply",
-        format!(
-            "teams_ok={} chrome_ok={} geometry_ok={}",
-            teams_result.is_ok(),
-            chrome_result.is_ok(),
-            applied_teams.approximately(left) && applied_chrome.approximately(right)
-        ),
-    );
-    *snapshot = Some(MeetingSnapshot {
-        teams: LayoutFrame {
-            window: teams,
-            before: before_teams,
-            applied: applied_teams,
-        },
-        chrome: LayoutFrame {
-            window: chrome,
-            before: before_chrome,
-            applied: applied_chrome,
-        },
-        prior_pid,
-    });
-    if teams_result.is_err()
-        || chrome_result.is_err()
-        || !applied_teams.approximately(left)
-        || !applied_chrome.approximately(right)
-    {
-        return Err(
-            "Placement incomplet. Utilisez « Restaurer la disposition » pour revenir à l'état précédent.".into()
-        );
-    }
-    crate::applications::activate(&chrome_app)?;
-    // The Chrome half cannot cover the Teams half.
-    snapshot.as_ref().unwrap().chrome.window.raise()?;
+    let display = visible_frame(mtm, chrome.frame()?)?;
+    apply_workspace(
+        [
+            Choice {
+                label: String::new(),
+                bundle_id: String::new(),
+                window: teams,
+                app: teams_app,
+            },
+            Choice {
+                label: String::new(),
+                bundle_id: String::new(),
+                window: chrome,
+                app: chrome_app,
+            },
+        ],
+        [display.left_half(), display.right_half()],
+        snapshot,
+        NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier())
+            .filter(|p| *p != std::process::id() as i32),
+    )?;
     Ok("Réunion : Teams à gauche et Chrome à droite, 50/50.".into())
+}
+pub fn capture_layout(mtm: MainThreadMarker, choices: [&Choice; 2]) -> Result<SavedLayout, String> {
+    for choice in choices {
+        choice.window.ensure_normal()?;
+    }
+    if unsafe { CFEqual(choices[0].window.0, choices[1].window.0) } != 0 {
+        return Err("Choisissez deux fenêtres distinctes.".into());
+    }
+    let first = choices[0].window.frame()?;
+    let second = choices[1].window.frame()?;
+    let display = visible_frame(mtm, first)?;
+    if !display.approximately(visible_frame(mtm, second)?) {
+        return Err("Cette première disposition personnelle utilise un seul écran. Placez les deux fenêtres sur le même écran avant d'enregistrer.".into());
+    }
+    let geometry = |frame| {
+        NormalizedRect::capture(frame, display)
+        .ok_or("Placez les deux fenêtres entièrement dans la zone visible de l'écran avant d'enregistrer.")
+    };
+    let layout = SavedLayout {
+        schema_version: 1,
+        windows: [
+            SavedWindow {
+                bundle_id: choices[0].bundle_id.clone(),
+                geometry: geometry(first)?,
+            },
+            SavedWindow {
+                bundle_id: choices[1].bundle_id.clone(),
+                geometry: geometry(second)?,
+            },
+        ],
+    };
+    layout.validate()?;
+    Ok(layout)
+}
+pub fn apply_saved_layout(
+    layout: &SavedLayout,
+    display: Rect,
+    choices: [Choice; 2],
+    snapshot: &mut Option<LayoutSnapshot>,
+    prior_pid: Option<i32>,
+) -> Result<String, String> {
+    layout.validate()?;
+    apply_workspace(
+        choices,
+        layout
+            .windows
+            .each_ref()
+            .map(|w| w.geometry.on_display(display)),
+        snapshot,
+        prior_pid,
+    )
 }
 
 pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {

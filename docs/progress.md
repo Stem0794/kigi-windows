@@ -333,3 +333,42 @@ et archive. L'archive applicative extraite a passé le contrôle CRC ; Info.plis
 indique 0.3.0 / build 10. Les trois commandes P3 restent à essayer sur le Mac
 pilote, tout comme le geste horizontal P2 et la permission Automatisation Chrome.
 Aucune preuve de compatibilité matérielle ancienne ni de performance p95/RSS.
+
+## 2026-11-12 — Reprise depuis GitHub, P3 0.3.1
+
+Main récupéré à 8a925d6, changements 0.3.0 conservés. Demande explicite de
+continuer depuis GitHub. Gestes horizontaux depuis les 5 % extrêmes vers le
+centre inchangés ; pas de réunion automatique/P4 anticipés.
+
+Ajout d'une disposition personnelle persistante de deux fenêtres sur un écran :
+sélection explicite, capture normalisée, applications existantes, résolution
+par bundle et choix utilisateur si ambigu, application sur écran courant puis
+restauration du snapshot. Deux fenêtres de la même app sont possibles sans
+persister de titre ou de pointeur. Toute résolution/preflight avant écriture.
+Un seul retour temporaire partagé avec Réunion ; pas de pile ou moteur générique.
+JSON schema1 strict, 64 Ko max, géométrie/bundles validés, remplacement atomique,
+backup valide et relecture de secours sans écrasement d'un fichier invalide.
+Pas de daemon, service ou base de données ; serde/serde_json pour ce besoin réel.
+
+Correction trouvée pendant la reprise : 0.3.0 créait le snapshot après écritures,
+et utilisait la position initiale comme fallback après échec de lecture. Une
+restauration partielle pouvait aussi être prise pour un déplacement manuel au
+second essai. Snapshot maintenant assigné avant écriture, read-back optionnel,
+suivi des positions intermédiaires pendant restore ; fenêtres traitées
+indépendamment, fermetures confirmées distinguées des erreurs transitoires.
+
+Tests ciblés : normalisation/adaptation à l'écran et décisions de restauration ;
+roundtrip JSON, backup valide, fichier corrompu et refus de remplacement invalide.
+Le runtime local repris ne contenait pas Rust ; toolchain réinstallée pour
+reproduire les vérifications, sans reporter d'anciens tests comme nouveaux.
+Compilations et résultats natifs à consigner après vérification finale.
+Limites : une seule disposition, deux fenêtres déjà ouvertes, un écran à la fois,
+retour mémoire seulement. Prochain sous-ticket : essai terrain capture/restart/
+application/restauration avant éditeur et scènes multiples.
+
+Vérifications locales 0.3.1 : Rust1.100 installé, fmt/check réussis, 10 tests
+hôte réussis ; checks macOS Intel/ARM cible11 réussis sans lien Apple local.
+Les deux nouveaux tests couvrent la persistance et la décision de restauration,
+sans mock AX. Le choix reste explicite même pour une seule correspondance si
+l'inventaire est partiel, pour ne pas prendre une liste tronquée pour un match
+unique. Les interactions macOS et le cycle après redémarrage restent à tester.

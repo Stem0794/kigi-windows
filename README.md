@@ -1,4 +1,4 @@
-# Kigi Windows — P3 pilote manuel 0.3.0
+# Kigi Windows — P3 dispositions enregistrées 0.3.1
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -96,9 +96,48 @@ annule la possibilité de restaurer la scène Réunion précédente une fois Chr
 maximisé. En cas de placement partiel, la commande Restaurer reste disponible.
 
 Il n'y a **pas encore** de détection de réunion automatique, de sélection
-fiable d'une fenêtre Teams « réunion » plutôt que « chat », de configuration
-JSON ou de scène personnalisée. Pas de déplacement de fenêtres entre Spaces
+fiable d'une fenêtre Teams « réunion » plutôt que « chat », de détection automatique fiable. Pas de déplacement de fenêtres entre Spaces
 Mission Control. Les gestes P2 déclenchent toujours seulement Teams/Chrome.
+
+## Disposition personnelle enregistrée (0.3.1)
+
+1. Positionner deux fenêtres sur **un même écran**, dans sa zone visible.
+2. Choisir **Enregistrer une disposition personnelle…**, puis sélectionner les
+   deux fenêtres. Elles peuvent appartenir à deux applications ou à la même.
+3. Plus tard, après avoir rouvert les fenêtres voulues, choisir **Appliquer la
+   disposition personnelle**. Les positions sont adaptées à l'écran de la fenêtre
+   active avant l'ouverture du sélecteur.
+4. Utiliser **Restaurer la disposition précédente** pour revenir aux positions
+   d'avant application, sans écraser un déplacement manuel.
+
+Une disposition est conservée entre les redémarrages de Kigi, dans
+`~/Library/Application Support/io.kigi.windows/config.json`. Enregistrer à nouveau
+la remplace ; la précédente configuration valide est sauvegardée en
+`config.json.bak`. Les écritures sont atomiques et la configuration est validée
+avant usage. Une sauvegarde valide peut être relue si le fichier principal est
+endommagé, sans modifier celui-ci. Un fichier invalide n'est jamais écrasé par
+l'enregistrement : le menu **Afficher la configuration dans Finder** permet de
+le retrouver et de le renommer avant une nouvelle capture.
+
+Seuls les bundle IDs et rectangles normalisés sont sauvegardés : aucun titre,
+PID, pointeur AX, URL ou contenu. Si plusieurs fenêtres d'une application sont
+disponibles, Kigi demande laquelle associer à chaque emplacement. Toute la
+sélection et le préflight précèdent les déplacements ; annuler ne déplace rien.
+Les applications/fenêtres doivent déjà être ouvertes : pas de lancement
+supplémentaire ni de reconstitution d'onglet par la disposition.
+
+Un seul retour temporaire est partagé entre Réunion et la disposition
+personnelle. Restaurer ou choisir Travail avant une autre application. Une
+erreur partielle conserve ce retour ; chaque fenêtre est traitée indépendamment.
+Les positions intermédiaires relues après une restauration partielle sont
+suivies pour ne pas les confondre avec un déplacement manuel. En cas de position
+inconnue après une panne AX, Kigi garde le retour et signale l'incertitude.
+La sauvegarde JSON conserve la disposition voulue ; le retour avant application
+reste en mémoire seulement et est perdu à la fermeture de Kigi.
+
+Limite de cette étape : une disposition, deux fenêtres, un seul écran à la fois.
+Les noms multiples, l'éditeur de scènes et le choix d'écrans persistants attendent
+P4. Les gestes restent ceux du profil horizontal à 5 %, sans nouvelle affectation.
 
 ## Permissions et limites fenêtres
 

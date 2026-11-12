@@ -1,6 +1,6 @@
 use crate::{
     actions::Action,
-    applications, diagnostics,
+    applications, config, diagnostics,
     gestures::{Contact, CornerProbe, Edge},
     hotkey::Hotkeys,
     trackpad::Tap,
@@ -59,7 +59,7 @@ struct PendingOpen {
 #[derive(Default)]
 struct State {
     snapshot: RefCell<Option<Snapshot>>,
-    meeting_snapshot: RefCell<Option<windows::MeetingSnapshot>>,
+    layout_snapshot: RefCell<Option<windows::LayoutSnapshot>>,
     hotkeys: RefCell<Option<Hotkeys>>,
     personal_enabled: Cell<bool>,
     personal_item: OnceCell<Retained<NSMenuItem>>,
@@ -145,7 +145,7 @@ define_class!(
             let result = windows::work_browser(self.mtm());
             if result.is_ok() {
                 // A named Work scene ends the previous temporary Meeting scene.
-                self.ivars().meeting_snapshot.borrow_mut().take();
+                self.ivars().layout_snapshot.borrow_mut().take();
             }
             diagnostics::record("workspace.work", format!("success={}", result.is_ok()));
             self.status(&result.unwrap_or_else(|e| e));
@@ -159,7 +159,7 @@ define_class!(
             self.cancel_gesture_dispatch();
             let result = windows::meeting_browser(
                 self.mtm(),
-                &mut self.ivars().meeting_snapshot.borrow_mut(),
+                &mut self.ivars().layout_snapshot.borrow_mut(),
             );
             diagnostics::record("workspace.meeting", format!("success={}", result.is_ok()));
             self.status(&result.unwrap_or_else(|e| e));
@@ -171,16 +171,31 @@ define_class!(
             }
             self.cancel_open();
             self.cancel_gesture_dispatch();
-            let result = if let Some(snapshot) = self.ivars().meeting_snapshot.borrow().as_ref() {
+            let result = if let Some(snapshot) = self.ivars().layout_snapshot.borrow_mut().as_mut() {
                 snapshot.restore()
             } else {
-                Ok("Aucune scène de réunion à restaurer.".into())
+                Ok("Aucune disposition temporaire à restaurer.".into())
             };
             if result.is_ok() {
-                self.ivars().meeting_snapshot.borrow_mut().take();
+                self.ivars().layout_snapshot.borrow_mut().take();
             }
             diagnostics::record("workspace.restore", format!("success={}", result.is_ok()));
             self.status(&result.unwrap_or_else(|e| e));
+        }
+        #[unsafe(method(saveLayout:))]
+        fn save_layout(&self, _: Option<&AnyObject>) { self.personal_layout(true); }
+        #[unsafe(method(applyLayout:))]
+        fn apply_layout(&self, _: Option<&AnyObject>) { self.personal_layout(false); }
+        #[unsafe(method(revealConfig:))]
+        fn reveal_config(&self, _: Option<&AnyObject>) {
+            match config::path() {
+                Ok(path) if path.exists() => {
+                    let shown = NSWorkspace::sharedWorkspace().selectFile_inFileViewerRootedAtPath(
+                        Some(&NSString::from_str(&path.to_string_lossy())), ns_string!(""));
+                    if !shown { self.status("Impossible d'afficher le fichier dans Finder."); }
+                },
+                _ => self.status("Aucune disposition personnelle enregistrée. Utilisez Enregistrer une disposition personnelle."),
+            }
         }
         #[unsafe(method(openPoll:))]
         fn open_poll(&self, _: Option<&AnyObject>) { self.poll_open(); }
@@ -586,6 +601,103 @@ impl Controller {
             self.ivars().pending.replace(Some(pending));
             self.schedule_open_poll();
         }
+    }
+    fn personal_layout(&self, save: bool) {
+        if self.ivars().picking.get() || !self.window_permission() {
+            return;
+        }
+        if !save && self.ivars().layout_snapshot.borrow().is_some() {
+            self.status("Restaurez la disposition active ou choisissez Travail avant d'en appliquer une autre.");
+            return;
+        }
+        self.cancel_open();
+        self.cancel_gesture_dispatch();
+        // Resolve all windows before any AX write. Titles stay in the chooser.
+        let result = (|| {
+            let path = config::path()?;
+            let saved = if save {
+                None
+            } else {
+                Some(config::load(&path)?.ok_or("Aucune disposition personnelle enregistrée.")?)
+            };
+            let prior_pid = NSWorkspace::sharedWorkspace()
+                .frontmostApplication()
+                .map(|a| a.processIdentifier())
+                .filter(|p| *p != std::process::id() as i32);
+            let (display, mut choices, partial) = windows::pair_candidates(self.mtm())?;
+            self.ivars().picking.set(true);
+            #[allow(deprecated)]
+            NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+            let result = (|| {
+                let selected = if let Some((layout, _)) = saved.as_ref() {
+                    let mut selected = Vec::new();
+                    for (i, window) in layout.windows.iter().enumerate() {
+                        let matching: Vec<usize> = choices
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, c)| c.bundle_id == window.bundle_id)
+                            .map(|(i, _)| i)
+                            .collect();
+                        let index = match matching.as_slice() {
+                            [] => return Err(format!("Fenêtre absente pour {}. Ouvrez-la puis réessayez ; aucun placement effectué.", window.bundle_id)),
+                            [index] if !partial => *index,
+                            _ => {
+                                // Reuse the same native chooser, scoped to one bundle.
+                                let mut options = Vec::new();
+                                for index in matching.into_iter().rev() { options.push(choices.remove(index)); }
+                                options.reverse();
+                                let title = format!("{} à réappliquer (plusieurs fenêtres de cette application)", i + 1);
+                                let Some(index) = choose_window(self.mtm(), &title, &options, partial) else { return Ok("Disposition annulée ; aucune fenêtre déplacée.".into()); };
+                                let choice = options.remove(index);
+                                choices.extend(options); selected.push(choice); continue;
+                            }
+                        };
+                        selected.push(choices.remove(index));
+                    }
+                    let second = selected.pop().unwrap();
+                    let first = selected.pop().unwrap();
+                    [first, second]
+                } else {
+                    let Some(first) =
+                        choose_window(self.mtm(), "1/2 à enregistrer", &choices, partial)
+                    else {
+                        return Ok("Enregistrement annulé.".into());
+                    };
+                    let first = choices.remove(first);
+                    let Some(second) =
+                        choose_window(self.mtm(), "2/2 à enregistrer", &choices, partial)
+                    else {
+                        return Ok("Enregistrement annulé.".into());
+                    };
+                    [first, choices.remove(second)]
+                };
+                if let Some((layout, backup)) = saved {
+                    let result = windows::apply_saved_layout(
+                        &layout,
+                        display,
+                        selected,
+                        &mut self.ivars().layout_snapshot.borrow_mut(),
+                        prior_pid,
+                    )?;
+                    Ok(if backup {
+                        format!("{result} Configuration récupérée depuis la sauvegarde valide ; fichier principal conservé.")
+                    } else {
+                        result
+                    })
+                } else {
+                    let layout = windows::capture_layout(self.mtm(), [&selected[0], &selected[1]])?;
+                    config::save(&path, &layout)?;
+                    Ok("Disposition personnelle enregistrée. Elle sera disponible après redémarrage de Kigi.".into())
+                }
+            })();
+            self.ivars().picking.set(false);
+            result
+        })();
+        diagnostics::record(
+            "workspace.personal",
+            format!("save={save} success={}", result.is_ok()),
+        );
+        self.status(&result.unwrap_or_else(|e: String| e));
     }
     fn pick_pair(&self, first_left: bool) -> Result<String, String> {
         let (display, mut choices, partial) = windows::pair_candidates(self.mtm())?;
@@ -1046,8 +1158,26 @@ pub fn run() {
         menu_action(
             &menu,
             &controller,
-            "Restaurer la disposition avant réunion",
+            "Restaurer la disposition précédente",
             sel!(workspaceRestore:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Enregistrer une disposition personnelle…",
+            sel!(saveLayout:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Appliquer la disposition personnelle",
+            sel!(applyLayout:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Afficher la configuration dans Finder",
+            sel!(revealConfig:),
         );
         let gestures = menu_action(
             &menu,
