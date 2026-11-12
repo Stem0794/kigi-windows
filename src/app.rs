@@ -74,7 +74,7 @@ define_class!(
             unsafe { window.setReleasedWhenClosed(false) };
             window.setTitle(ns_string!("Trackpad local — aucun geste global activé"));
             let view = TouchView::new(mtm);
-            let text = NSTextField::labelWithString(ns_string!("Diagnostic local uniquement.\nGardez le pointeur dans cette fenêtre, puis levez les doigts.\nPosez un doigt dans le coin haut-gauche du trackpad et glissez vers le bas.\nLe résultat s'affiche ici ; aucune fenêtre tierce n'est déplacée."), mtm);
+            let text = NSTextField::labelWithString(ns_string!("Diagnostic local uniquement.\nGardez le pointeur dans cette fenêtre, puis levez les doigts.\nPosez un doigt dans le coin haut-gauche : les 10 % les plus à gauche. Glissez vers le bas.\nLe résultat s'affiche ici ; aucune fenêtre tierce n'est déplacée."), mtm);
             text.setFrame(NSRect::new(NSPoint::new(20.0,35.0),NSSize::new(560.0,170.0)));
             view.addSubview(&text);
             // hitTest routes the whole diagnostic area to TouchView.
@@ -280,7 +280,7 @@ pub fn run() {
         menu_action(
             &menu,
             &controller,
-            "Tester / restaurer la fenêtre active — ⌥T",
+            "Tester / restaurer la fenêtre active — ⌃⌥T",
             sel!(testWindow:),
         );
         menu.addItem(&NSMenuItem::separatorItem(mtm));

@@ -25,21 +25,21 @@ Aucun package commercial signé/notarisé n'est fourni à ce stade.
 2. Ouvrir Chrome ou Teams, puis « Détecter les fenêtres ». Seuls les bundles,
    nombres de fenêtres et géométrie sont affichés, sans lire les titres/contenus.
    L'inventaire est ponctuel et peut être partiel pour les apps AX inaccessibles.
-3. Activer une fenêtre normale, puis relâcher **⌥T** : elle passe à droite dans
-   la zone visible de son écran. Relâcher **⌥T** de nouveau restaure **cette même
+3. Activer une fenêtre normale, puis relâcher **⌃⌥T** : elle passe à droite dans
+   la zone visible de son écran. Relâcher **⌃⌥T** de nouveau restaure **cette même
    fenêtre**, même si le focus a changé. Le menu offre la même action ; son
    premier élément affiche le dernier résultat ou l'erreur.
 4. Tester le diagnostic local du trackpad. Le pointeur doit rester dans la
-   fenêtre de diagnostic. Un départ x≤0,20 / y≥0,80, puis une descente ≥0,22
+   fenêtre de diagnostic. Un départ x≤0,10 / y≥0,80, puis une descente ≥0,22
    en ≤1,5 s, avec un seul doigt et dérive horizontale ≤0,12, incrémente un compteur.
 5. Démarrer volontairement le diagnostic global passif, autoriser séparément
    Surveillance de l'entrée si nécessaire, passer dans Chrome/Teams et essayer
    le geste. Recliquer sur le même menu arrête l'écoute et affiche les compteurs.
    Une absence d'événements ne constitue pas une validation du geste.
 
-**⌥T est un raccourci de test P0**, pas encore l'action Teams de P1. Le code
-Carbon utilise la position physique de la touche T. En cas de conflit, l'erreur
-reste visible et le menu fonctionne. Quitter temporairement Hammerspoon pour
+**⌃⌥T est un raccourci de test P0**, pas encore l'action Teams de P1. Le code
+Carbon utilise la position physique de la touche T. Cette combinaison évite le ⌥T Teams de Hammerspoon. En cas de conflit, l'erreur
+reste visible et le menu fonctionne. Quitter temporairement Hammerspoon et relancer Kigi pour
 l'essai si nécessaire ; son fichier `init.lua` n'est jamais modifié.
 
 Le snapshot de test reste en mémoire seulement : restaurer avant de quitter.

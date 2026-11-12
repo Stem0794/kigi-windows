@@ -20,7 +20,7 @@ impl CornerProbe {
 
     pub fn begin(&mut self, c: Contact, fingers: usize) {
         self.start =
-            (fingers == 1 && c.x >= 0.0 && c.x <= 0.2 && c.y >= 0.8 && c.y <= 1.0).then_some(c);
+            (fingers == 1 && c.x >= 0.0 && c.x <= 0.1 && c.y >= 0.8 && c.y <= 1.0).then_some(c);
     }
 
     pub fn moved(&mut self, c: Contact, fingers: usize) -> bool {
@@ -74,7 +74,11 @@ mod tests {
     #[test]
     fn rejects_wrong_zone_multitouch_and_timeout() {
         let mut p = CornerProbe::default();
-        for start in [contact(0.45, 0.9, 0), contact(0.1, 0.4, 0)] {
+        for start in [
+            contact(0.1001, 0.9, 0),
+            contact(0.45, 0.9, 0),
+            contact(0.1, 0.4, 0),
+        ] {
             p.begin(start, 1);
             assert!(!p.moved(contact(start.x, start.y - 0.3, 200), 1));
         }

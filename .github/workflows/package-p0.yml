@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/package-p0.yml'
+      - 'Cargo.toml'
 permissions:
   contents: read
 jobs:
@@ -14,9 +15,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Prepare Rust targets
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install stable --profile minimal --component rustfmt
           rustup default stable
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
+      - name: Check format and targeted tests
+        run: |
+          cargo fmt --check
+          cargo check --locked
+          cargo test --locked
       - name: Build universal prototype
         run: bash scripts/bundle.sh universal
       - name: Archive application

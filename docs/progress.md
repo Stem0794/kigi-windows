@@ -69,3 +69,22 @@ sont désormais vérifiés sur un runner macOS. L'application n'a toutefois pas
 été exécutée ni testée avec les permissions, fenêtres ou trackpads réels.
 Pas de signature Developer ID ni de notarisation. Les validations natives
 interactives et macOS 11 restent en attente ; aucun démarrage de P1.
+
+## 2026-11-12 — P0 0.0.2 après premier essai utilisateur
+
+Le diagnostic local fonctionne selon le retour utilisateur ; le diagnostic
+global a reçu des contacts et trois candidats (voir trackpad-spike.md).
+Réduction de la zone de départ à x≤0,10, y≥0,80, commune aux deux diagnostics.
+Le test existant vérifie aussi le rejet à x=0,1001 et l'acceptation à x=0,10.
+
+L'utilisateur rapporte que ⌥T ouvre Teams depuis Chrome. Kigi P0 ne contient
+aucune action d'ouverture de Teams ; un autre gestionnaire, probablement
+Hammerspoon, exécute cette commande. Le raccourci de test Kigi devient
+⌃⌥T (Control + Option + T) pour éviter cette combinaison, sans modifier
+Hammerspoon ni implémenter l'action Teams de P1. Le conflit n'est pas prouvé
+par une inspection du Mac. Relancer Kigi après arrêt d'un concurrent si besoin :
+l'enregistrement se fait au lancement. Un échec est affiché dans le menu.
+
+Version du bundle incrémentée à 0.0.2. Vérifications prévues pendant le packaging macOS : fmt, cargo check, trois
+tests et construction native Release Intel/ARM. La nouvelle zone et le nouveau
+raccourci restent à essayer sur le Mac utilisateur. P1 non commencé.

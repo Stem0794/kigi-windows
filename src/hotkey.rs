@@ -80,10 +80,10 @@ impl Hotkey {
             if code != 0 {
                 return Err(format!("Installation du raccourci refusée ({code})."));
             }
-            // kVK_ANSI_T = 17, optionKey = 1 << 11. Physical T position.
-            let code = RegisterEventHotKey(17, 1 << 11, ID, target, 1, &mut this.key);
+            // kVK_ANSI_T = 17, optionKey = 1 << 11, controlKey = 1 << 12. Physical T position.
+            let code = RegisterEventHotKey(17, (1 << 11) | (1 << 12), ID, target, 1, &mut this.key);
             if code != 0 {
-                return Err(format!("⌥T indisponible ({code}). Vérifiez Hammerspoon et les raccourcis système. Le menu reste utilisable."));
+                return Err(format!("⌃⌥T indisponible ({code}). Vérifiez Hammerspoon et les raccourcis système. Le menu reste utilisable."));
             }
             Ok(this)
         }

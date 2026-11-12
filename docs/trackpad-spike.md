@@ -13,7 +13,7 @@ contacts, d'échantillons et de candidats, ainsi que l'interruption éventuelle 
 tap. Tout reste en mémoire, sans titres, frappes, logs de mouvements ni disque.
 Aucun candidat ne déclenche de déplacement ou de scène.
 
-Départ dans le coin x∈[0 ; 0,20], y∈[0,80 ; 1] ; descente `y_initial - y ≥ 0,22`,
+Départ dans le coin x∈[0 ; 0,10], y∈[0,80 ; 1] ; descente `y_initial - y ≥ 0,22`,
 dérive horizontale ≤0,12, durée ≤1 500 ms, un seul doigt, début requis, une seule
 détection par début. Deuxième doigt, annulation, identité/device différent,
 dérive ou délai excessif annulent le candidat. Les seuils sont expérimentaux.
@@ -49,3 +49,18 @@ dérive ou délai excessif annulent le candidat. Les seuils sont expérimentaux.
 Ajouter les observations ici avant de choisir GO / PARTIAL / NO-GO matériel.
 Ne pas transformer l'absence de Mac de test en verdict d'impossibilité.
 Voir [ADR 001](adr-001-trackpad.md) pour la limite de l'API et le repli clavier.
+
+## Retour utilisateur du 12 novembre — première validation terrain partielle
+
+L'utilisateur rapporte un test local réussi. Sa capture du diagnostic global
+affiche 2 069 événements, 1 793 avec contacts, 1 558 échantillons et 3 candidats ;
+tap interrompu : false. Cela confirme la réception de contacts et de candidats
+sur son Mac avec le premier prototype. Modèle, macOS, permissions exactes et
+nombre de gestes tentés non relevés : pas de conclusion sur le taux de réussite,
+les faux positifs, la veille ou la compatibilité Intel/macOS 11. Le verdict reste
+PARTIAL, désormais avec une observation terrain positive.
+
+En 0.0.2, la zone de départ passe de 20 % à 10 % de la largeur, toujours dans
+les 20 % supérieurs. Le déplacement peut sortir de cette bande après le départ
+dans la limite de dérive horizontale existante (0,12). La nouvelle largeur reste
+à retester sur le Mac pilote ; elle s'applique au diagnostic local et global.
