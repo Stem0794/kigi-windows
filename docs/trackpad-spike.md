@@ -1,10 +1,10 @@
 # Spike trackpad — P0
 
-2026-11-12. **Verdict : PARTIAL documentaire et prototype ; aucun GO matériel.**
+2026-11-12. **Verdict : PARTIAL avec validation utilisateur positive sur son Mac.**
 Le développement a commencé sous Linux x86_64 ; les binaires sont maintenant
 construits sur un runner macOS. Le premier retour utilisateur confirme un test
 local réussi et des contacts globaux reçus sur son Mac (détails ci-dessous).
-Les nouveaux seuils 0.0.2 et le comportement après veille restent à valider.
+L’utilisateur a confirmé le diagnostic après réduction de zone et à nouveau en 0.0.5/0.0.6. Le comportement après veille reste à valider.
 
 ## Ce que le prototype permet de mesurer
 
@@ -63,5 +63,14 @@ PARTIAL, désormais avec une observation terrain positive.
 
 En 0.0.2, la zone de départ passe de 20 % à 10 % de la largeur, toujours dans
 les 20 % supérieurs. Le déplacement peut sortir de cette bande après le départ
-dans la limite de dérive horizontale existante (0,12). La nouvelle largeur reste
-à retester sur le Mac pilote ; elle s'applique au diagnostic local et global.
+dans la limite de dérive horizontale existante (0,12). Elle s'applique au
+diagnostic local et global ; les confirmations suivantes figurent ci-dessous.
+
+## Confirmation utilisateur avant P1
+
+Après les packages 0.0.2 puis 0.0.5/0.0.6, l'utilisateur confirme « trackpad ok »
+et « le scroll haut gauche fonctionne toujours ». La réduction à 10 % n'est
+donc plus seulement une hypothèse de code. Aucun relevé de faux positifs,
+veille/verrouillage, type exact de trackpad ou couverture d'autres OS n'est
+fourni ; PARTIAL reste approprié avant activation d'actions dans P2. Le code
+trackpad reste inchangé dans 0.1.0.

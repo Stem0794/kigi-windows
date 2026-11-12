@@ -231,3 +231,11 @@ Carbon est étendu à l'indépendance de deux touches maintenues. Packaging et
 tests natifs macOS : résultat du run à consigner après compilation.
 Prochain sous-ticket : validation manuelle P1 sur Mac puis activation opt-in
 du geste dans P2, sans migrer les réunions automatiques par anticipation.
+
+Validation native P1 : [run 43262879975](https://github.com/Stem0794/kigi-windows/actions/runs/43262879975)
+réussi ; fmt/check et **7 tests macOS Intel** réussis, Release Intel/ARM liées,
+assemblage universel, plist et signature ad hoc vérifiés par le runner.
+Source du package : 9f09073622ab9c229e406d41e3406d4db0120ad9. ZIP téléchargé,
+CRC de l'artefact et du ZIP applicatif contrôlés, version/bundle ID et en-tête
+Mach-O Intel/ARM relus. Aucun test interactif P1 ni mesure de performances
+réalisé : ils restent le prochain essai sur le Mac pilote.
