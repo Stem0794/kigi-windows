@@ -452,3 +452,13 @@ validation finale et packaging à consigner après compilation. UI interactive
 non exécutée ici (Linux), à essayer sur le Mac pilote. Reste P4 : interactions
 graphiques avancées, capture de raccourcis et affectation gestes→espaces. P5
 n'est pas démarré.
+
+Validation finale 0.4.0 : fmt/check, 13 tests hôte et checks de code/tests Mac
+Intel/ARM cible11 réussis. [Run macOS 43299940463](https://github.com/Stem0794/kigi-windows/actions/runs/43299940463)
+réussi : 16 tests, script Chrome compilé, Release Intel/ARM liées, signature
+ad hoc/plist/lipo contrôlés. Source : 468889f5f1b6a5a79490bb58e500d1e12cd144a1.
+Archive téléchargée, SHA256 de l'artefact et CRC applicatif vérifiés ; version
+0.4.0/build13, binaire universel et chaînes de la nouvelle UI relus. ZIP 665517
+octets. Aucun clic ni rendu
+interactif de la fenêtre AppKit exécuté ici ; création/duplication/édition/
+application depuis la nouvelle UI restent à essayer sur le Mac pilote.
