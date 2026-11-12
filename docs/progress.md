@@ -105,6 +105,9 @@ Ajout d'une ligne permanente avec état d'enregistrement et compteur de
 raccourcis reçus, cliquable pour afficher version, permission AX et dernier
 résultat. Aucune frappe arbitraire n'est surveillée ou stockée. Un seul test
 de régression ajouté pour éviter le double déplacement à l'appui/relâchement
-ou pendant une touche maintenue. Packaging et quatre tests natifs prévus
-sur le runner macOS ; fonctionnement interactif du correctif à retester.
+ou pendant une touche maintenue. Vérifications réussies : fmt, check, quatre tests sur macOS (4/4), construction
+Release et lien natif Intel/ARM, signature ad hoc et ZIP universel contrôlés.
+[Run de validation 43245414635](https://github.com/Stem0794/kigi-windows/actions/runs/43245414635),
+source du package : 94f38b6e161212d91fea14859695a9115f350c63.
+Fonctionnement interactif du correctif à retester sur le Mac utilisateur.
 Trackpad et ses seuils inchangés. P0 uniquement.
