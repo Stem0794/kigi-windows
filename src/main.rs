@@ -1,6 +1,8 @@
 #[cfg(target_os = "macos")]
 mod app;
 #[cfg(any(target_os = "macos", test))]
+mod diagnostics;
+#[cfg(any(target_os = "macos", test))]
 mod geometry;
 #[cfg(any(target_os = "macos", test))]
 mod gestures;

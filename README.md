@@ -62,8 +62,8 @@ MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target aarch64-apple-darwin
 bash scripts/bundle.sh universal
 ```
 
-Les quatre tests sur Mac portent sur la conversion d'écrans et les cas critiques du
-classifieur diagnostic et le déclenchement unique du raccourci. `cargo check` ne valide ni l'édition de liens Apple,
+Les cinq tests sur Mac portent sur la conversion d'écrans et les cas critiques du
+classifieur diagnostic et le déclenchement unique du raccourci, ainsi que la borne du journal de diagnostic. `cargo check` ne valide ni l'édition de liens Apple,
 ni TCC, ni les appels exécutés, ni la détection du trackpad.
 
 Voir [le rapport trackpad](docs/trackpad-spike.md), la
@@ -83,3 +83,27 @@ autre gestionnaire et relancer Kigi si nécessaire. Compteur augmenté sans
 déplacement : consulter l'erreur AX, vérifier l'accès Accessibilité pour le
 bundle remplacé et fermer le diagnostic local avant de réactiver Chrome.
 Le menu « Tester / restaurer » exécute la même action indépendamment du clavier.
+
+## Logs transmissibles (0.0.4)
+
+Le menu propose **Copier les logs de diagnostic** pour les coller dans un
+message, et **Exporter les logs…** pour choisir un fichier `.txt` à transmettre.
+Reproduire le problème puis copier/exporter avant de quitter Kigi : le journal
+est limité aux 200 derniers événements de la session et n'est pas conservé au
+redémarrage. Aucun fichier automatique, envoi réseau ou dépendance de logging.
+
+Le rapport contient version, architecture, macOS, chemin de l'exécutable
+(répertoire personnel abrégé en `~`), état AX, enregistrement/réception du
+raccourci, actions, erreurs AX, géométrie demandée/obtenue et bilan du diagnostic
+trackpad s'il est actif. Il exclut frappes, titres, contenu des applications,
+URLs d'onglets, identifiants de contacts et coordonnées de doigts.
+
+Si le raccourci est reçu mais AX refusée, une explication apparaît une seule
+fois par session. Autoriser l'application actuelle dans Accessibilité, puis
+réessayer ; le raccourci et le diagnostic trackpad ne suffisent pas à prouver
+que cette permission est accordée.
+
+La configuration Hammerspoon fournie est conservée dans
+[examples/hammerspoon-reference.lua](examples/hammerspoon-reference.lua).
+Le [relevé de migration](docs/migration-audit.md) distingue ses comportements
+exacts de ceux du prototype P0 : elle n'est pas exécutée ni importée comme code.

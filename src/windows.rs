@@ -1,5 +1,5 @@
 //! Small owned CoreFoundation wrapper around the public Accessibility C API.
-use crate::geometry::Rect;
+use crate::{diagnostics, geometry::Rect};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSScreen, NSWorkspace};
 use objc2_foundation::NSString;
@@ -62,6 +62,9 @@ impl Element {
         let key = NSString::from_str(name);
         let mut value = ptr::null();
         let code = unsafe { AXUIElementCopyAttributeValue(self.0, name_ref(&key), &mut value) };
+        if code != 0 {
+            diagnostics::record("ax.read_failed", format!("attribute={name} code={code}"));
+        }
         check(code)?;
         if value.is_null() {
             return Err("Attribut AX absent.".into());
@@ -120,17 +123,29 @@ impl Element {
     fn set_frame(&self, frame: Rect) -> Result<Rect, String> {
         require_permission()?;
         self.ensure_normal()?;
+        diagnostics::record("ax.frame.request", format!("target={frame:?}"));
         self.can_set("AXPosition")?;
         self.can_set("AXSize")?;
         self.set_pair("AXSize", 2, [frame.width, frame.height])?;
         self.set_pair("AXPosition", 1, [frame.x, frame.y])?;
-        self.frame()
+        let actual = self.frame()?;
+        diagnostics::record(
+            "ax.frame.readback",
+            format!(
+                "actual={actual:?} within_tolerance={}",
+                actual.approximately(frame)
+            ),
+        );
+        Ok(actual)
     }
 }
 fn name_ref(s: &NSString) -> Ref {
     (s as *const NSString).cast()
 }
 fn check(code: i32) -> Result<(), String> {
+    if code != 0 {
+        diagnostics::record("ax.error", format!("code={code}"));
+    }
     match code {
         0 => Ok(()),
         -25211 => Err(
@@ -250,12 +265,23 @@ pub fn move_frontmost(
     let app = NSWorkspace::sharedWorkspace()
         .frontmostApplication()
         .ok_or("Aucune application active.")?;
+    diagnostics::record(
+        "window.target",
+        format!(
+            "bundle={} pid={}",
+            app.bundleIdentifier()
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            app.processIdentifier()
+        ),
+    );
     if app.processIdentifier() == std::process::id() as i32 {
         return Err("Activez une fenêtre d'une autre application avant le test.".into());
     }
     let window = Element::app(app.processIdentifier()).attribute("AXFocusedWindow")?;
     window.ensure_normal()?;
     let frame = window.frame()?;
+    diagnostics::record("ax.frame.before", format!("frame={frame:?}"));
     let screens = NSScreen::screens(mtm);
     let primary = screens
         .firstObject()

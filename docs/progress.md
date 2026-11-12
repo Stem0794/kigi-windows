@@ -111,3 +111,25 @@ Release et lien natif Intel/ARM, signature ad hoc et ZIP universel contrôlés.
 source du package : 94f38b6e161212d91fea14859695a9115f350c63.
 Fonctionnement interactif du correctif à retester sur le Mac utilisateur.
 Trackpad et ses seuils inchangés. P0 uniquement.
+
+## 2026-11-12 — P0 0.0.4 : logs et référence utilisateur
+
+Le diagnostic transmis par l'utilisateur indique 11 raccourcis reçus et
+Accessibilité non autorisée : cause observée du refus de déplacement, sans
+preuve d'une panne persistante du raccourci. Ajout d'une explication visible
+une fois par session en cas de test AX refusé, sans changement des permissions.
+
+Journal structural en mémoire limité à 200 événements / 400 caractères de
+contexte par événement. Copie dans le presse-papiers et export `.txt` via
+NSSavePanel uniquement sur action utilisateur. Version/OS/architecture, chemin
+abrégé, permissions, réception/routage, erreurs AX et géométrie ; pas de
+frappes, titres, contenus, URLs, contacts ou coordonnées de doigts. Le callback
+CG du trackpad ne journalise pas son flux ; seul son bilan est exporté.
+Un test ajouté pour borne mémoire, rotation et détails Unicode sur une ligne.
+
+Fichier Hammerspoon fourni copié sans modification comme référence (455 lignes)
+et audité dans migration-audit.md : gestes de bord sur toute la hauteur,
+sélecteur de deux fenêtres, chat Teams gauche/réunion droite, retour au chat,
+réutilisation d'onglet ChatGPT. Le profil complet n'est pas activé dans ce P0.
+Le prochain jalon reste le déplacement/restauration sur le Mac après permission
+AX, puis les raccourcis manuels de migration. Aucun init.lua local modifié.

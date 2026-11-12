@@ -1,5 +1,8 @@
 //! Opt-in, passive public-API feasibility probe. Never runs window actions.
-use crate::gestures::{Contact, CornerProbe};
+use crate::{
+    diagnostics,
+    gestures::{Contact, CornerProbe},
+};
 use objc2::{msg_send, rc::Retained};
 use objc2_app_kit::{NSEvent, NSEventType, NSTouchPhase};
 use objc2_core_graphics::CGEvent;
@@ -50,7 +53,9 @@ impl Tap {
     pub fn start() -> Result<Self, String> {
         unsafe {
             // Separate, explicit opt-in from Accessibility. Available since 10.15.
-            if !CGPreflightListenEventAccess() && !CGRequestListenEventAccess() {
+            let trusted = CGPreflightListenEventAccess();
+            diagnostics::record("permission.input.check", format!("trusted={trusted}"));
+            if !trusted && !CGRequestListenEventAccess() {
                 return Err("Surveillance de l'entrée non autorisée. Autorisez-la pour ce diagnostic, puis relancez Kigi. Cela ne garantit pas l'accès aux contacts.".into());
             }
             let mut stats = Box::new(Stats {
@@ -63,6 +68,10 @@ impl Tap {
             let mask = 1u64 << NSEventType::Gesture.0;
             let port =
                 CGEventTapCreate(1, 0, 1, mask, callback, (&mut *stats as *mut Stats).cast());
+            diagnostics::record(
+                "trackpad.tap.create",
+                format!("success={}", !port.is_null()),
+            );
             if port.is_null() {
                 return Err("Le tap passif n'a pas pu être créé. Aucun geste global disponible avec cet essai.".into());
             }
