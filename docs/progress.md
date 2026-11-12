@@ -514,3 +514,14 @@ Trois tests purs ciblés : validation/affectation/doublons, persistance et refus
 d’écrasement invalide/externe, limite du diagnostic sans contacts. Vérifications
 locales réussies : 16 tests hôte, code/tests macOS ARM/Intel. Validation native
 et archive à consigner après build. UI/saisie/trackpad réels à tester sur Mac.
+
+Validation finale 0.5.0 : [run macOS 43309029522](https://github.com/Stem0794/kigi-windows/actions/runs/43309029522)
+réussi sur d155b1e276cadfdbeb7903a68b5d8692d447a300 : fmt/check, 19 tests
+macOS, script Chrome compilé, Release Intel/ARM, signature/plist/lipo. Un seul
+contrôle de démarrage natif : processus resté vivant 4 s, puis terminé par le
+runner ; aucune saisie, action AX ou capture écran. Ce contrôle ne valide pas
+la saisie interactive ni le trackpad physique. Archive téléchargée : SHA256
+artefact/CRC outer-inner vérifiés, Info.plist 0.5.0/build15, Mach-O Intel/ARM,
+762111 octets ; SHA256 ZIP bfdd2a89b4814bbddbc966213d140688f37f8f48245d92a51db9362fea0f5ad4.
+Retour Mac requis : réaffectation ⌥T à une autre app, changement de combinaison,
+annulation/focus/conflit/persistance ; test local 5 % puis global 12 s et logs.
