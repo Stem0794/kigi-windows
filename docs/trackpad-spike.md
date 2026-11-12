@@ -74,3 +74,15 @@ donc plus seulement une hypothèse de code. Aucun relevé de faux positifs,
 veille/verrouillage, type exact de trackpad ou couverture d'autres OS n'est
 fourni ; PARTIAL reste approprié avant activation d'actions dans P2. Le code
 trackpad reste inchangé dans 0.1.0.
+
+## P2 pilote 0.2.0 : action après activation explicite
+
+Le diagnostic existant a reçu la confirmation utilisateur sur le Mac pilote ;
+le profil actif de bord peut maintenant être essayé volontairement depuis le
+menu. Il reprend toute hauteur gauche10 % / droite20 % et déclenche Teams ou
+Chrome après sortie du callback. Le diagnostic local/global de coin est conservé.
+L'écoute s'arrête après veille/session inactive/interruption et reste désactivée
+à la reprise jusqu'à un clic utilisateur. Aucun verrouillage sans veille ou
+branchement Magic Trackpad n'a encore été testé. Les tests purs de cooldown,
+contact unique et annulation ne démontrent pas l'absence de faux positifs réels.
+Verdict terrain reste PARTIAL ; ne pas présenter 0.2.0 comme support universel.

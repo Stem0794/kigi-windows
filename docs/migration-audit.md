@@ -69,3 +69,17 @@ Un lancement/focus ne demande pas de nouvelle fenêtre. La fin du lancement et
 l'apparition AX sont attendues au plus 3 s, uniquement pendant l'action.
 Validation fonctionnelle des nouvelles commandes, p95 et RSS encore à relever
 sur le Mac pilote. Les tableaux P0 précédents restent le relevé historique.
+
+## P2 pilote 0.2.0
+
+À la demande suivante, ⌥C est porté vers NSAppleScript in-process avec recherche
+d'onglet existant (hôtes exacts, pas préfixe trompeur), activation et création
+uniquement en l'absence de correspondance. Automatisation Chrome séparée et
+explicite ; aucun repli créant un doublon après refus/erreur.
+
+Gestes activables par menu : bande gauche10 % et droite20 %, toute hauteur,
+une descente → Teams/Chrome100 %. Pas de frappe synthétique. Seuils de la
+référence, cooldown1s, ajout du début strict et annulation jusqu'au retrait
+complet. Pause après veille/session inactive/interruption, reprise manuelle.
+Toujours aucune heuristique automatique Teams ni modification du Lua original.
+Les fonctionnalités sont compilées ; elles attendent le retour terrain P2.

@@ -1,7 +1,7 @@
-//! Opt-in, passive public-API feasibility probe. Never runs window actions.
+//! Opt-in passive contact delivery. Queue recognized actions; never run AX in the tap.
 use crate::{
     diagnostics,
-    gestures::{Contact, CornerProbe},
+    gestures::{Contact, CornerProbe, Edge, EdgeProbe},
 };
 use objc2::{msg_send, rc::Retained};
 use objc2_app_kit::{NSEvent, NSEventType, NSTouchPhase};
@@ -42,6 +42,10 @@ struct Stats {
     disabled: bool,
     started: Option<Instant>,
     probe: CornerProbe,
+    edges: EdgeProbe,
+    actions: bool,
+    left: u64,
+    right: u64,
 }
 
 pub struct Tap {
@@ -51,15 +55,28 @@ pub struct Tap {
 }
 impl Tap {
     pub fn start() -> Result<Self, String> {
+        Self::start_mode(false)
+    }
+    pub fn start_actions() -> Result<Self, String> {
+        Self::start_mode(true)
+    }
+    pub fn active_actions(&self) -> bool {
+        self.stats.actions && !self.stats.disabled
+    }
+    pub fn input_trusted() -> bool {
+        unsafe { CGPreflightListenEventAccess() }
+    }
+    fn start_mode(actions: bool) -> Result<Self, String> {
         unsafe {
             // Separate, explicit opt-in from Accessibility. Available since 10.15.
             let trusted = CGPreflightListenEventAccess();
             diagnostics::record("permission.input.check", format!("trusted={trusted}"));
             if !trusted && !CGRequestListenEventAccess() {
-                return Err("Surveillance de l'entrée non autorisée. Autorisez-la pour ce diagnostic, puis relancez Kigi. Cela ne garantit pas l'accès aux contacts.".into());
+                return Err("Surveillance de l'entrée non autorisée. Autorisez-la pour l’écoute du trackpad, puis relancez Kigi. Cela ne garantit pas l'accès aux contacts.".into());
             }
             let mut stats = Box::new(Stats {
                 started: Some(Instant::now()),
+                actions,
                 ..Default::default()
             });
             // Gesture=29 is NSEventTypeGesture in public AppKit headers, NOT
@@ -91,6 +108,10 @@ impl Tap {
         }
     }
     pub fn report(&self) -> String {
+        if self.stats.actions {
+            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Contacts : {}. Tap interrompu : {}.\nGauche 10 % → Teams ; droite 20 % → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle depuis le menu. Résultats propres à ce Mac.",
+                self.stats.left, self.stats.right, self.stats.with_touches, self.stats.disabled);
+        }
         format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} candidat(s) haut-gauche → bas. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
             self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.recognized,
             self.stats.disabled,
@@ -120,6 +141,11 @@ unsafe extern "C" fn callback(
         // Fail closed; explicit restart rather than automatic reenable loops.
         stats.disabled = true;
         stats.probe.cancel();
+        stats.edges.cancel();
+        crate::app::queue_tap_interrupted();
+        return event;
+    }
+    if stats.disabled {
         return event;
     }
     if kind != NSEventType::Gesture.0 as u32 || event.is_null() {
@@ -141,8 +167,23 @@ unsafe extern "C" fn callback(
         .iter()
         .filter(|t| t.phase().intersects(NSTouchPhase::Touching))
         .count();
-    if fingers != 1 {
+    if fingers != 1 || NSEvent::pressedMouseButtons() != 0 {
         stats.probe.cancel();
+        if fingers == 0 {
+            stats.edges.release();
+        } else {
+            stats.edges.cancel();
+        }
+        return event;
+    }
+    // An ended/cancelled contact alongside an active one is an interruption,
+    // never the start of another one-finger gesture.
+    if touches.iter().any(|t| {
+        t.phase()
+            .intersects(NSTouchPhase::Ended | NSTouchPhase::Cancelled)
+    }) {
+        stats.probe.cancel();
+        stats.edges.cancel();
         return event;
     }
     for touch in touches.iter().take(8) {
@@ -167,13 +208,25 @@ unsafe extern "C" fn callback(
             ms: stats.started.as_ref().unwrap().elapsed().as_millis() as u64,
         };
         stats.samples += 1;
-        if phase == NSTouchPhase::Began {
+        if stats.actions {
+            if phase == NSTouchPhase::Began {
+                stats.edges.begin(sample, fingers);
+            } else if phase == NSTouchPhase::Moved {
+                if let Some(edge) = stats.edges.moved(sample, fingers) {
+                    match edge {
+                        Edge::Left => stats.left += 1,
+                        Edge::Right => stats.right += 1,
+                    }
+                    crate::app::queue_gesture(edge);
+                }
+            }
+        } else if phase == NSTouchPhase::Began {
             stats.probe.begin(sample, fingers);
         } else if phase == NSTouchPhase::Moved && stats.probe.moved(sample, fingers) {
             stats.recognized += 1;
         }
     }
-    // Bounded O(fingers), counters and a pure diagnostic classifier only.
-    // No AX, I/O, logging, allocations of our own, or UI calls here.
+    // No AX, Apple Events, logs or window activation in this callback.
+    // A rare recognized gesture only queues a selector for after callback return.
     event
 }

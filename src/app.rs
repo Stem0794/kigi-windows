@@ -1,7 +1,7 @@
 use crate::{
     actions::Action,
     applications, diagnostics,
-    gestures::{Contact, CornerProbe},
+    gestures::{Contact, CornerProbe, Edge},
     hotkey::Hotkeys,
     trackpad::Tap,
     windows::{self, Snapshot},
@@ -64,6 +64,9 @@ struct State {
     personal_item: OnceCell<Retained<NSMenuItem>>,
     pending: RefCell<Option<PendingOpen>>,
     picking: Cell<bool>,
+    menu_open: Cell<bool>,
+    gesture_item: OnceCell<Retained<NSMenuItem>>,
+    queued_gesture: Cell<Option<Edge>>,
     status: OnceCell<Retained<NSMenuItem>>,
     hotkey_status: OnceCell<Retained<NSMenuItem>>,
     hotkey_count: Cell<u64>,
@@ -197,6 +200,7 @@ define_class!(
         fn test_window(&self, _: Option<&AnyObject>) {
             if self.ivars().picking.get() { return; }
             self.cancel_open();
+            self.cancel_gesture_dispatch();
             self.record_state("action.window.start");
             if !self.window_permission() { return; }
             let mut snapshot = self.ivars().snapshot.borrow_mut();
@@ -244,13 +248,15 @@ define_class!(
         }
         #[unsafe(method(globalProbe:))]
         fn global_probe(&self, _: Option<&AnyObject>) {
+            self.cancel_gesture_dispatch();
             let old = self.ivars().tap.borrow_mut().take();
+            self.update_gesture_label();
             if let Some(tap) = old {
                 let report = tap.report();
                 diagnostics::record("trackpad.global.stop", &report);
                 drop(tap);
-                self.status("Diagnostic global arrêté.");
-                alert(self.mtm(), "Résultat du spike global", &report);
+                self.status("Écoute globale arrêtée.");
+                alert(self.mtm(), "Bilan du trackpad", &report);
             } else {
                 match Tap::start() {
                     Ok(tap) => {
@@ -262,24 +268,102 @@ define_class!(
                 }
             }
         }
+        #[unsafe(method(toggleGestures:))]
+        fn toggle_gestures(&self, _: Option<&AnyObject>) {
+            if self.gestures_active() {
+                self.stop_tap(); self.status("Gestes désactivés."); return;
+            }
+            if !self.window_permission() { return; }
+            self.stop_tap();
+            match Tap::start_actions() {
+                Ok(tap) => {
+                    self.ivars().tap.replace(Some(tap));
+                    self.update_gesture_label();
+                    diagnostics::record("gestures.start", "left=0.10 right=0.20 whole_height=true");
+                    self.status("Gestes activés : bord gauche vers bas → Teams ; bord droit → Chrome à 100 %.");
+                }
+                Err(e) => self.status(&e),
+            }
+        }
+        #[unsafe(method(gestureAction:))]
+        fn gesture_action(&self, _: Option<&AnyObject>) {
+            let Some(edge) = self.ivars().queued_gesture.take() else { return; };
+            if !self.gestures_active() || self.ivars().picking.get() || self.ivars().menu_open.get() { return; }
+            if !Tap::input_trusted() || !self.refresh_permission() {
+                self.stop_tap(); self.status("Gestes arrêtés : une autorisation a été révoquée."); return;
+            }
+            let action = match edge { Edge::Left => Action::Teams, Edge::Right => Action::Browser };
+            diagnostics::record("gesture.action", format!("edge={edge:?} action={action:?}"));
+            self.execute(action);
+        }
+        #[unsafe(method(pauseGestures:))]
+        fn pause_gestures(&self, _: Option<&AnyObject>) {
+            self.cancel_open();
+            let listening = self.ivars().tap.borrow().is_some();
+            self.stop_tap();
+            if listening {
+                self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Réactivez-la depuis le menu.");
+            }
+        }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
             self.cancel_permission_poll();
             self.cancel_open();
             diagnostics::record("application.quit", "requested=true");
-            self.ivars().tap.borrow_mut().take();
+            self.stop_tap();
             NSApplication::sharedApplication(self.mtm()).stop(None);
         }
     }
     unsafe impl NSMenuDelegate for Controller {
         #[unsafe(method(menuWillOpen:))]
-        fn menu_will_open(&self, _: &NSMenu) { self.refresh_permission(); }
+        fn menu_will_open(&self, _: &NSMenu) {
+            self.ivars().menu_open.set(true);
+            self.cancel_gesture_dispatch();
+            self.refresh_permission();
+            self.update_gesture_label();
+        }
+        #[unsafe(method(menuDidClose:))]
+        fn menu_did_close(&self, _: &NSMenu) { self.ivars().menu_open.set(false); }
     }
 );
 impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
+    }
+    fn gestures_active(&self) -> bool {
+        self.ivars()
+            .tap
+            .borrow()
+            .as_ref()
+            .is_some_and(Tap::active_actions)
+    }
+    fn update_gesture_label(&self) {
+        if let Some(item) = self.ivars().gesture_item.get() {
+            item.setTitle(&NSString::from_str(if self.gestures_active() {
+                "Gestes de bord : actifs — désactiver"
+            } else {
+                "Activer les gestes de bord Teams / Chrome"
+            }));
+        }
+    }
+    fn cancel_gesture_dispatch(&self) {
+        self.ivars().queued_gesture.take();
+        let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(gestureAction:), object:std::ptr::null::<AnyObject>()]
+        };
+    }
+    fn stop_tap(&self) {
+        self.cancel_gesture_dispatch();
+        let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(pauseGestures:), object:std::ptr::null::<AnyObject>()]
+        };
+        let tap = self.ivars().tap.borrow_mut().take();
+        if let Some(tap) = tap {
+            diagnostics::record("trackpad.stop", tap.report());
+            drop(tap);
+        }
+        self.update_gesture_label();
     }
     fn update_shortcut_label(&self) {
         if let Some(item) = self.ivars().hotkey_status.get() {
@@ -334,6 +418,7 @@ impl Controller {
             return;
         }
         self.cancel_open();
+        self.cancel_gesture_dispatch();
         if matches!(
             action,
             Action::Maximize | Action::PairLeft | Action::PairRight
@@ -361,7 +446,14 @@ impl Controller {
                     "Activation demandée…".to_owned()
                 })
             }
-            Action::ChatGpt => applications::chatgpt(self.mtm()),
+            Action::ChatGpt => {
+                // Apple Events may run a consent modal loop. Ignore reentrant
+                // hotkeys/gestures until this single explicit action completes.
+                self.ivars().picking.set(true);
+                let result = applications::chatgpt(self.mtm());
+                self.ivars().picking.set(false);
+                result
+            }
             Action::Maximize => windows::maximize(self.mtm(), None),
             Action::PairLeft | Action::PairRight => self.pick_pair(action == Action::PairLeft),
             Action::Test => return,
@@ -735,12 +827,36 @@ fn menu_action(
     menu.addItem(&item);
     item
 }
+/// Called from the main-loop CG tap. Only store one small event and defer UI/AX
+/// until the callback has returned. Disabled/menu/busy states never queue work.
+pub fn queue_gesture(edge: Edge) {
+    CONTROLLER.with(|slot| {
+        if let Some(controller) = slot.borrow().as_ref() {
+            if controller.ivars().picking.get() || controller.ivars().menu_open.get() { return; }
+            if controller.ivars().queued_gesture.replace(Some(edge)).is_none() {
+                let _: () = unsafe {
+                    msg_send![&**controller, performSelector:sel!(gestureAction:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64]
+                };
+            }
+        }
+    });
+}
+pub fn queue_tap_interrupted() {
+    CONTROLLER.with(|slot| {
+        if let Some(controller) = slot.borrow().as_ref() {
+            let _: () = unsafe {
+                msg_send![&**controller, performSelector:sel!(pauseGestures:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64]
+            };
+        }
+    });
+}
 pub fn schedule_action(action: Action) {
     CONTROLLER.with(|slot| {
         if let Some(controller) = slot.borrow().as_ref() {
             if controller.ivars().picking.get() { return; }
             let count = controller.ivars().hotkey_count.get() + 1;
             controller.ivars().hotkey_count.set(count);
+            controller.cancel_gesture_dispatch();
             diagnostics::record("shortcut.received", format!("action={action:?} count={count}"));
             controller.update_shortcut_label();
             let selector = Sel::register(std::ffi::CString::new(action.selector()).unwrap().as_c_str());
@@ -798,7 +914,7 @@ pub fn run() {
         let menu = NSMenu::new(mtm);
         let status = NSMenuItem::new(mtm);
         status.setTitle(ns_string!(
-            "P1 — raccourcis manuels. Gestes en diagnostic uniquement."
+            "Prêt — gestes activables à la demande depuis le menu."
         ));
         status.setEnabled(false);
         menu.addItem(&status);
@@ -867,6 +983,13 @@ pub fn run() {
             sel!(testWindow:),
         );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
+        let gestures = menu_action(
+            &menu,
+            &controller,
+            "Activer les gestes de bord Teams / Chrome",
+            sel!(toggleGestures:),
+        );
+        controller.ivars().gesture_item.set(gestures).ok();
         menu_action(
             &menu,
             &controller,
@@ -893,11 +1016,32 @@ pub fn run() {
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
         controller.ivars().personal_enabled.set(true);
         controller.register_hotkeys();
+        let center = NSWorkspace::sharedWorkspace().notificationCenter();
+        unsafe {
+            for name in [
+                NSWorkspaceWillSleepNotification,
+                NSWorkspaceScreensDidSleepNotification,
+                NSWorkspaceSessionDidResignActiveNotification,
+            ] {
+                center.addObserver_selector_name_object(
+                    &controller,
+                    sel!(pauseGestures:),
+                    Some(name),
+                    None,
+                );
+            }
+        }
         app.run();
+        unsafe {
+            center.removeObserver(&controller);
+        }
+        let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:&*controller]
+        };
         controller.ivars().hotkeys.borrow_mut().take();
         controller.cancel_open();
         CONTROLLER.with(|c| c.borrow_mut().take());
-        controller.ivars().tap.borrow_mut().take();
+        controller.stop_tap();
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
         }

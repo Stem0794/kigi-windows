@@ -27,3 +27,12 @@ historique : poursuivre **P1, raccourcis et actions manuelles**, en utilisant le
 relevé `docs/migration-audit.md` comme référence. P2 gestes actifs et P5 réunion
 automatique restent distincts. Ne pas annoncer les performances ou les nouveaux
 comportements validés sur matériel avant retour utilisateur.
+
+## Étape suivante autorisée — P2 pilote
+
+L'utilisateur confirme les raccourcis manuels, demande la correction de ⌥C
+(réutiliser l'onglet existant) et explicitement « continue la prochaine étape ».
+P2 peut maintenant relier les gestes aux actions Teams/Chrome, sur activation
+volontaire, avec les bords de la référence (gauche 10 %, droite 20 %). Distinguer
+les tests purs et la compilation des essais terrain encore requis. Les scènes
+P3 et les réunions automatiques P5 restent hors de cette étape.

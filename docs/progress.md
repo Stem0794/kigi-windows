@@ -258,3 +258,33 @@ borne totale de dialogue de consentement. Aucun osascript/shell/runtime ajouté.
 Le refus AX est expliqué une fois par session pour toutes les actions de
 placement, avec chemin de copie active ; aucun contournement ou changement TCC.
 Typage macOS Intel/ARM réussi ; interaction Chrome/TCC à valider sur le Mac.
+
+## 2026-11-12 — P2 pilote 0.2.0 : gestes reliés aux actions
+
+Après confirmation « tout est ok » pour P1, demande explicite de corriger ⌥C
+et continuer. P2 pilote, pas de scènes P3 ou réunions automatiques P5.
+Un tap public passif réutilisé, modes diagnostic et actions exclusifs. Menu
+opt-in non persistant ; gauche 10 % / droite 20 %, toute hauteur de la référence,
+vers le bas → Teams / Chrome 100 %. Le coin diagnostique reste séparé.
+
+Classifieur pur : début réel, même doigt/device, un doigt, seuil 0,22/dérive0,12/
+1,5s ; une action/contact et cooldown global1s. Second doigt, clic/drag observé,
+annulation ou changement de contact bloquent jusqu'au retrait complet. Deux
+tests ciblés ajoutés (cooldown/once et interruptions/invalides). Actions postées
+sur le runloop après retour du callback CG, jamais AX/Apple Events dans le tap.
+Les commandes manuelles effacent le geste en attente ; sélecteurs, menu et
+AppleScript ignorent les gestes. Veille Mac/écran, session inactive ou tap
+interrompu : arrêt, purge des actions et reprise manuelle. Pas de polling au
+repos, API privée, observer périphérique ou daemon ajouté. Révocation vérifiée
+avant une action reçue. Verrouillage sans veille et faux positifs restent à tester.
+
+NSAppleScript en main pour respecter l'API ; son retour nullable est traité
+explicitement malgré le binding généré non-null de 0.3.2. Consentement peut
+attendre l'utilisateur. Compilation du script sur runner si Chrome installé,
+sans exécution automatique. ⌥C ne retombe pas vers une ouverture URL après erreur.
+
+Validation : fmt/check, sept tests hôte, types macOS Intel/ARM cible11 à exécuter
+sur le contenu final. Packaging natif et essais réels à consigner séparément.
+Prochain sous-ticket : valider réutilisation ChatGPT et gestes en usage courant
+sur le Mac pilote avant de considérer P2 fiable. Éditeur générique/config JSON,
+calibration graphique et scènes restent pour les étapes suivantes.

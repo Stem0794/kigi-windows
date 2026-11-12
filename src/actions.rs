@@ -36,7 +36,7 @@ impl Action {
             Self::Test => "⌃⌥T — test / restauration",
             Self::Teams => "⌥T — Teams",
             Self::Browser => "⌥B — Chrome à 100 %",
-            Self::ChatGpt => "⌥C — ouvrir ChatGPT",
+            Self::ChatGpt => "⌥C — retrouver / ouvrir ChatGPT",
             Self::Maximize => "⌘⇧↑ — maximiser",
             Self::PairLeft => "⌘⇧← — choisir gauche puis droite",
             Self::PairRight => "⌘⇧→ — choisir droite puis gauche",

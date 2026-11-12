@@ -1,204 +1,136 @@
-# Kigi Windows — actions manuelles P1 (0.1.0)
+# Kigi Windows — pilote gestes 0.2.0
 
-Application macOS native en Rust, un seul processus et un seul crate. Cible
-macOS 11, Intel et Apple Silicon. Le code natif est vérifiable depuis Linux,
-mais le fonctionnement sur Mac et la compatibilité OS restent à valider.
+Application macOS native en Rust, un seul crate et un seul processus. Binaires
+Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 
-## Utilisation de 0.1.0
+## Installer et utiliser
 
-Quitter l'ancienne copie et remplacer `Kigi Windows.app` au même emplacement.
-Pour tester la migration, quitter temporairement Hammerspoon, puis utiliser
-**Kigi → Réenregistrer les raccourcis**. Ses fichiers ne sont jamais modifiés.
-Le menu « Raccourcis » affiche chaque enregistrement et chaque conflit ; les
-actions restent également disponibles par clic dans le menu.
+Quitter l'ancienne copie, remplacer `Kigi Windows.app` au même emplacement,
+puis relancer. Kigi apparaît dans la barre de menus. Cette version utilise une
+signature ad hoc, sans Developer ID ni notarisation ; les autorisations macOS
+peuvent devoir être réaccordées après remplacement.
 
 | Raccourci | Action |
 | --- | --- |
-| ⌥T | Activer Teams, ou lancer le bundle principal installé si absent |
+| ⌥T | Activer Teams ou lancer son bundle principal installé |
 | ⌥B | Activer/lancer Chrome et maximiser sa fenêtre principale |
-| ⌥C | Ouvrir ChatGPT dans Chrome ; peut créer un onglet supplémentaire |
+| ⌥C | Retrouver un onglet ChatGPT existant dans Chrome, sinon en ouvrir un |
 | ⌘⇧↑ | Maximiser la fenêtre active dans la zone visible de son écran |
-| ⌘⇧← | Choisir la fenêtre gauche, puis droite, et placer les deux à 50 % |
-| ⌘⇧→ | Même partage, choix de la fenêtre droite en premier |
-| ⌃⌥T | Conserver le test déplacement à droite / restauration P0 |
+| ⌘⇧← | Choisir gauche, puis droite : deux fenêtres à 50 % |
+| ⌘⇧→ | Même partage en choisissant d'abord la fenêtre droite |
+| ⌃⌥T | Test conservé : moitié droite puis restauration de la même fenêtre |
 
-Les touches désignent les positions physiques macOS. Les sélecteurs proposent
-les fenêtres standard non minimisées/hors plein écran. Les titres sont affichés
-dans le sélecteur uniquement, jamais dans les logs. Annuler l'un des choix ne
-déplace rien ; la deuxième fenêtre choisie reçoit le focus. Le partage utilise
-l'écran de la fenêtre active avant ouverture du sélecteur. Un inventaire borné
-peut être partiel : le sélecteur l'indique.
+Les touches désignent les positions physiques macOS. L'enregistrement est
+indépendant ; un conflit ne bloque pas les autres touches. Si nécessaire,
+quitter temporairement Hammerspoon puis **Réenregistrer les raccourcis** depuis
+Kigi. Son fichier n'est jamais modifié. Le menu propose aussi toutes les actions
+et la suspension des raccourcis personnels, pour la session.
 
-« Suspendre les raccourcis personnels » libère leurs combinaisons ; ⌃⌥T et les
-menus restent disponibles. Cette option vaut pour la session uniquement.
-L'enregistrement est indépendant : un conflit n'invalide pas les autres touches.
+## ChatGPT : onglet existant
 
-Accessibilité est nécessaire pour le placement et le sélecteur. Teams/Chrome
-sont activés via NSWorkspace ; aucun processus auxiliaire ou AppleScript.
-Les lancements sont asynchrones et leur résultat est contrôlé pendant au plus
-3 secondes, sans attente bloquante. Une autre commande Kigi annule l'action en
-attente ; Chrome n'est pas repositionné s'il n'est plus actif au traitement.
-Une fenêtre principale absente/ambiguë est signalée, sans création arbitraire.
+Au premier ⌥C, accepter **Automatisation → Google Chrome** si macOS le demande.
+C'est distinct de l'Accessibilité. Un script fixe NSAppleScript s'exécute dans
+Kigi, sans processus osascript : il compare uniquement les URL des onglets aux
+hôtes exacts `chatgpt.com` et `chat.openai.com`, active le premier trouvé dans
+les fenêtres Chrome, ou crée un onglet après une recherche sans correspondance.
+Les onglets existants ne sont ni rechargés ni remplacés.
 
-Les fenêtres Chrome minimisées peuvent être déminimisées pour ⌥B. Le plein
-écran natif reste refusé explicitement : quitter ce mode avant de maximiser.
-L'identification de l'onglet ChatGPT existant, la recherche dans le sélecteur,
-les automatismes Teams et les gestes déclenchant une action ne sont pas encore
-implémentés. Le diagnostic trackpad P0 est conservé sans changer ses seuils.
+Si la recherche échoue, l'app affiche l'erreur et n'ouvre aucun onglet de secours.
+Une permission refusée se réactive dans Réglages Système → Confidentialité et
+sécurité → Automatisation. Aucun accès au contenu des pages, historique ou
+stockage d'URL. Les logs indiquent seulement `reused`, `created` ou code d'erreur.
+La demande de consentement peut attendre l'utilisateur ; le timeout AppleScript
+3 s s'applique aux requêtes individuelles, pas à une durée totale de dialogue.
 
-Les logs exportables conservent 200 événements de session, avec action,
-conflit, résultat natif/AX, rectangles et durées. Les durées incluant le choix
-humain ne mesurent pas la latence AX ; RSS et p95 restent à mesurer sur Mac.
+## Gestes de bord (P2 pilote)
 
-Essai court : ⌥T, ⌥B, ⌘⇧↑, un partage ⌘⇧← (puis annulation), ⌥C.
-En cas de panne, copier les logs avant de quitter. Cette version est compilée
-pour Intel/Apple Silicon, mais les nouvelles interactions doivent être essayées
-sur le Mac pilote. macOS 11 reste une cible non testée sur matériel.
+Choisir **Kigi → Activer les gestes de bord Teams / Chrome**. Désactivés au
+lancement et après redémarrage, ils nécessitent Accessibilité et, si macOS la
+demande, Surveillance de l'entrée.
 
-## Lancer sur un Mac
+| Départ et mouvement, un seul doigt | Action |
+| --- | --- |
+| 10 % les plus à gauche, glissement vers le bas | Teams au premier plan |
+| 20 % les plus à droite, glissement vers le bas | Chrome au premier plan à 100 % |
 
-Installer Rust stable et les outils de ligne de commande Xcode, puis :
+Le départ peut se faire sur **toute la hauteur**, conformément à la référence
+Hammerspoon, puis descente ≥0,22, dérive horizontale ≤0,12 et durée ≤1,5 s.
+Une action par contact, cooldown global 1 s. Deux doigts, clic/drag observé,
+identité/device différent, mauvaise direction, délai ou début manquant annulent.
+Une séquence annulée doit se terminer par retrait de tous les doigts avant de
+réarmer. Une commande manuelle annule le geste encore en attente. Aucune action
+pendant les sélecteurs, l'intégration Chrome ou le menu Kigi ouvert.
 
-```sh
-git clone https://github.com/Stem0794/kigi-windows.git
-cd kigi-windows
-bash scripts/bundle.sh
-open "dist/Kigi Windows.app"
-```
+L'écoute est passive : pas de déplacement du pointeur ni de consommation des
+gestes macOS. L'action est différée après le callback du tap ; aucun AX ou Apple
+Events dans ce callback. Un seul tap existe, soit en diagnostic, soit en actions.
+Le menu permet de désactiver ; ouvrir le diagnostic global pendant l'écoute
+active l'arrête et affiche son bilan. Recliquer démarre le diagnostic sans action.
 
-Le menu `Kigi` apparaît dans la barre de menus. Conserver ce bundle à ce chemin
-pendant les essais de permissions. La signature ad hoc convient au prototype
-local ; une recompilation peut nécessiter une nouvelle autorisation TCC.
-Aucun package commercial signé/notarisé n'est fourni à ce stade.
+Veille du Mac/écran, changement de session et interruption du tap arrêtent
+l'écoute et les actions en attente. **Réactiver manuellement après reprise**,
+sans boucle de relance automatique. Un retrait/rebranchement de périphérique
+invalide le contact ; lever les doigts puis recommencer. Le verrouillage sans
+veille et les faux positifs restent à vérifier sur le Mac pilote : aucune
+promesse de fiabilité universelle. Pas d'API privée ou de lecture de TCC.
 
-1. Cliquer « Autoriser / vérifier Accessibilité », autoriser Kigi dans les
-   réglages macOS, puis recliquer pour vérifier. Rien n'est demandé au lancement.
-2. Ouvrir Chrome ou Teams, puis « Détecter les fenêtres ». Seuls les bundles,
-   nombres de fenêtres et géométrie sont affichés, sans lire les titres/contenus.
-   L'inventaire est ponctuel et peut être partiel pour les apps AX inaccessibles.
-3. Activer une fenêtre normale, puis appuyer sur **⌃⌥T** : elle passe à droite dans
-   la zone visible de son écran. Appuyer sur **⌃⌥T** de nouveau restaure **cette même
-   fenêtre**, même si le focus a changé. Le menu offre la même action ; son
-   premier élément affiche le dernier résultat ou l'erreur.
-4. Tester le diagnostic local du trackpad. Le pointeur doit rester dans la
-   fenêtre de diagnostic. Un départ x≤0,10 / y≥0,80, puis une descente ≥0,22
-   en ≤1,5 s, avec un seul doigt et dérive horizontale ≤0,12, incrémente un compteur.
-5. Démarrer volontairement le diagnostic global passif, autoriser séparément
-   Surveillance de l'entrée si nécessaire, passer dans Chrome/Teams et essayer
-   le geste. Recliquer sur le même menu arrête l'écoute et affiche les compteurs.
-   Une absence d'événements ne constitue pas une validation du geste.
+Le diagnostic local reste un coin haut-gauche x≤0,10 / y≥0,80, sans action.
+Le diagnostic global conserve ce même coin ; ce n'est pas le profil de bord.
 
-**⌃⌥T reste le raccourci de test P0** ; ⌥T est désormais l’action Teams P1. Le code
-Carbon utilise la position physique de la touche T. Cette combinaison évite le ⌥T Teams de Hammerspoon. En cas de conflit, l'erreur
-reste visible et le menu fonctionne. Quitter temporairement Hammerspoon et relancer Kigi pour
-l'essai si nécessaire ; son fichier `init.lua` n'est jamais modifié.
+## Permissions et limites fenêtres
 
-Le snapshot de test reste en mémoire seulement : restaurer avant de quitter.
-Si la restauration échoue ou reste partielle, le snapshot est conservé pour
-réessayer. Les fenêtres plein écran/minimisées ne sont pas sorties de cet état.
-Certaines apps imposent des tailles minimales ou répondent tardivement à AX.
-Le contrôle relit immédiatement la géométrie, sans polling ni retries infinis.
+La ligne Accessibilité est actualisée à l'ouverture du menu. La première demande
+est explicite et unique par session, suivie d'un contrôle temporaire borné.
+Une case d'une ancienne version peut ne pas autoriser le processus actif :
+**Afficher la copie active dans Finder** permet de choisir le bon bundle.
+L'erreur AX est expliquée une fois par session pour toutes les actions de
+placement. Ouvrir Teams ou Chrome ne valide pas l'autorisation de placement.
 
-## Vérifications
+Les sélecteurs utilisent les titres en mémoire pour choisir, jamais dans les
+logs. Deux fenêtres distinctes sont nécessaires, standard, non minimisées et
+hors fullscreen ; Hammerspoon et Kigi sont exclus. Un inventaire borné peut
+être partiel : c'est indiqué. Annuler ne déplace rien ; le second choix reçoit
+le focus. L'écran est celui de la fenêtre active avant le sélecteur.
+
+Chrome peut être déminimisé pour ⌥B. Le fullscreen natif est refusé explicitement.
+Les apps peuvent imposer leurs dimensions : AX relit la géométrie et signale un
+résultat partiel. Position/taille/position reprend le correctif 0.0.6 validé par
+l'utilisateur. Le snapshot de ⌃⌥T reste en mémoire : restaurer avant de quitter.
+Les lancements NSWorkspace sont asynchrones, avec contrôle temporaire ≤3 s ;
+une nouvelle commande annule le traitement en attente, pas le lancement OS.
+
+## Logs et essai court
+
+Reproduire un problème, puis **Copier les logs de diagnostic** ou **Exporter les
+logs…**, avant de quitter. Journal limité aux 200 derniers événements de session,
+avec version/OS/architecture, permissions, conflits, actions et leurs résultats,
+rectangles AX, compteurs et interruptions du tap. Pas de frappes, titres, contenu
+d'apps, URL d'onglets, identité des contacts ou coordonnées de doigts. Aucun envoi
+réseau, aucun journal persistant automatique.
+
+Sur le Mac pilote : ⌥C deux fois avec ChatGPT déjà ouvert (nombre d'onglets
+inchangé), avec ChatGPT absent (un seul nouvel onglet), puis un geste volontaire
+de chaque bord. Essayer aussi un départ central, deux doigts et l'usage ordinaire
+pour relever les faux positifs ; désactiver si nécessaire. Après veille,
+confirmer l'arrêt puis réactiver volontairement. Les nouveaux comportements
+restent à valider sur matériel ; p95/RSS n'ont pas été mesurés ici.
+
+## Construire et vérifier
 
 ```sh
 cargo fmt --check
 cargo check --locked
 cargo test --locked
-# Vérification de types macOS, possible depuis Linux sans linker/SDK :
-rustup target add x86_64-apple-darwin aarch64-apple-darwin
 MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target x86_64-apple-darwin
 MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target aarch64-apple-darwin
-# Sur Mac, bundle universal facultatif après installation des deux cibles :
+# Sur macOS avec Rust stable et outils Xcode :
 bash scripts/bundle.sh universal
+open "dist/Kigi Windows.app"
 ```
 
-Les tests ciblés sur Mac portent sur la conversion d'écrans et les cas critiques du
-classifieur diagnostic et le déclenchement unique du raccourci, ainsi que la borne du journal de diagnostic et la demande unique d’Accessibilité. `cargo check` ne valide ni l'édition de liens Apple,
-ni TCC, ni les appels exécutés, ni la détection du trackpad.
-
-Voir [le rapport trackpad](docs/trackpad-spike.md), la
-[décision API](docs/adr-001-trackpad.md) et le [suivi P0](docs/progress.md).
-Le JSON du handover reste indicatif et n'est pas chargé par P0. Aucun éditeur,
-workspace, automatisme Teams ou système commercial. Le lancement d’applications est disponible en P1.
-
-## Si le raccourci semble sans effet (0.0.3)
-
-Le menu contient une ligne permanente « Raccourci ⌃⌥T : enregistré — reçu N fois ».
-Cliquer dessus ouvre un diagnostic avec la version, l'état Accessibilité et le
-dernier résultat de l'action. Le compteur augmente à l'appui, une seule fois
-même si la touche reste enfoncée. Une erreur d'enregistrement reste visible.
-
-Compteur à zéro après un essai : le raccourci n'a pas été reçu ; essayer sans
-autre gestionnaire et relancer Kigi si nécessaire. Compteur augmenté sans
-déplacement : consulter l'erreur AX, vérifier l'accès Accessibilité pour le
-bundle remplacé et fermer le diagnostic local avant de réactiver Chrome.
-Le menu « Tester / restaurer » exécute la même action indépendamment du clavier.
-
-## Logs transmissibles (0.0.4)
-
-Le menu propose **Copier les logs de diagnostic** pour les coller dans un
-message, et **Exporter les logs…** pour choisir un fichier `.txt` à transmettre.
-Reproduire le problème puis copier/exporter avant de quitter Kigi : le journal
-est limité aux 200 derniers événements de la session et n'est pas conservé au
-redémarrage. Aucun fichier automatique, envoi réseau ou dépendance de logging.
-
-Le rapport contient version, architecture, macOS, chemin de l'exécutable
-(répertoire personnel abrégé en `~`), état AX, enregistrement/réception du
-raccourci, actions, erreurs AX, géométrie demandée/obtenue et bilan du diagnostic
-trackpad s'il est actif. Il exclut frappes, titres, contenu des applications,
-URLs d'onglets, identifiants de contacts et coordonnées de doigts.
-
-Si le raccourci est reçu mais AX refusée, une explication apparaît une seule
-fois par session. Autoriser l'application actuelle dans Accessibilité, puis
-réessayer ; le raccourci et le diagnostic trackpad ne suffisent pas à prouver
-que cette permission est accordée.
-
-La configuration Hammerspoon fournie est conservée dans
-[examples/hammerspoon-reference.lua](examples/hammerspoon-reference.lua).
-Le [relevé de migration](docs/migration-audit.md) distingue ses comportements
-exacts de ceux du prototype P0 : elle n'est pas exécutée ni importée comme code.
-
-## Accessibilité cochée mais non reconnue (0.0.5)
-
-Le premier clic sur la ligne Accessibilité peut demander l'autorisation. Les
-clics suivants **vérifient sans relancer la demande**. Après le premier clic,
-Kigi vérifie toutes les deux secondes pendant environ 30 secondes (15 contrôles au maximum), puis arrête
-ce suivi ; ouvrir le menu ou tester une fenêtre effectue aussi une vérification
-à jour. Il n'y a pas de scrutation permanente au repos.
-
-- « Afficher la copie active dans Finder » sélectionne l'application qui tourne
-  réellement : c'est cette copie qu'il faut ajouter dans les réglages macOS.
-- « Diagnostic Accessibilité » affiche version, PID, chemin et résultat brut
-  des deux API de confiance, sans demander à nouveau l'autorisation. Un essai
-  AX en lecture seule indique le code renvoyé par macOS pour `AXWindows` d'une
-  application tierce ; aucun titre ou contenu n'est lu, aucune fenêtre déplacée.
-- Les logs incluent aussi le nombre d'autres processus Kigi et la présence
-  d'un chemin temporaire `AppTranslocation`. Une nouvelle copie refuse de
-  démarrer si une autre instance du même bundle est encore active.
-
-Pour un essai propre : quitter Kigi, conserver une seule copie dans Applications,
-la lancer, la sélectionner avec le menu Finder, puis autoriser cette application
-actuelle dans Accessibilité. Si macOS exige une relance, quitter puis rouvrir
-cette même copie. Si le refus persiste, copier les logs avant toute nouvelle
-mise à jour ; ils permettent de distinguer le précontrôle du refus AX réel.
-
-La signature des packages reste **ad hoc**. Elle ne garantit pas la conservation
-des autorisations entre deux builds. Une identité de signature Apple stable
-sera nécessaire pour fiabiliser les mises à jour ; ce correctif ne remplace
-pas cette identité et ne modifie ni la signature de confiance ni la base TCC.
-
-Sources : [retour asynchrone AXIsProcessTrustedWithOptions](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions),
-[explication Apple des changements d'identité ad hoc](https://developer.apple.com/forums/thread/819406)
-(dans un cas ScreenCapture ; piste d'identité à vérifier ici, sans cause AX
-confirmée sur le Mac utilisateur).
-
-## Restauration du test fenêtre (0.0.6)
-
-Le test doit alterner entre la moitié droite et la géométrie initiale. Le
-passage durable par une moitié gauche au deuxième appui est un résultat partiel,
-pas un troisième état voulu. La version 0.0.6 positionne d'abord la fenêtre
-avant de l'agrandir, puis réapplique sa position, pour éviter qu'une expansion
-depuis le bord droit soit limitée à la largeur restante de l'écran. Vérifier
-sur le Mac le parcours 100 % / moitié droite / 100 % avec deux appuis. Les logs
-contiennent l'ordre des écritures AX, la cible et la géométrie obtenue.
+Le workflow macOS lie les deux architectures, signe ad hoc et crée le ZIP.
+Il compile aussi le script fixe si Chrome est installé, sans l'exécuter ni
+demander Automatisation. Les checks Linux/macOS ne remplacent pas les essais
+Chrome, permissions et gestes sur un Mac. Voir [progress.md](docs/progress.md),
+[trackpad-spike.md](docs/trackpad-spike.md) et [migration-audit.md](docs/migration-audit.md).
+Pas d'éditeur, scènes persistantes, détection de réunion ou système commercial.

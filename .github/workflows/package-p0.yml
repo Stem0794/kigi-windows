@@ -23,6 +23,13 @@ jobs:
           cargo fmt --check
           cargo check --locked
           cargo test --locked
+      - name: Compile fixed Chrome script when Chrome is installed
+        run: |
+          if [[ -d "/Applications/Google Chrome.app" ]]; then
+            osacompile -o "$RUNNER_TEMP/kigi-chatgpt.scpt" resources/chatgpt.applescript
+          else
+            echo "Chrome absent on runner: script compilation requires pilot Mac; no Chrome automation executed."
+          fi
       - name: Build universal application
         run: bash scripts/bundle.sh universal
       - name: Archive application
