@@ -198,14 +198,7 @@ define_class!(
             if self.ivars().picking.get() { return; }
             self.cancel_open();
             self.record_state("action.window.start");
-            if !self.refresh_permission() {
-                self.status("Déplacement bloqué : Accessibilité non autorisée pour cette application.");
-                if !self.ivars().permission_notice.replace(true) {
-                    alert(self.mtm(), "Autorisation Accessibilité nécessaire", "macOS bloque le contrôle des fenêtres pour cette application.\n\nDans Réglages Système > Confidentialité et sécurité > Accessibilité, autorisez Kigi Windows.\n\nSi une ancienne entrée est déjà cochée, retirez-la puis ajoutez l'application actuelle depuis Applications, et relancez Kigi.\n\nVous pouvez copier ou exporter les logs depuis le menu Kigi.");
-                }
-                return;
-            }
-            self.ivars().permission_notice.set(false);
+            if !self.window_permission() { return; }
             let mut snapshot = self.ivars().snapshot.borrow_mut();
             let result = if let Some(saved) = snapshot.as_ref() {
                 diagnostics::record("action.window.restore", "snapshot=true");
@@ -341,28 +334,34 @@ impl Controller {
             return;
         }
         self.cancel_open();
+        if matches!(
+            action,
+            Action::Maximize | Action::PairLeft | Action::PairRight
+        ) && !self.window_permission()
+        {
+            return;
+        }
         let started = Instant::now();
         diagnostics::record("action.start", format!("action={action:?}"));
         let result = match action {
-            Action::Teams | Action::Browser | Action::ChatGpt => {
+            Action::Teams | Action::Browser => {
                 let bundle = if action == Action::Teams {
                     applications::teams_bundle()
                 } else {
                     Ok(applications::CHROME)
                 };
-                bundle
-                    .and_then(|bundle| applications::open(bundle, action == Action::ChatGpt))
-                    .map(|result| {
-                        self.ivars().pending.replace(Some(PendingOpen {
-                            action,
-                            result,
-                            pid: None,
-                            started,
-                        }));
-                        self.schedule_open_poll();
-                        "Activation demandée…".to_owned()
-                    })
+                bundle.and_then(applications::open).map(|result| {
+                    self.ivars().pending.replace(Some(PendingOpen {
+                        action,
+                        result,
+                        pid: None,
+                        started,
+                    }));
+                    self.schedule_open_poll();
+                    "Activation demandée…".to_owned()
+                })
             }
+            Action::ChatGpt => applications::chatgpt(self.mtm()),
             Action::Maximize => windows::maximize(self.mtm(), None),
             Action::PairLeft | Action::PairRight => self.pick_pair(action == Action::PairLeft),
             Action::Test => return,
@@ -400,10 +399,6 @@ impl Controller {
                 Action::Teams => Some(Ok(
                     "Teams activé (aucune nouvelle fenêtre demandée).".to_owned()
                 )),
-                Action::ChatGpt => Some(Ok(
-                    "ChatGPT ouvert dans Chrome ; un onglet supplémentaire est possible."
-                        .to_owned(),
-                )),
                 _ => {
                     let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid);
                     if let Some(app) = app {
@@ -415,7 +410,11 @@ impl Controller {
                             ))
                         } else {
                             if !windows::trusted() || windows::application_window_ready(&app) {
-                                Some(windows::maximize(self.mtm(), Some(&app)))
+                                if self.window_permission() {
+                                    Some(windows::maximize(self.mtm(), Some(&app)))
+                                } else {
+                                    return;
+                                }
                             } else {
                                 None
                             } // wait for a window, never repeat geometry writes
@@ -472,6 +471,18 @@ impl Controller {
         })();
         self.ivars().picking.set(false);
         result
+    }
+    fn window_permission(&self) -> bool {
+        if self.refresh_permission() {
+            return true;
+        }
+        self.status("Placement bloqué : Accessibilité non autorisée pour cette copie de Kigi.");
+        if !self.ivars().permission_notice.replace(true) {
+            let bundle = NSBundle::mainBundle().bundlePath();
+            alert(self.mtm(), "Autorisation Accessibilité nécessaire", &format!(
+                "Le raccourci est reçu, mais macOS refuse le contrôle des fenêtres.\n\nCopie active : {bundle}\n\nAutorisez cette copie dans Réglages Système > Confidentialité et sécurité > Accessibilité. Si l'ancienne entrée cochée reste sans effet après remplacement, retirez-la puis ajoutez cette copie et relancez Kigi.\n\nL'ouverture d'une application ou de ChatGPT ne prouve pas que le placement est autorisé."));
+        }
+        false
     }
     fn refresh_permission(&self) -> bool {
         let trusted = windows::trusted();

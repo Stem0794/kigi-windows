@@ -1,10 +1,10 @@
 //! NSWorkspace launch/open, never shell commands or a second app instance.
 use block2::RcBlock;
-use objc2::rc::Retained;
+use objc2::{msg_send, rc::Retained, runtime::AnyObject, AnyThread};
 use objc2_app_kit::{
     NSApplicationActivationOptions, NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSArray, NSError, NSString, NSURL};
+use objc2_foundation::{NSAppleEventDescriptor, NSAppleScript, NSDictionary, NSError, NSString};
 use std::sync::mpsc::{self, Receiver};
 
 pub const CHROME: &str = "com.google.Chrome";
@@ -41,14 +41,12 @@ pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
 
 /// Completion runs on Apple's concurrent queue. Only send a small result to main;
 /// AppKit UI, AX and the session's diagnostic log remain on the main thread.
-pub fn open(bundle: &'static str, chatgpt: bool) -> Result<Receiver<Result<i32, isize>>, String> {
+pub fn open(bundle: &'static str) -> Result<Receiver<Result<i32, isize>>, String> {
     let (sender, receiver) = mpsc::channel();
-    if !chatgpt {
-        if let Some(app) = running(bundle) {
-            activate(&app)?;
-            let _ = sender.send(Ok(app.processIdentifier()));
-            return Ok(receiver);
-        }
+    if let Some(app) = running(bundle) {
+        activate(&app)?;
+        let _ = sender.send(Ok(app.processIdentifier()));
+        return Ok(receiver);
     }
     let workspace = NSWorkspace::sharedWorkspace();
     let application = workspace
@@ -70,21 +68,59 @@ pub fn open(bundle: &'static str, chatgpt: bool) -> Result<Receiver<Result<i32, 
         };
         let _ = sender.send(result);
     });
-    if chatgpt {
-        let url = NSURL::URLWithString(&NSString::from_str("https://chatgpt.com/"))
-            .ok_or("URL ChatGPT invalide.")?;
-        workspace.openURLs_withApplicationAtURL_configuration_completionHandler(
-            &NSArray::from_retained_slice(&[url]),
-            &application,
-            &options,
-            Some(&done),
-        );
-    } else {
-        workspace.openApplicationAtURL_configuration_completionHandler(
-            &application,
-            &options,
-            Some(&done),
-        );
-    }
+    workspace.openApplicationAtURL_configuration_completionHandler(
+        &application,
+        &options,
+        Some(&done),
+    );
     Ok(receiver)
+}
+
+/// Fixed script, in-process and main-thread only. No page content/history access.
+/// Return only a structural result; never export URL lists or AppleScript error text.
+pub fn chatgpt(mtm: objc2::MainThreadMarker) -> Result<String, String> {
+    let _ = mtm; // enforce AppKit/main-thread execution for NSAppleScript
+    if NSWorkspace::sharedWorkspace()
+        .URLForApplicationWithBundleIdentifier(&NSString::from_str(CHROME))
+        .is_none()
+    {
+        return Err("Google Chrome n'est pas installé.".into());
+    }
+    let script = NSAppleScript::initWithSource(
+        NSAppleScript::alloc(),
+        &NSString::from_str(include_str!("../resources/chatgpt.applescript")),
+    )
+    .ok_or("Impossible d'initialiser l'intégration Chrome.")?;
+    let mut error: *mut NSDictionary<NSString, AnyObject> = std::ptr::null_mut();
+    // Apple's API is nullable on failure; the generated 0.3.2 binding incorrectly
+    // promises non-null. Specify nullable result and autoreleased error pointer.
+    let result: Option<Retained<NSAppleEventDescriptor>> =
+        unsafe { msg_send![&*script, executeAndReturnError: &mut error] };
+    if !error.is_null() || result.is_none() {
+        let code: isize = unsafe {
+            if let Some(error) = error.as_ref() {
+                let number = error.objectForKey(&NSString::from_str("NSAppleScriptErrorNumber"));
+                number.map(|n| msg_send![&*n, integerValue]).unwrap_or(0)
+            } else {
+                0
+            }
+        };
+        crate::diagnostics::record("chrome.chatgpt.error", format!("code={code}"));
+        return Err(match code {
+            -1743 => "Automatisation Chrome refusée. Autorisez Kigi Windows → Google Chrome dans Réglages Système > Confidentialité et sécurité > Automatisation.".into(),
+            -1712 => "Chrome n'a pas répondu à temps. Réessayez ; aucun nouvel onglet de secours n'est demandé.".into(),
+            _ => format!("Impossible de retrouver ChatGPT dans Chrome (code {code}). Aucun onglet de secours ouvert."),
+        });
+    }
+    match result.unwrap().int32Value() {
+        1 => {
+            crate::diagnostics::record("chrome.chatgpt.reused", "existing_tab=true");
+            Ok("Onglet ChatGPT existant activé.".into())
+        }
+        2 => {
+            crate::diagnostics::record("chrome.chatgpt.created", "existing_tab=false");
+            Ok("Aucun onglet ChatGPT trouvé : nouvel onglet ouvert.".into())
+        }
+        _ => Err("Réponse Chrome inattendue ; consultez les logs.".into()),
+    }
 }

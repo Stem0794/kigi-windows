@@ -12,6 +12,7 @@
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSUIElement</key><true/>
   <key>LSMultipleInstancesProhibited</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Kigi retrouve et active votre onglet ChatGPT dans Google Chrome pour éviter d’en ouvrir un autre. Les URL restent en mémoire et ne sont pas enregistrées.</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

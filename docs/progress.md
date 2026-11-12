@@ -239,3 +239,22 @@ Source du package : 9f09073622ab9c229e406d41e3406d4db0120ad9. ZIP téléchargé,
 CRC de l'artefact et du ZIP applicatif contrôlés, version/bundle ID et en-tête
 Mach-O Intel/ARM relus. Aucun test interactif P1 ni mesure de performances
 réalisé : ils restent le prochain essai sur le Mac pilote.
+
+## 2026-11-12 — Correctif ChatGPT et diagnostic P1
+
+Les logs 0.1.0 confirment réception des 7 raccourcis, mais AX=false/-25211 :
+les flèches sont bloquées par permission, pas par routage. Ensuite l'utilisateur
+confirme « tout est ok sauf option C » et demande correction + étape suivante.
+
+⌥C utilise maintenant un script fixe NSAppleScript dans le processus principal,
+à la demande uniquement, avec NSAppleEventsUsageDescription. Cherche les vrais
+hôtes chatgpt.com/chat.openai.com dans les fenêtres Chrome ; active l'onglet
+existant sans navigation/rechargement, en crée un uniquement après recherche
+complète sans correspondance. Aucun fallback URL après erreur/permission
+refusée ; erreurs numériques seules dans les logs, aucun titre/URL d'onglet.
+Le timeout AppleScript de 3 s porte sur les requêtes Apple Events, pas sur une
+borne totale de dialogue de consentement. Aucun osascript/shell/runtime ajouté.
+
+Le refus AX est expliqué une fois par session pour toutes les actions de
+placement, avec chemin de copie active ; aucun contournement ou changement TCC.
+Typage macOS Intel/ARM réussi ; interaction Chrome/TCC à valider sur le Mac.
