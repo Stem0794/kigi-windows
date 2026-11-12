@@ -575,3 +575,132 @@ pub fn arrange_pair(
         Ok("Partage partiel : une application impose ses dimensions. Consultez les logs.".into())
     }
 }
+
+
+/// Manual P3 pilot: one in-memory return point for two already-open windows.
+/// Geometry only; no window titles or session data are retained.
+pub struct MeetingSnapshot {
+    teams: LayoutFrame,
+    chrome: LayoutFrame,
+    prior_pid: Option<i32>,
+}
+struct LayoutFrame {
+    window: Element,
+    before: Rect,
+    applied: Rect,
+}
+impl MeetingSnapshot {
+    pub fn restore(&self) -> Result<String, String> {
+        require_permission()?;
+        let mut restored = 0;
+        let mut skipped = 0;
+        for part in [&self.teams, &self.chrome] {
+            match part.window.frame() {
+                Ok(current) if current.approximately(part.before) => {}
+                Ok(current) if current.approximately(part.applied) => {
+                    let actual = part.window.set_frame(part.before)?;
+                    if !actual.approximately(part.before) {
+                        return Err(
+                            "Restauration partielle : l'application impose ses dimensions. Réessayez.".into()
+                        );
+                    }
+                    restored += 1;
+                }
+                _ => skipped += 1, // closed or manually moved since scene applied
+            }
+        }
+        if let Some(pid) = self.prior_pid {
+            if let Some(app) =
+                NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            {
+                let _ = crate::applications::activate(&app);
+            }
+        }
+        Ok(format!(
+            "Disposition précédente : {restored} fenêtre(s) restaurée(s), {skipped} ignorée(s) car fermée(s) ou déplacée(s) manuellement."
+        ))
+    }
+}
+
+pub fn meeting_browser(
+    mtm: MainThreadMarker,
+    snapshot: &mut Option<MeetingSnapshot>,
+) -> Result<String, String> {
+    require_permission()?;
+    if snapshot.is_some() {
+        return Ok(
+            "Scène réunion déjà active. Restaurez-la avant d'en créer une autre.".into()
+        );
+    }
+    // This first pilot deliberately does not launch applications or guess
+    // which Teams pop-out is a meeting. The user opens the wanted windows.
+    let teams_bundle = crate::applications::teams_bundle()?;
+    let teams_app = crate::applications::running(teams_bundle)
+        .ok_or("Ouvrez Teams avec ⌥T avant d'activer la scène.")?;
+    let chrome_app = crate::applications::running(crate::applications::CHROME)
+        .ok_or("Ouvrez Chrome avec ⌥B avant d'activer la scène.")?;
+    let teams = preferred_window(&teams_app)?;
+    let chrome = preferred_window(&chrome_app)?;
+    for window in [&teams, &chrome] {
+        window.ensure_normal()?;
+        window.can_set("AXPosition")?;
+        window.can_set("AXSize")?;
+    }
+    let before_teams = teams.frame()?;
+    let before_chrome = chrome.frame()?;
+    let display = visible_frame(mtm, before_chrome)?;
+    let left = display.left_half();
+    let right = display.right_half();
+    let prior_pid = NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map(|app| app.processIdentifier());
+    // Both windows and their positions are captured before any write.
+    let teams_result = teams.set_frame(left);
+    let chrome_result = chrome.set_frame(right);
+    let applied_teams = teams.frame().unwrap_or(before_teams);
+    let applied_chrome = chrome.frame().unwrap_or(before_chrome);
+    diagnostics::record(
+        "workspace.meeting.apply",
+        format!(
+            "teams_ok={} chrome_ok={} geometry_ok={}",
+            teams_result.is_ok(),
+            chrome_result.is_ok(),
+            applied_teams.approximately(left) && applied_chrome.approximately(right)
+        ),
+    );
+    *snapshot = Some(MeetingSnapshot {
+        teams: LayoutFrame {
+            window: teams,
+            before: before_teams,
+            applied: applied_teams,
+        },
+        chrome: LayoutFrame {
+            window: chrome,
+            before: before_chrome,
+            applied: applied_chrome,
+        },
+        prior_pid,
+    });
+    if teams_result.is_err()
+        || chrome_result.is_err()
+        || !applied_teams.approximately(left)
+        || !applied_chrome.approximately(right)
+    {
+        return Err(
+            "Placement incomplet. Utilisez « Restaurer la disposition » pour revenir à l'état précédent.".into()
+        );
+    }
+    crate::applications::activate(&chrome_app)?;
+    // The Chrome half cannot cover the Teams half.
+    snapshot.as_ref().unwrap().chrome.window.raise()?;
+    Ok("Réunion : Teams à gauche et Chrome à droite, 50/50.".into())
+}
+
+pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
+    let chrome_app = crate::applications::running(crate::applications::CHROME)
+        .ok_or("Ouvrez Chrome avec ⌥B avant d'activer Travail.")?;
+    require_permission()?;
+    crate::applications::activate(&chrome_app)?;
+    maximize(mtm, Some(&chrome_app))?;
+    Ok("Travail : Chrome au premier plan à 100 %, Teams conservé derrière.".into())
+}

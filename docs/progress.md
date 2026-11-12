@@ -301,3 +301,27 @@ Le diagnostic vertical haut-gauche reste séparé, sans déclencher d'action.
 Tests unitaires ciblés : seuils 5 %, centre, direction, cooldown et annulations.
 Pas de nouvelle dépendance ni d'infrastructure. Validation sur Mac nécessaire
 pour confirmer la détection réelle et mesurer d'éventuels faux positifs.
+
+## 2026-11-12 — Revue P2 et P3 pilote 0.3.0
+
+La revue a détecté deux échecs successifs du build P2 : formatage des tests
+puis version `Cargo.toml`/`Cargo.lock` divergente. Formatage corrigé et
+lockfile synchronisé dans 0.2.1 ; le runner a passé fmt/check/tests et la
+compilation du script Chrome. Le fonctionnement réel du nouveau profil 5 %
+demeure non validé sur Mac.
+
+P3 débuté de façon limitée : trois actions manuelles en barre de menu,
+Travail (Chrome 100 %), Réunion (Teams gauche et Chrome droite 50/50) et
+Restaurer. Deux fenêtres déjà ouvertes et standard sont requises. Préflight
+AX des deux, snapshot mémoire capturé avant écriture et lecture finale des
+géométries. Un seul snapshot de retour, pas de pile de scènes. Restaurer
+n'écrase pas une fenêtre déplacée manuellement depuis l'application. Une
+relance de Réunion n'écrase pas le snapshot existant ; Travail le termine.
+Les applications ne sont jamais fermées et aucun onglet n'est créé par P3.
+
+Limites de ce premier pilote : sélection de fenêtre Teams basée sur la fenêtre
+standard/focalisée, pas de prédicat prouvé « réunion », pas de lancement d'app
+par la scène elle-même ni JSON persistant. La configuration versionnée,
+Meeting+Chat et l'éditeur attendent les sous-étapes suivantes. Ne pas activer
+de détection de réunion automatique avant audit terrain. Aucun nouveau
+crate, dépendance ou service.

@@ -1,4 +1,4 @@
-# Kigi Windows — pilote gestes 0.2.1
+# Kigi Windows — P3 pilote manuel 0.3.0
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -77,6 +77,28 @@ promesse de fiabilité universelle. Pas d'API privée ou de lecture de TCC.
 
 Le diagnostic local reste un coin haut-gauche x≤0,10 / y≥0,80, sans action.
 Le diagnostic global conserve ce même coin ; ce n'est pas le profil de bord.
+
+## Espaces de travail manuels (P3 pilote)
+
+Trois commandes dans le menu Kigi :
+
+- **Espace Travail** : active Chrome et le maximise à 100 % ; Teams reste ouvert derrière.
+- **Espace Réunion** : place une fenêtre standard Teams déjà ouverte à gauche et
+  une fenêtre Chrome déjà ouverte à droite, moitié/moitié, sur l'écran de Chrome.
+- **Restaurer la disposition** : remet les deux fenêtres à leurs positions
+  précédentes, tant qu'elles n'ont pas été déplacées manuellement depuis
+  l'application de la scène.
+
+Les deux applications et les fenêtres voulues doivent déjà être ouvertes.
+Utilisez ⌥T et ⌥B au besoin. Une seule disposition de retour est gardée en
+mémoire ; un deuxième clic sur Réunion ne remplace pas ce snapshot. Travail
+annule la possibilité de restaurer la scène Réunion précédente une fois Chrome
+maximisé. En cas de placement partiel, la commande Restaurer reste disponible.
+
+Il n'y a **pas encore** de détection de réunion automatique, de sélection
+fiable d'une fenêtre Teams « réunion » plutôt que « chat », de configuration
+JSON ou de scène personnalisée. Pas de déplacement de fenêtres entre Spaces
+Mission Control. Les gestes P2 déclenchent toujours seulement Teams/Chrome.
 
 ## Permissions et limites fenêtres
 

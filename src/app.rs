@@ -59,6 +59,7 @@ struct PendingOpen {
 #[derive(Default)]
 struct State {
     snapshot: RefCell<Option<Snapshot>>,
+    meeting_snapshot: RefCell<Option<windows::MeetingSnapshot>>,
     hotkeys: RefCell<Option<Hotkeys>>,
     personal_enabled: Cell<bool>,
     personal_item: OnceCell<Retained<NSMenuItem>>,
@@ -134,6 +135,53 @@ define_class!(
         fn pair_left(&self, _: Option<&AnyObject>) { self.execute(Action::PairLeft); }
         #[unsafe(method(pairRight:))]
         fn pair_right(&self, _: Option<&AnyObject>) { self.execute(Action::PairRight); }
+        #[unsafe(method(workspaceWork:))]
+        fn workspace_work(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() || !self.window_permission() {
+                return;
+            }
+            self.cancel_open();
+            self.cancel_gesture_dispatch();
+            let result = windows::work_browser(self.mtm());
+            if result.is_ok() {
+                // A named Work scene ends the previous temporary Meeting scene.
+                self.ivars().meeting_snapshot.borrow_mut().take();
+            }
+            diagnostics::record("workspace.work", format!("success={}", result.is_ok()));
+            self.status(&result.unwrap_or_else(|e| e));
+        }
+        #[unsafe(method(workspaceMeeting:))]
+        fn workspace_meeting(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() || !self.window_permission() {
+                return;
+            }
+            self.cancel_open();
+            self.cancel_gesture_dispatch();
+            let result = windows::meeting_browser(
+                self.mtm(),
+                &mut self.ivars().meeting_snapshot.borrow_mut(),
+            );
+            diagnostics::record("workspace.meeting", format!("success={}", result.is_ok()));
+            self.status(&result.unwrap_or_else(|e| e));
+        }
+        #[unsafe(method(workspaceRestore:))]
+        fn workspace_restore(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() || !self.window_permission() {
+                return;
+            }
+            self.cancel_open();
+            self.cancel_gesture_dispatch();
+            let result = if let Some(snapshot) = self.ivars().meeting_snapshot.borrow().as_ref() {
+                snapshot.restore()
+            } else {
+                Ok("Aucune scène de réunion à restaurer.".into())
+            };
+            if result.is_ok() {
+                self.ivars().meeting_snapshot.borrow_mut().take();
+            }
+            diagnostics::record("workspace.restore", format!("success={}", result.is_ok()));
+            self.status(&result.unwrap_or_else(|e| e));
+        }
         #[unsafe(method(openPoll:))]
         fn open_poll(&self, _: Option<&AnyObject>) { self.poll_open(); }
         #[unsafe(method(retryHotkeys:))]
@@ -983,6 +1031,25 @@ pub fn run() {
             sel!(testWindow:),
         );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        menu_action(
+            &menu,
+            &controller,
+            "Espace Travail — Chrome 100 %",
+            sel!(workspaceWork:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Espace Réunion — Teams gauche / Chrome droite",
+            sel!(workspaceMeeting:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Restaurer la disposition avant réunion",
+            sel!(workspaceRestore:),
+        );
         let gestures = menu_action(
             &menu,
             &controller,
