@@ -17,6 +17,8 @@ mod hotkey;
 #[cfg(any(target_os = "macos", test))]
 mod mouse_scroll;
 #[cfg(target_os = "macos")]
+mod preferences;
+#[cfg(target_os = "macos")]
 mod trackpad;
 #[cfg(target_os = "macos")]
 mod windows;

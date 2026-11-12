@@ -420,3 +420,35 @@ l'artefact et CRC ZIP applicatif vérifiés, version0.3.2/build12 et Mach-O relu
 Aucun essai réel de tap modifiable, Magic Mouse, trackpad, Minecraft,
 NSUserDefaults ou veille réalisé ici ; ces interactions restent à confirmer
 sur le Mac pilote avant de déclarer la classification fiable.
+
+## 2026-11-12 — P4 pilote 0.4.0 : espaces nommés et interface native
+
+L'utilisateur confirme le fonctionnement de l'option souris 0.3.2 puis demande
+la prochaine étape. Retour positif sur son Mac, sans l'étendre à tout matériel.
+Main dac219e inspecté et conservé. Première UI P4 AppKit, créée à la demande :
+liste, nom, capture/recapture de deux fenêtres, renommage, duplication,
+suppression confirmée, positions gauche/droite/100 %, appliquer et messages
+visibles. Sous-menu des espaces pour activation directe. Pas de nouveau crate,
+serveur, WebView, processus ou framework de réglages.
+
+Catalogue schema2, IDs stables non réutilisés, 32 espaces max/noms60caractères.
+Schema1 repris en mémoire comme Disposition personnelle, sans écriture à la
+lecture. Premier changement sauvegarde l'ancien fichier et écrit atomiquement
+le nouveau. Validation stricte, unicité de noms/IDs, backup/read-only recovery
+conservés. Les mutations relisent la configuration avant sauvegarde ; un
+formulaire inchangé ne remplace pas le backup. Logs : compteurs/IDs et succès,
+aucun nom utilisateur ou titre de fenêtre ajouté au diagnostic.
+
+Les sélections partent de l'application précédant l'ouverture des réglages,
+avec repli écran principal, pour éviter de cibler la propre fenêtre Kigi.
+Résolution et préflight précèdent tout placement ; annulation ne sauvegarde
+rien. Ancien snapshot partagé avec Réunion, positions/restauration conservées.
+Le filtre souris, la recherche d'onglet et les gestes5 % sont inchangés.
+
+Tests ciblés : migration v1→v2, roundtrip/backup, fichier invalide conservé,
+identités stables pendant renommage/suppression et absence de réutilisation.
+13 tests hôte et typage Mac ARM/Intel déjà réussis pendant l'implémentation ;
+validation finale et packaging à consigner après compilation. UI interactive
+non exécutée ici (Linux), à essayer sur le Mac pilote. Reste P4 : interactions
+graphiques avancées, capture de raccourcis et affectation gestes→espaces. P5
+n'est pas démarré.

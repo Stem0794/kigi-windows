@@ -54,3 +54,12 @@ distinction conservatrice par phases publiques et passage des inconnus. Ne pas
 prétendre identifier la marque avec CGEvent, ne pas utiliser d'API privée, ne
 pas affecter le tap passif des gestes. Valider Magic Mouse/trackpad sur matériel
 avant toute garantie ; pas de fonctionnalités de remappage supplémentaires.
+
+## P4 pilote autorisé — 0.4.0
+
+Après 0.3.2, l'utilisateur confirme « ça fonctionne bien » et demande la
+prochaine étape. Développer une première fenêtre AppKit pour plusieurs espaces
+nommés : capture, recapture, application, renommage, duplication, suppression
+et positions simples, sans édition JSON. Migrer la disposition schema1 sans
+la perdre ; conserver restauration, gestes5 % et filtre souris. Ne pas ajouter
+P5/réunions automatiques ni un éditeur graphique complexe dans cette tranche.

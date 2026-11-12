@@ -1,4 +1,4 @@
-# Kigi Windows — 0.3.2
+# Kigi Windows — espaces de travail 0.4.0
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -145,45 +145,59 @@ Il n'y a **pas encore** de détection de réunion automatique, de sélection
 fiable d'une fenêtre Teams « réunion » plutôt que « chat », de détection automatique fiable. Pas de déplacement de fenêtres entre Spaces
 Mission Control. Les gestes P2 déclenchent toujours seulement Teams/Chrome.
 
-## Disposition personnelle enregistrée (0.3.1)
+## Gérer les espaces de travail (P4 pilote 0.4.0)
 
-1. Positionner deux fenêtres sur **un même écran**, dans sa zone visible.
-2. Choisir **Enregistrer une disposition personnelle…**, puis sélectionner les
-   deux fenêtres. Elles peuvent appartenir à deux applications ou à la même.
-3. Plus tard, après avoir rouvert les fenêtres voulues, choisir **Appliquer la
-   disposition personnelle**. Les positions sont adaptées à l'écran de la fenêtre
-   active avant l'ouverture du sélecteur.
-4. Utiliser **Restaurer la disposition précédente** pour revenir aux positions
-   d'avant application, sans écraser un déplacement manuel.
+Ouvrir **Kigi → Gérer les espaces de travail…**. Cette fenêtre native permet de
+créer plusieurs espaces nommés sans éditer le JSON :
 
-Une disposition est conservée entre les redémarrages de Kigi, dans
-`~/Library/Application Support/io.kigi.windows/config.json`. Enregistrer à nouveau
-la remplace ; la précédente configuration valide est sauvegardée en
-`config.json.bak`. Les écritures sont atomiques et la configuration est validée
-avant usage. Une sauvegarde valide peut être relue si le fichier principal est
-endommagé, sans modifier celui-ci. Un fichier invalide n'est jamais écrasé par
-l'enregistrement : le menu **Afficher la configuration dans Finder** permet de
-le retrouver et de le renommer avant une nouvelle capture.
+1. Choisir **Nouvel espace…** dans la liste, saisir un nom, puis cliquer sur
+   **Enregistrer deux fenêtres…** et choisir les deux fenêtres déjà ouvertes.
+2. Sélectionner ensuite un espace enregistré. **Recapturer les deux fenêtres…**
+   remplace ses applications/positions par une nouvelle sélection. Annuler
+   l'un des choix ne modifie ni la configuration ni les fenêtres.
+3. **Renommer**, **Dupliquer** et **Supprimer** gèrent les espaces ; la suppression
+   demande confirmation et ne ferme/déplace aucune application.
+4. Les menus de position proposent **Position enregistrée**, **Moitié gauche**,
+   **Moitié droite** et **100 % de l'écran** pour chaque fenêtre.
+5. **Enregistrer les positions** conserve les modifications sans déplacer les
+   fenêtres. **Appliquer** enregistre aussi les modifications du formulaire puis
+   place les fenêtres. Le menu **Kigi → Espaces enregistrés** applique directement
+   les versions enregistrées, sans dépendre d'un formulaire non sauvegardé.
 
-Seuls les bundle IDs et rectangles normalisés sont sauvegardés : aucun titre,
-PID, pointeur AX, URL ou contenu. Si plusieurs fenêtres d'une application sont
-disponibles, Kigi demande laquelle associer à chaque emplacement. Toute la
-sélection et le préflight précèdent les déplacements ; annuler ne déplace rien.
-Les applications/fenêtres doivent déjà être ouvertes : pas de lancement
-supplémentaire ni de reconstitution d'onglet par la disposition.
+Les espaces sont conservés après redémarrage, avec une limite de 32 espaces et
+60 caractères par nom. Deux fenêtres sur un même écran par espace à cette étape.
+Les applications/fenêtres doivent déjà être ouvertes. En cas d'ambiguïté, Kigi
+redemande laquelle utiliser ; les titres ne sont utilisés que dans le sélecteur.
+Depuis la fenêtre de réglages, l'écran et le focus de retour prennent pour
+contexte l'application active avant son ouverture (écran principal en repli).
 
-Un seul retour temporaire est partagé entre Réunion et la disposition
-personnelle. Restaurer ou choisir Travail avant une autre application. Une
-erreur partielle conserve ce retour ; chaque fenêtre est traitée indépendamment.
-Les positions intermédiaires relues après une restauration partielle sont
-suivies pour ne pas les confondre avec un déplacement manuel. En cas de position
-inconnue après une panne AX, Kigi garde le retour et signale l'incertitude.
-La sauvegarde JSON conserve la disposition voulue ; le retour avant application
-reste en mémoire seulement et est perdu à la fermeture de Kigi.
+La disposition personnelle créée dans 0.3.1/0.3.2 est reprise sous le nom
+**Disposition personnelle**. La lecture convertit le schéma 1 en mémoire ; la
+première modification enregistre le schéma 2 avec sauvegarde du fichier initial.
+Fermer/ouvrir les réglages ne réécrit pas le fichier. Réappliquer un formulaire
+inchangé ne remplace pas sa sauvegarde par une copie identique.
 
-Limite de cette étape : une disposition, deux fenêtres, un seul écran à la fois.
-Les noms multiples, l'éditeur de scènes et le choix d'écrans persistants attendent
-P4. Les gestes restent ceux du profil horizontal à 5 %, sans nouvelle affectation.
+`~/Library/Application Support/io.kigi.windows/config.json` contient les noms
+choisis, les identifiants stables des espaces, les bundle IDs et rectangles
+normalisés. Aucune persistance de titre de fenêtre, PID, pointeur AX ou URL.
+Écritures atomiques, sauvegarde `config.json.bak`, validation stricte (64 Ko,
+géométrie et IDs/noms uniques). Une sauvegarde valide peut être utilisée si le
+fichier principal est endommagé ; celui-ci reste conservé et n'est pas écrasé.
+Le menu Finder reste disponible pour les cas de récupération avancés.
+
+Un seul retour temporaire est partagé entre Réunion et les espaces enregistrés.
+Utiliser **Restaurer la disposition précédente** ou **Espace Travail** avant
+une autre application. Le retour respecte les déplacements manuels, conserve
+les erreurs partielles et reste en mémoire seulement. Modifier/renommer un
+espace ne change pas le retour déjà capturé. Aucune fenêtre n'est recréée, aucun
+onglet n'est ouvert par les espaces.
+
+Les raccourcis personnels, gestes horizontaux à 5 % et filtre souris sont
+conservés. Les gestes gardent leurs actions Teams/Chrome. Cette première UI P4
+n'inclut pas encore le glisser-déposer des rectangles, les raccourcis configurables
+ou l'affectation des gestes aux espaces ; ces sous-étapes restent distinctes.
+La nouvelle fenêtre native et le cycle création/édition/application restent
+à essayer sur le Mac pilote.
 
 ## Permissions et limites fenêtres
 

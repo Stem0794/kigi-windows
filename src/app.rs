@@ -4,6 +4,7 @@ use crate::{
     gestures::{Contact, CornerProbe, Edge},
     hotkey::Hotkeys,
     mouse_scroll::MouseScrollTap,
+    preferences::Preferences,
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -81,6 +82,10 @@ struct State {
     permission_item: OnceCell<Retained<NSMenuItem>>,
     last_permission: Cell<Option<bool>>,
     local_window: RefCell<Option<Retained<NSWindow>>>,
+    preferences: RefCell<Option<Preferences>>,
+    preferences_anchor: Cell<Option<i32>>,
+    catalog: RefCell<config::Catalog>,
+    profiles_menu: OnceCell<Retained<NSMenu>>,
     tap: RefCell<Option<Tap>>,
 }
 define_class!(
@@ -188,9 +193,101 @@ define_class!(
             self.status(&result.unwrap_or_else(|e| e));
         }
         #[unsafe(method(saveLayout:))]
-        fn save_layout(&self, _: Option<&AnyObject>) { self.personal_layout(true); }
+        fn save_layout(&self, _: Option<&AnyObject>) { self.open_profiles(); }
         #[unsafe(method(applyLayout:))]
-        fn apply_layout(&self, _: Option<&AnyObject>) { self.personal_layout(false); }
+        fn apply_layout(&self, _: Option<&AnyObject>) { self.open_profiles(); }
+        #[unsafe(method(openProfiles:))]
+        fn open_profiles_action(&self, _: Option<&AnyObject>) { self.open_profiles(); }
+        #[unsafe(method(profileSelected:))]
+        fn profile_selected(&self, _: Option<&AnyObject>) {
+            if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+                prefs.show_selection(&self.ivars().catalog.borrow());
+            }
+        }
+        #[unsafe(method(refreshProfiles:))]
+        fn refresh_profiles_action(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() { return; }
+            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
+            self.refresh_profiles(selected);
+        }
+        #[unsafe(method(captureProfile:))]
+        fn capture_profile(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() { return; }
+            let values = self.ivars().preferences.borrow().as_ref()
+                .map(|p| (p.selected_id(), p.name.stringValue().to_string().trim().to_owned()));
+            if let Some((id,name)) = values {
+                if let Err(e) = config::Catalog::valid_name(&name) { self.status(&e); return; }
+                self.personal_layout(true, id, Some(name));
+            }
+        }
+        #[unsafe(method(applySelectedProfile:))]
+        fn apply_selected_profile(&self, _: Option<&AnyObject>) {
+            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
+            if let Some(id) = selected {
+                if self.ivars().layout_snapshot.borrow().is_some() {
+                    self.status("Restaurez la disposition active ou choisissez Travail avant d'en appliquer une autre."); return;
+                }
+                if self.edit_profile(true) { self.personal_layout(false, Some(id), None); }
+            }
+        }
+        #[unsafe(method(applyNamedProfile:))]
+        fn apply_named_profile(&self, sender: Option<&NSMenuItem>) {
+            if let Some(id) = sender.and_then(|s| u32::try_from(s.tag()).ok()).filter(|id| *id != 0) {
+                self.personal_layout(false, Some(id), None);
+            }
+        }
+        #[unsafe(method(renameProfile:))]
+        fn rename_profile(&self, _: Option<&AnyObject>) { self.edit_profile(false); }
+        #[unsafe(method(saveProfilePositions:))]
+        fn save_profile_positions(&self, _: Option<&AnyObject>) { self.edit_profile(true); }
+        #[unsafe(method(duplicateProfile:))]
+        fn duplicate_profile(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() { return; }
+            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
+            let Some(id) = selected else { return; };
+            let result = (|| {
+                let (mut catalog, _) = self.read_catalog()?;
+                let profile = catalog.profile(id)?;
+                let base: String = profile.name.chars().take(48).collect();
+                let layout = profile.layout();
+                let name = (1..=33).map(|n| format!("{base} copie {n}"))
+                    .find(|name| !catalog.profiles.iter().any(|p|p.name.to_lowercase()==name.to_lowercase()))
+                    .ok_or("Aucun nom de copie disponible.")?;
+                let id = catalog.upsert(None, &name, &layout)?;
+                config::save(&config::path()?, &catalog)?;
+                self.set_catalog(catalog, Some(id), true);
+                Ok("Copie créée. Vous pouvez la renommer et modifier ses positions.".to_owned())
+            })();
+            diagnostics::record("profiles.duplicate", format!("success={}", result.is_ok()));
+            self.status(&result.unwrap_or_else(|e: String| e));
+        }
+        #[unsafe(method(deleteProfile:))]
+        fn delete_profile(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() { return; }
+            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
+            let Some(id) = selected else { return; };
+            let result = (|| {
+                let (mut catalog, _) = self.read_catalog()?;
+                let profile = catalog.profile(id)?;
+                let dialog = NSAlert::new(self.mtm());
+                dialog.setMessageText(&NSString::from_str("Supprimer cet espace ?"));
+                dialog.setInformativeText(&NSString::from_str(&format!("« {} » sera retiré des espaces enregistrés. Les fenêtres ouvertes resteront en place.", profile.name)));
+                dialog.addButtonWithTitle(&NSString::from_str("Supprimer"));
+                dialog.addButtonWithTitle(&NSString::from_str("Annuler"));
+                self.ivars().picking.set(true);
+                let confirmed = dialog.runModal() == NSAlertFirstButtonReturn;
+                self.ivars().picking.set(false);
+                if !confirmed { return Ok("Suppression annulée.".to_owned()); }
+                // Re-read after the modal in case the config was externally edited.
+                catalog = self.read_catalog()?.0;
+                catalog.remove(id)?;
+                config::save(&config::path()?, &catalog)?;
+                let next = catalog.profiles.first().map(|p|p.id);
+                self.set_catalog(catalog, next, true);
+                Ok("Espace supprimé. Les autres espaces sont conservés.".into())
+            })();
+            self.status(&result.unwrap_or_else(|e: String| e));
+        }
         #[unsafe(method(revealConfig:))]
         fn reveal_config(&self, _: Option<&AnyObject>) {
             match config::path() {
@@ -199,7 +296,7 @@ define_class!(
                         Some(&NSString::from_str(&path.to_string_lossy())), ns_string!(""));
                     if !shown { self.status("Impossible d'afficher le fichier dans Finder."); }
                 },
-                _ => self.status("Aucune disposition personnelle enregistrée. Utilisez Enregistrer une disposition personnelle."),
+                _ => self.status("Aucune configuration enregistrée. Créez un espace depuis Gérer les espaces de travail."),
             }
         }
         #[unsafe(method(openPoll:))]
@@ -437,6 +534,119 @@ impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
+    }
+    fn read_catalog(&self) -> Result<(config::Catalog, bool), String> {
+        Ok(config::load(&config::path()?)?.unwrap_or_else(|| (config::Catalog::default(), false)))
+    }
+    fn set_catalog(&self, catalog: config::Catalog, selected: Option<u32>, update_form: bool) {
+        if let Some(menu) = self.ivars().profiles_menu.get() {
+            menu.removeAllItems();
+            if catalog.profiles.is_empty() {
+                let item = NSMenuItem::new(self.mtm());
+                item.setTitle(&NSString::from_str("Aucun espace enregistré"));
+                item.setEnabled(false);
+                menu.addItem(&item);
+            } else {
+                for profile in &catalog.profiles {
+                    let item = menu_action(menu, self, &profile.name, sel!(applyNamedProfile:));
+                    item.setTag(profile.id as isize);
+                }
+            }
+        }
+        if update_form {
+            if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+                prefs.populate(&catalog, selected);
+            }
+        }
+        self.ivars().catalog.replace(catalog);
+    }
+    fn refresh_profiles(&self, selected: Option<u32>) {
+        match self.read_catalog() {
+            Ok((catalog, backup)) => {
+                self.set_catalog(catalog, selected, true);
+                if backup {
+                    self.status("Configuration principale illisible : sauvegarde valide affichée, fichier principal conservé.");
+                }
+            }
+            Err(e) => self.status(&e),
+        }
+    }
+    fn open_profiles(&self) {
+        if self.ivars().picking.get() {
+            return;
+        }
+        if let Some(pid) = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier())
+            .filter(|pid| *pid != std::process::id() as i32)
+        {
+            self.ivars().preferences_anchor.set(Some(pid));
+        }
+        self.cancel_open();
+        self.cancel_gesture_dispatch();
+        if self.ivars().preferences.borrow().is_none() {
+            self.ivars()
+                .preferences
+                .replace(Some(Preferences::new(self.mtm(), self)));
+        }
+        let selected = self
+            .ivars()
+            .preferences
+            .borrow()
+            .as_ref()
+            .and_then(Preferences::selected_id)
+            .or_else(|| self.ivars().catalog.borrow().profiles.first().map(|p| p.id));
+        self.refresh_profiles(selected);
+        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+            prefs.window.makeKeyAndOrderFront(None);
+        }
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+    }
+    fn edit_profile(&self, positions: bool) -> bool {
+        if self.ivars().picking.get() {
+            return false;
+        }
+        let data = self.ivars().preferences.borrow().as_ref().and_then(|p| {
+            p.selected_id()
+                .map(|id| (id, p.name.stringValue().to_string().trim().to_owned()))
+        });
+        let Some((id, name)) = data else {
+            return false;
+        };
+        let result = (|| {
+            let (mut catalog, _) = self.read_catalog()?;
+            let previous = catalog.clone();
+            let profile = catalog.profile(id)?;
+            let layout = if positions {
+                self.ivars()
+                    .preferences
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .edited_layout(profile)
+            } else {
+                profile.layout()
+            };
+            catalog.upsert(Some(id), &name, &layout)?;
+            if catalog != previous {
+                config::save(&config::path()?, &catalog)?;
+            }
+            self.set_catalog(catalog, Some(id), true);
+            Ok(if positions {
+                "Positions enregistrées. Cliquez sur Appliquer pour les utiliser."
+            } else {
+                "Espace renommé."
+            }
+            .to_owned())
+        })();
+        diagnostics::record(
+            "profiles.edit",
+            format!("id={id} positions={positions} success={}", result.is_ok()),
+        );
+        let success = result.is_ok();
+        self.status(&result.unwrap_or_else(|e: String| e));
+        success
     }
     fn mouse_scroll_active(&self) -> bool {
         self.ivars()
@@ -699,7 +909,7 @@ impl Controller {
             self.schedule_open_poll();
         }
     }
-    fn personal_layout(&self, save: bool) {
+    fn personal_layout(&self, save: bool, profile_id: Option<u32>, profile_name: Option<String>) {
         if self.ivars().picking.get() || !self.window_permission() {
             return;
         }
@@ -712,16 +922,36 @@ impl Controller {
         // Resolve all windows before any AX write. Titles stay in the chooser.
         let result = (|| {
             let path = config::path()?;
+            let (catalog, backup) = self.read_catalog()?;
             let saved = if save {
+                let name = profile_name.as_deref().ok_or("Nom de l'espace absent.")?;
+                config::Catalog::valid_name(name)?;
+                if let Some(id) = profile_id {
+                    catalog.profile(id)?;
+                } else if catalog.profiles.len() >= 32 {
+                    return Err("La limite de 32 espaces est atteinte.".into());
+                }
+                if catalog.profiles.iter().any(|p| {
+                    Some(p.id) != profile_id && p.name.to_lowercase() == name.to_lowercase()
+                }) {
+                    return Err("Ce nom existe déjà. Choisissez un autre nom.".into());
+                }
                 None
             } else {
-                Some(config::load(&path)?.ok_or("Aucune disposition personnelle enregistrée.")?)
+                Some((
+                    catalog
+                        .profile(profile_id.ok_or("Choisissez un espace enregistré.")?)?
+                        .layout(),
+                    backup,
+                ))
             };
             let prior_pid = NSWorkspace::sharedWorkspace()
                 .frontmostApplication()
                 .map(|a| a.processIdentifier())
-                .filter(|p| *p != std::process::id() as i32);
-            let (display, mut choices, partial) = windows::pair_candidates(self.mtm())?;
+                .filter(|p| *p != std::process::id() as i32)
+                .or(self.ivars().preferences_anchor.get());
+            let (display, mut choices, partial) =
+                windows::pair_candidates_for_app(self.mtm(), prior_pid)?;
             self.ivars().picking.set(true);
             #[allow(deprecated)]
             NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
@@ -783,8 +1013,15 @@ impl Controller {
                     })
                 } else {
                     let layout = windows::capture_layout(self.mtm(), [&selected[0], &selected[1]])?;
-                    config::save(&path, &layout)?;
-                    Ok("Disposition personnelle enregistrée. Elle sera disponible après redémarrage de Kigi.".into())
+                    let mut catalog = self.read_catalog()?.0;
+                    let id = catalog.upsert(
+                        profile_id,
+                        profile_name.as_deref().ok_or("Nom absent.")?,
+                        &layout,
+                    )?;
+                    config::save(&path, &catalog)?;
+                    self.set_catalog(catalog, Some(id), true);
+                    Ok("Espace enregistré. Il est disponible dans le menu et après redémarrage de Kigi.".into())
                 }
             })();
             self.ivars().picking.set(false);
@@ -931,12 +1168,15 @@ impl Controller {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        diagnostics::report(&format!("macOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\nmouse_scroll={mouse_scroll}\npermission_probe={probe}",
-            std::env::consts::ARCH, std::process::id(), windows::trusted()))
+        diagnostics::report(&format!("macOS={os}\narchitecture={}\nbundle=io.kigi.windows\npid={}\nother_instances={peers}\napp_translocated={translocated}\nexecutable={executable}\nexported_at_unix_utc={exported_at}\naccessibility={}\n{shortcut}\nlast_result={result}\ntrackpad={trackpad}\nmouse_scroll={mouse_scroll}\npermission_probe={probe}\nprofiles_count={}",
+            std::env::consts::ARCH, std::process::id(), windows::trusted(), self.ivars().catalog.borrow().profiles.len()))
     }
 
     fn status(&self, text: &str) {
         diagnostics::record("status", text);
+        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+            prefs.status.setStringValue(&NSString::from_str(text));
+        }
         if let Some(item) = self.ivars().status.get() {
             item.setTitle(&NSString::from_str(text));
         }
@@ -1282,15 +1522,16 @@ pub fn run() {
         menu_action(
             &menu,
             &controller,
-            "Enregistrer une disposition personnelle…",
-            sel!(saveLayout:),
+            "Gérer les espaces de travail…",
+            sel!(openProfiles:),
         );
-        menu_action(
-            &menu,
-            &controller,
-            "Appliquer la disposition personnelle",
-            sel!(applyLayout:),
-        );
+        let profiles_menu = NSMenu::new(mtm);
+        let profiles_parent = NSMenuItem::new(mtm);
+        profiles_parent.setTitle(&NSString::from_str("Espaces enregistrés"));
+        profiles_parent.setSubmenu(Some(&profiles_menu));
+        menu.addItem(&profiles_parent);
+        controller.ivars().profiles_menu.set(profiles_menu).ok();
+        controller.refresh_profiles(None);
         menu_action(
             &menu,
             &controller,
@@ -1388,6 +1629,9 @@ pub fn run() {
         CONTROLLER.with(|c| c.borrow_mut().take());
         controller.stop_tap();
         controller.stop_mouse_scroll();
+        if let Some(prefs) = controller.ivars().preferences.borrow_mut().take() {
+            prefs.window.close();
+        }
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
         }

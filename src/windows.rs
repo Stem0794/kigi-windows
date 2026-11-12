@@ -489,9 +489,25 @@ pub struct Choice {
     app: objc2::rc::Retained<NSRunningApplication>,
 }
 pub fn pair_candidates(mtm: MainThreadMarker) -> Result<(Rect, Vec<Choice>, bool), String> {
+    pair_candidates_for_app(mtm, None)
+}
+pub fn pair_candidates_for_app(
+    mtm: MainThreadMarker,
+    anchor_pid: Option<i32>,
+) -> Result<(Rect, Vec<Choice>, bool), String> {
     require_permission()?;
-    let active = frontmost()?;
-    let anchor = preferred_window(&active)?.frame()?;
+    let active = anchor_pid
+        .and_then(NSRunningApplication::runningApplicationWithProcessIdentifier)
+        .or_else(|| frontmost().ok());
+    let anchor = active
+        .and_then(|app| preferred_window(&app).ok())
+        .and_then(|w| w.frame().ok())
+        .unwrap_or(Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        });
     let display = visible_frame(mtm, anchor)?; // Capture BEFORE the modal UI takes focus.
     let started = Instant::now();
     let mut choices = Vec::new();

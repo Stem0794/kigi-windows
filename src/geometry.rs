@@ -51,7 +51,7 @@ impl Rect {
 }
 
 /// Relative to one display's usable area, never physical pixels or a Space ID.
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NormalizedRect {
     pub x: f64,
