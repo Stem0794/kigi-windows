@@ -703,7 +703,9 @@ pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
     crate::applications::activate(&chrome_app)?;
     let actual = window.set_frame(target)?;
     if !actual.approximately(target) {
-        return Err("Chrome ne couvre pas toute la zone visible : disposition précédente conservée.".into());
+        return Err(
+            "Chrome ne couvre pas toute la zone visible : disposition précédente conservée.".into(),
+        );
     }
     window.raise()?;
     Ok("Travail : Chrome au premier plan à 100 %, Teams conservé derrière.".into())
