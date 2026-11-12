@@ -50,3 +50,22 @@ synchrones, avec délai par appel. Les fenêtres peuvent répondre tardivement o
 imposer leurs dimensions. Le snapshot n'est pas persistant ; restaurer avant
 quitter. La signature ad hoc n'est ni notarisation ni garantie de stabilité TCC
 à travers les recompilations.
+
+## 2026-11-12 — Package téléchargeable P0
+
+À la demande de l'utilisateur, ajout d'un unique workflow de packaging macOS,
+sans matrice de tests ni CI fonctionnelle. Le premier runner macos-14 était
+retiré ; passage à macos-15. Le run [43232714798](https://github.com/Stem0794/kigi-windows/actions/runs/43232714798)
+a construit et lié les deux binaires Release, assemblé l'universel avec lipo,
+validé le plist et la signature ad hoc avec codesign, puis créé le ZIP.
+
+Commit du package : 3a346c6bfe5d5248d6e51b6ed71f46f63e266df9.
+ZIP applicatif : 365 251 octets ; exécutable universel : 801 072 octets.
+Architectures Mach-O vérifiées : x86_64 et arm64. Archive ZIP vérifiée sans
+erreur CRC. Aucun Rust nécessaire sur le Mac destinataire.
+
+Cela remplace la limitation de build/packaging évoquée plus haut : ceux-ci
+sont désormais vérifiés sur un runner macOS. L'application n'a toutefois pas
+été exécutée ni testée avec les permissions, fenêtres ou trackpads réels.
+Pas de signature Developer ID ni de notarisation. Les validations natives
+interactives et macOS 11 restent en attente ; aucun démarrage de P1.
