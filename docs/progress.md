@@ -476,3 +476,11 @@ le dernier PID externe en mémoire, sans titres ni détection de réunions.
 Pas de nouvelle dépendance, seulement les classes AppKit NSTabView(Item).
 Validation interactive et présentation à confirmer sur Mac pilote ; aucun
 rendu/clic AppKit réalisé sur l’hôte Linux.
+
+Validation finale 0.4.1 : fmt/check, 13 tests hôte, typage code/tests Intel et
+ARM réussis. [Run macOS 43304136419](https://github.com/Stem0794/kigi-windows/actions/runs/43304136419)
+réussi : 16 tests, script Chrome compilé, Release Intel/ARM et vérifications
+signature/plist/lipo. Source d53009c773260490b4a02350c1cc8af1b6d2ee9a.
+SHA256 de l’artefact et CRC des deux archives vérifiés ; paquet universel
+0.4.1/build14, LSUIElement=false, 681251 octets. L’affichage, la réouverture
+Dock et les interactions de la fenêtre restent à confirmer sur le Mac pilote.
