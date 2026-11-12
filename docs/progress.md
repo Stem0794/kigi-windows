@@ -372,3 +372,11 @@ Les deux nouveaux tests couvrent la persistance et la décision de restauration,
 sans mock AX. Le choix reste explicite même pour une seule correspondance si
 l'inventaire est partiel, pour ne pas prendre une liste tronquée pour un match
 unique. Les interactions macOS et le cycle après redémarrage restent à tester.
+
+Validation native 0.3.1 : [run 43283892092](https://github.com/Stem0794/kigi-windows/actions/runs/43283892092)
+réussi, fmt/check et **12 tests macOS** réussis, script Chrome compilé,
+Release Intel/ARM liées, signature ad hoc/plist et lipo vérifiés. Source du
+package : a10d60ae26bb2a7d4d455ed85541f396e84921d1. Artefact téléchargé et
+SHA256 vérifié, ZIP applicatif CRC vérifié, Info.plist 0.3.1/build11 et Mach-O
+Intel/ARM relus. ZIP 576485 octets. Capture/Finder/redémarrage/placement et
+restauration n'ont pas été exécutés interactivement ici : essai Mac nécessaire.
