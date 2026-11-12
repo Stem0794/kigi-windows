@@ -410,3 +410,13 @@ trackpad après repos. Test natif CG : les trois axes X à zéro avec Y/Z et pha
 inchangés, sans installer un tap ni poster d'événements. Fonctionnement matériel
 Magic Mouse/Minecraft, préférences natives et reprise après veille à confirmer
 sur le Mac pilote. Les scènes et gestes 5 % sont conservés.
+
+Validation 0.3.2 : fmt et 12 tests hôte réussis ; checks de code/tests Intel/ARM
+cible11 réussis. [Run macOS 43286890229](https://github.com/Stem0794/kigi-windows/actions/runs/43286890229)
+réussi : 15 tests, dont test CG de conservation Y/Z/phase, script Chrome compilé,
+Release Intel/ARM liées, signature ad hoc/plist/lipo vérifiés. Source :
+5c96f015fc3befb4e46b80af76abe5dc18109c12. Archive téléchargée, SHA256 de
+l'artefact et CRC ZIP applicatif vérifiés, version0.3.2/build12 et Mach-O relus.
+Aucun essai réel de tap modifiable, Magic Mouse, trackpad, Minecraft,
+NSUserDefaults ou veille réalisé ici ; ces interactions restent à confirmer
+sur le Mac pilote avant de déclarer la classification fiable.
