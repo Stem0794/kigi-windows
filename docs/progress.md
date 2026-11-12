@@ -167,3 +167,10 @@ confiance du processus courant. Attendre les nouveaux logs si le refus persiste.
 Un test de régression vérifie demande unique, arrêt au grant et budget épuisé.
 Le parcours TCC interactif, Finder et garde multi-instance restent à essayer
 sur le Mac ; aucune promesse de permission désormais accordée. P0 uniquement.
+
+Validation 0.0.5 : fmt/check et 4 tests hôte réussis ; 6 tests sur runner macOS
+Intel (dont la régression demande unique), Release Intel/ARM liées, signature
+ad hoc/plist/lipo et intégrité ZIP vérifiés. [Run 43254778878](https://github.com/Stem0794/kigi-windows/actions/runs/43254778878),
+source du package : a11b3eeb8c2455ca33bedbefef9e28e8185567c2.
+Les manipulations TCC, le rafraîchissement après grant, Finder et le blocage des
+copies multiples n'ont pas été validés interactivement sur le Mac utilisateur.
