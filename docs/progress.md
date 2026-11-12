@@ -133,3 +133,10 @@ sélecteur de deux fenêtres, chat Teams gauche/réunion droite, retour au chat,
 réutilisation d'onglet ChatGPT. Le profil complet n'est pas activé dans ce P0.
 Le prochain jalon reste le déplacement/restauration sur le Mac après permission
 AX, puis les raccourcis manuels de migration. Aucun init.lua local modifié.
+
+Validation 0.0.4 : fmt/check réussis, 4 tests sous Linux et 5 tests sur le runner
+macOS Intel, Release Intel/ARM liées, signature ad hoc/plist/lipo et intégrité du
+ZIP vérifiés. [Run 43249225076](https://github.com/Stem0794/kigi-windows/actions/runs/43249225076),
+source du package : ef7f831916f9fe3fb881f613157c8fcb5643b75b.
+Les commandes presse-papiers/enregistrement et la nouvelle explication AX sont
+compilées, mais leur interaction sur le Mac utilisateur reste à vérifier.
