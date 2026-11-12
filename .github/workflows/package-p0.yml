@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/package-p0.yml'
       - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'resources/**'
+      - 'scripts/**'
 permissions:
   contents: read
 jobs:
