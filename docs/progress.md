@@ -534,3 +534,10 @@ libellés et logs alignés. Arrivée x=0,50, durée, dérive, annulation et cool
 conservés. Test des bornes ajusté (incluses 0,10/0,90, exclus 0,10001/0,89999).
 Cela élargit la zone de départ sans résoudre une éventuelle absence de contacts.
 Essai matériel requis ; aucune API privée ajoutée.
+
+Validation 0.5.1 : 16 tests hôte, checks code/tests Mac Intel/ARM ;
+[run macOS 43311517374](https://github.com/Stem0794/kigi-windows/actions/runs/43311517374)
+réussi sur 0579d6b564855ae9ae2497a9b215d24372549312 : 19 tests, construction
+universelle, signature/plist/lipo et démarrage natif 4 s sans erreur signalée.
+SHA256 artefact, CRC ZIP, version 0.5.1/build16 et Mach-O universel vérifiés.
+La détection physique au nouveau seuil reste à essayer sur le Mac utilisateur.
