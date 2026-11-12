@@ -9,7 +9,7 @@
 - **KISS / pas d'overengineering.** Un seul crate Rust pour commencer ; quelques modules, du code direct, le minimum de dépendances. N'introduis aucun framework interne, abstractions génériques, microservices, daemon, base de données ou système de plugins sans besoin réel démontré.
 - **Pas de 10 000 smoke tests.** Ne construis pas de suite E2E ou CI lourde. Lance `cargo fmt --check`, `cargo check` et les tests utiles après changement significatif ; ajoute quelques tests unitaires seulement pour les logiques présentant un vrai risque. Contrôle manuellement sur Mac les fonctions Accessibility, raccourcis et trackpad. Pas de campagnes répétitives sans bug à investiguer.
 - **Une phase à la fois.** N'implémente que la phase demandée, avec un commit cohérent et quelques lignes de suivi dans `docs/progress.md`. Ne code aucune fonction future « au cas où ».
-- **Rust-first, API natives macOS.** AppKit `objc2`, pas Electron, WebView, Hammerspoon embarqué, Lua ni service cloud. Un seul processus menu bar.
+- **Rust-first, API natives macOS.** AppKit `objc2`, pas Electron, WebView, Hammerspoon embarqué, Lua ni service cloud. Un seul processus natif.
 - **Ne pas inventer les résultats.** Geste trackpad et ancien macOS : GO/PARTIAL/NO-GO basé sur essais réels. Cible macOS 11, Intel + ARM à valider.
 - **Respect des autorisations.** API publiques Apple sauf accord explicite ; aucun contournement TCC/MDM, pas de root.
 - **Migration en sécurité.** Ne modifie ni ne supprime `~/.hammerspoon/init.lua` sans consentement explicite ; audit en lecture seule.
@@ -63,3 +63,9 @@ nommés : capture, recapture, application, renommage, duplication, suppression
 et positions simples, sans édition JSON. Migrer la disposition schema1 sans
 la perdre ; conserver restauration, gestes5 % et filtre souris. Ne pas ajouter
 P5/réunions automatiques ni un éditeur graphique complexe dans cette tranche.
+
+## Interface principale demandée — 0.4.1
+
+Ouvrir les réglages au lancement avec présence Dock, cinq onglets natifs et
+menu de statut compact. Fermer conserve les fonctions de fond ; ⌘Q quitte.
+Conserver les options réelles existantes, sans P5 ni capture de raccourcis.

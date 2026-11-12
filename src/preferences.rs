@@ -1,12 +1,13 @@
 //! Small native P4 form. Editing/capture actions stay in the application controller.
 use crate::{
+    actions::Action,
     config::{Catalog, Profile},
     geometry::NormalizedRect,
 };
 use objc2::{
     rc::Retained,
     runtime::{AnyObject, Sel},
-    sel, MainThreadOnly,
+    sel, AnyThread, MainThreadOnly,
 };
 use objc2_app_kit::*;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString};
@@ -17,6 +18,14 @@ pub struct Preferences {
     pub name: Retained<NSTextField>,
     pub positions: [Retained<NSPopUpButton>; 2],
     pub status: Retained<NSTextField>,
+    tabs: Retained<NSTabView>,
+    hotkeys: Retained<NSButton>,
+    gestures: Retained<NSButton>,
+    mouse: Retained<NSButton>,
+    shortcuts_state: Retained<NSTextField>,
+    mouse_state: Retained<NSTextField>,
+    accessibility: Retained<NSTextField>,
+    input_access: Retained<NSTextField>,
     descriptions: [Retained<NSTextField>; 2],
     capture: Retained<NSButton>,
     selected_buttons: Vec<Retained<NSButton>>,
@@ -55,13 +64,54 @@ fn popup(mtm: MainThreadMarker, root: &NSView, frame: NSRect) -> Retained<NSPopU
     root.addSubview(&p);
     p
 }
+pub struct RuntimeSettings<'a> {
+    pub personal_hotkeys: bool,
+    pub shortcuts_received: u64,
+    pub registration: &'a str,
+    pub gestures: bool,
+    pub mouse_requested: bool,
+    pub mouse_active: bool,
+    pub accessibility: bool,
+    pub input_access: bool,
+}
+fn panel(mtm: MainThreadMarker) -> Retained<NSView> {
+    NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 620.0, 510.0))
+}
+fn add_tab(_mtm: MainThreadMarker, tabs: &NSTabView, title: &str, view: &NSView) {
+    let item = unsafe { NSTabViewItem::initWithIdentifier(NSTabViewItem::alloc(), None) };
+    item.setLabel(&NSString::from_str(title));
+    item.setView(Some(view));
+    tabs.addTabViewItem(&item);
+}
+fn checkbox(
+    mtm: MainThreadMarker,
+    root: &NSView,
+    target: &AnyObject,
+    title: &str,
+    action: Sel,
+    y: f64,
+) -> Retained<NSButton> {
+    let b = unsafe {
+        NSButton::checkboxWithTitle_target_action(
+            &NSString::from_str(title),
+            Some(target),
+            Some(action),
+            mtm,
+        )
+    };
+    b.setFrame(rect(22.0, y, 576.0, 28.0));
+    root.addSubview(&b);
+    b
+}
 impl Preferences {
     pub fn new(mtm: MainThreadMarker, target: &AnyObject) -> Self {
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
-                rect(0.0, 0.0, 620.0, 510.0),
-                NSWindowStyleMask::Titled | NSWindowStyleMask::Closable,
+                rect(0.0, 0.0, 680.0, 640.0),
+                NSWindowStyleMask::Titled
+                    | NSWindowStyleMask::Closable
+                    | NSWindowStyleMask::Miniaturizable,
                 NSBackingStoreType::Buffered,
                 false,
             )
@@ -69,8 +119,11 @@ impl Preferences {
         unsafe {
             window.setReleasedWhenClosed(false);
         }
-        window.setTitle(&NSString::from_str("Kigi — Espaces de travail"));
-        let root = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 620.0, 510.0));
+        window.setTitle(&NSString::from_str("Kigi Windows"));
+        let shell = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 680.0, 640.0));
+        let tabs = NSTabView::initWithFrame(NSTabView::alloc(mtm), rect(16.0, 80.0, 648.0, 540.0));
+        shell.addSubview(&tabs);
+        let root = panel(mtm);
         label(
             mtm,
             &root,
@@ -171,13 +224,266 @@ impl Preferences {
             sel!(deleteProfile:),
             rect(445.0, 108.0, 155.0, 34.0),
         );
-        let status = label(
+        label(
             mtm,
             &root,
-            "Choisissez un espace ou créez-en un nouveau. Les fenêtres doivent être ouvertes.",
-            rect(22.0, 24.0, 576.0, 67.0),
+            "Dispositions rapides",
+            rect(22.0, 80.0, 576.0, 20.0),
         );
-        window.setContentView(Some(&root));
+        button(
+            mtm,
+            &root,
+            target,
+            "Travail — Chrome 100 %",
+            sel!(workspaceWork:),
+            rect(18.0, 37.0, 193.0, 34.0),
+        );
+        button(
+            mtm,
+            &root,
+            target,
+            "Réunion — 50/50",
+            sel!(workspaceMeeting:),
+            rect(222.0, 37.0, 184.0, 34.0),
+        );
+        button(
+            mtm,
+            &root,
+            target,
+            "Restaurer",
+            sel!(workspaceRestore:),
+            rect(417.0, 37.0, 183.0, 34.0),
+        );
+        add_tab(mtm, &tabs, "Espaces", &root);
+
+        let keyboard = panel(mtm);
+        label(
+            mtm,
+            &keyboard,
+            "Raccourcis clavier",
+            rect(22.0, 463.0, 576.0, 28.0),
+        );
+        let hotkeys = checkbox(
+            mtm,
+            &keyboard,
+            target,
+            "Activer les raccourcis personnels",
+            sel!(togglePersonal:),
+            414.0,
+        );
+        let bindings = Action::ALL
+            .iter()
+            .map(|a| a.label())
+            .collect::<Vec<_>>()
+            .join("\n");
+        label(mtm, &keyboard, &bindings, rect(30.0, 233.0, 560.0, 163.0));
+        let shortcuts_state = label(
+            mtm,
+            &keyboard,
+            "Vérification des raccourcis…",
+            rect(22.0, 181.0, 576.0, 43.0),
+        );
+        button(
+            mtm,
+            &keyboard,
+            target,
+            "Réenregistrer les raccourcis",
+            sel!(retryHotkeys:),
+            rect(18.0, 126.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &keyboard,
+            target,
+            "Diagnostic des raccourcis",
+            sel!(shortcutDiagnostics:),
+            rect(315.0, 126.0, 285.0, 36.0),
+        );
+        label(mtm,&keyboard,"Les combinaisons sont fixes à cette étape. En cas de conflit avec Hammerspoon, quittez-le temporairement puis réenregistrez les raccourcis.",rect(22.0,55.0,576.0,58.0));
+        add_tab(mtm, &tabs, "Raccourcis", &keyboard);
+
+        let input = panel(mtm);
+        label(
+            mtm,
+            &input,
+            "Gestes du trackpad",
+            rect(22.0, 463.0, 576.0, 28.0),
+        );
+        let gestures = checkbox(
+            mtm,
+            &input,
+            target,
+            "Activer les gestes de bord du trackpad",
+            sel!(toggleGestures:),
+            417.0,
+        );
+        label(mtm,&input,"Un doigt, départ dans les 5 % extrêmes, mouvement horizontal jusqu'au milieu.\nBord gauche : Teams. Bord droit : Chrome à 100 %.",rect(22.0,337.0,576.0,66.0));
+        label(mtm,&input,"Les gestes sont désactivés au lancement et après une interruption. Réactivez-les ici après la veille.",rect(22.0,279.0,576.0,48.0));
+        label(mtm, &input, "Souris", rect(22.0, 228.0, 576.0, 26.0));
+        let mouse = checkbox(
+            mtm,
+            &input,
+            target,
+            "Bloquer le défilement horizontal des souris",
+            sel!(toggleMouseHorizontal:),
+            187.0,
+        );
+        let mouse_state = label(
+            mtm,
+            &input,
+            "Filtre désactivé",
+            rect(22.0, 125.0, 576.0, 52.0),
+        );
+        label(mtm,&input,"Option mémorisée, compatible Magic Mouse et d'autres souris reconnues. Le vertical est conservé. Les événements identifiés comme trackpad ou incertains sont laissés passer.",rect(22.0,40.0,576.0,68.0));
+        add_tab(mtm, &tabs, "Gestes et souris", &input);
+
+        let access = panel(mtm);
+        label(
+            mtm,
+            &access,
+            "Autorisations macOS",
+            rect(22.0, 463.0, 576.0, 28.0),
+        );
+        let accessibility = label(
+            mtm,
+            &access,
+            "Accessibilité : vérification…",
+            rect(22.0, 415.0, 576.0, 28.0),
+        );
+        label(
+            mtm,
+            &access,
+            "Nécessaire pour placer les fenêtres et filtrer le défilement de la souris.",
+            rect(22.0, 369.0, 576.0, 37.0),
+        );
+        button(
+            mtm,
+            &access,
+            target,
+            "Demander / revérifier",
+            sel!(permission:),
+            rect(18.0, 316.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &access,
+            target,
+            "Afficher la copie active dans Finder",
+            sel!(revealApp:),
+            rect(315.0, 316.0, 285.0, 36.0),
+        );
+        let input_access = label(
+            mtm,
+            &access,
+            "Surveillance de l'entrée : vérification…",
+            rect(22.0, 257.0, 576.0, 30.0),
+        );
+        label(mtm,&access,"L'autorisation de surveillance est demandée lors de l'activation volontaire de l'écoute du trackpad, si macOS l'exige.",rect(22.0,196.0,576.0,47.0));
+        label(
+            mtm,
+            &access,
+            "Chrome : Automatisation",
+            rect(22.0, 145.0, 576.0, 25.0),
+        );
+        label(mtm,&access,"La demande apparaît lorsque vous utilisez ChatGPT. Autorisez Google Chrome pour retrouver un onglet existant.",rect(22.0,92.0,576.0,45.0));
+        button(
+            mtm,
+            &access,
+            target,
+            "Tester ChatGPT dans Chrome",
+            sel!(openChatGpt:),
+            rect(18.0, 35.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &access,
+            target,
+            "Diagnostic Accessibilité",
+            sel!(permissionDiagnostics:),
+            rect(315.0, 35.0, 285.0, 36.0),
+        );
+        add_tab(mtm, &tabs, "Autorisations", &access);
+
+        let diagnostics = panel(mtm);
+        label(
+            mtm,
+            &diagnostics,
+            &format!("Kigi Windows {} — diagnostics", env!("CARGO_PKG_VERSION")),
+            rect(22.0, 463.0, 576.0, 28.0),
+        );
+        label(mtm,&diagnostics,"Reproduisez le problème puis copiez ou exportez le rapport avant de quitter. Les 200 derniers événements restent en mémoire, sans envoi automatique.",rect(22.0,382.0,576.0,66.0));
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Copier les logs",
+            sel!(copyLogs:),
+            rect(18.0, 326.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Exporter les logs…",
+            sel!(exportLogs:),
+            rect(315.0, 326.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Détecter les fenêtres",
+            sel!(inventory:),
+            rect(18.0, 268.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Tester / restaurer la fenêtre",
+            sel!(testWindow:),
+            rect(315.0, 268.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Test local du trackpad",
+            sel!(localProbe:),
+            rect(18.0, 210.0, 285.0, 36.0),
+        );
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Diagnostic global du trackpad",
+            sel!(globalProbe:),
+            rect(315.0, 210.0, 285.0, 36.0),
+        );
+        label(mtm,&diagnostics,"Le diagnostic global remplace l'écoute active des gestes. Relancez les gestes depuis leur onglet après l'essai.",rect(22.0,149.0,576.0,45.0));
+        button(
+            mtm,
+            &diagnostics,
+            target,
+            "Afficher la configuration dans Finder",
+            sel!(revealConfig:),
+            rect(18.0, 94.0, 582.0, 36.0),
+        );
+        label(
+            mtm,
+            &diagnostics,
+            "Fermer la fenêtre laisse Kigi en arrière-plan. ⌘Q quitte l'application.",
+            rect(22.0, 35.0, 576.0, 43.0),
+        );
+        add_tab(mtm, &tabs, "Diagnostics", &diagnostics);
+        tabs.selectTabViewItemAtIndex(0);
+        let status = label(
+            mtm,
+            &shell,
+            "Kigi est prêt. Choisissez une rubrique pour gérer vos réglages.",
+            rect(22.0, 12.0, 636.0, 56.0),
+        );
+        window.setContentView(Some(&shell));
         window.center();
         Self {
             window,
@@ -185,10 +491,70 @@ impl Preferences {
             name,
             positions,
             status,
+            tabs,
+            hotkeys,
+            gestures,
+            mouse,
+            shortcuts_state,
+            mouse_state,
+            accessibility,
+            input_access,
             descriptions,
             capture,
             selected_buttons: vec![rename, duplicate, apply, geometry, delete],
         }
+    }
+    pub fn update_runtime(&self, state: RuntimeSettings<'_>) {
+        self.hotkeys.setState(if state.personal_hotkeys {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+        self.gestures.setState(if state.gestures {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+        self.mouse.setState(if state.mouse_requested {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+        let conflict =
+            state.registration.contains("indisponible") || state.registration.contains("refusée");
+        self.shortcuts_state
+            .setStringValue(&NSString::from_str(&format!(
+                "{} — {} action(s) reçue(s). {}",
+                if state.personal_hotkeys {
+                    "Raccourcis personnels activés"
+                } else {
+                    "Raccourcis personnels suspendus"
+                },
+                state.shortcuts_received,
+                if conflict {
+                    "Conflit ou erreur : ouvrez le diagnostic."
+                } else {
+                    ""
+                }
+            )));
+        self.mouse_state.setStringValue(&NSString::from_str(if state.mouse_active { "Filtre actif" } else if state.mouse_requested {
+            "Filtre demandé mais inactif. Désactivez puis réactivez l'option après vérification des autorisations."
+        } else { "Filtre désactivé" }));
+        self.accessibility
+            .setStringValue(&NSString::from_str(if state.accessibility {
+                "Accessibilité : autorisée"
+            } else {
+                "Accessibilité : non autorisée pour cette copie de Kigi"
+            }));
+        self.input_access
+            .setStringValue(&NSString::from_str(if state.input_access {
+                "Surveillance de l'entrée : autorisée"
+            } else {
+                "Surveillance de l'entrée : non autorisée"
+            }));
+    }
+    pub fn show_permissions(&self) {
+        self.tabs.selectTabViewItemAtIndex(3);
     }
     pub fn selected_id(&self) -> Option<u32> {
         self.profiles

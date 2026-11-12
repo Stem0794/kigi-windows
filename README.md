@@ -1,4 +1,4 @@
-# Kigi Windows — espaces de travail 0.4.0
+# Kigi Windows — interface principale 0.4.1
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -6,7 +6,11 @@ Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 ## Installer et utiliser
 
 Quitter l'ancienne copie, remplacer `Kigi Windows.app` au même emplacement,
-puis relancer. Kigi apparaît dans la barre de menus. Cette version utilise une
+puis relancer. La fenêtre Kigi s’ouvre au lancement et reste accessible dans le Dock.
+Cinq onglets regroupent Espaces, Raccourcis, Gestes et souris, Autorisations et
+Diagnostics. Fermer la fenêtre conserve les fonctions de fond ; ⌘Q quitte Kigi.
+Le menu Kigi conserve seulement l’ouverture, les espaces et les dispositions rapides.
+Cette version utilise une
 signature ad hoc, sans Developer ID ni notarisation ; les autorisations macOS
 peuvent devoir être réaccordées après remplacement.
 
@@ -23,12 +27,12 @@ peuvent devoir être réaccordées après remplacement.
 Les touches désignent les positions physiques macOS. L'enregistrement est
 indépendant ; un conflit ne bloque pas les autres touches. Si nécessaire,
 quitter temporairement Hammerspoon puis **Réenregistrer les raccourcis** depuis
-Kigi. Son fichier n'est jamais modifié. Le menu propose aussi toutes les actions
-et la suspension des raccourcis personnels, pour la session.
+l’onglet Raccourcis. Son fichier n’est jamais modifié. L’activation des raccourcis
+personnels est mémorisée entre les lancements ; les combinaisons restent fixes.
 
 ## Désactiver le scroll horizontal de la souris (0.3.2)
 
-Choisir **Kigi → Bloquer le scroll horizontal des souris (Magic Mouse…)**.
+Dans **Gestes et souris**, cocher **Bloquer le défilement horizontal des souris**.
 Option désactivée par défaut, mémorisée via les préférences natives macOS.
 Elle agit dans toutes les applications pendant que Kigi tourne. Décocher
 l'option ou quitter Kigi rétablit immédiatement le défilement normal.
@@ -52,7 +56,7 @@ Cela reste une option pilote à vérifier avec la Magic Mouse et le trackpad ré
 Un tap modifiable, limité aux événements ScrollWheel, est créé uniquement quand
 l'option est demandée. Accessibilité est nécessaire. Il est indépendant du tap
 passif des gestes à 5 % ; aucun clavier/clic/mouvement de pointeur n'est surveillé.
-En cas d'interruption par macOS, les événements passent et le menu indique le
+En cas d'interruption par macOS, les événements passent et l’onglet Gestes et souris indique le
 filtre inactif ; désactiver/réactiver l'option pour le relancer. Après veille/
 retour de session, un seul essai de reprise est fait à chaque notification
 pertinente si la préférence était active, sans nouvelle demande d'autorisation
@@ -111,7 +115,7 @@ pendant les sélecteurs, l'intégration Chrome ou le menu Kigi ouvert.
 L'écoute est passive : pas de déplacement du pointeur ni de consommation des
 gestes macOS. L'action est différée après le callback du tap ; aucun AX ou Apple
 Events dans ce callback. Un seul tap existe, soit en diagnostic, soit en actions.
-Le menu permet de désactiver ; ouvrir le diagnostic global pendant l'écoute
+L’onglet Gestes et souris permet de désactiver ; ouvrir le diagnostic global pendant l'écoute
 active l'arrête et affiche son bilan. Recliquer démarre le diagnostic sans action.
 
 Veille du Mac/écran, changement de session et interruption du tap arrêtent
@@ -147,7 +151,7 @@ Mission Control. Les gestes P2 déclenchent toujours seulement Teams/Chrome.
 
 ## Gérer les espaces de travail (P4 pilote 0.4.0)
 
-Ouvrir **Kigi → Gérer les espaces de travail…**. Cette fenêtre native permet de
+Dans la fenêtre principale, choisir **Espaces**. Cet onglet permet de
 créer plusieurs espaces nommés sans éditer le JSON :
 
 1. Choisir **Nouvel espace…** dans la liste, saisir un nom, puis cliquer sur
@@ -201,7 +205,7 @@ La nouvelle fenêtre native et le cycle création/édition/application restent
 
 ## Permissions et limites fenêtres
 
-La ligne Accessibilité est actualisée à l'ouverture du menu. La première demande
+L’onglet Autorisations est actualisé à l’activation de Kigi. La première demande
 est explicite et unique par session, suivie d'un contrôle temporaire borné.
 Une case d'une ancienne version peut ne pas autoriser le processus actif :
 **Afficher la copie active dans Finder** permet de choisir le bon bundle.

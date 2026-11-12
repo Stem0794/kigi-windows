@@ -4,7 +4,7 @@ use crate::{
     gestures::{Contact, CornerProbe, Edge},
     hotkey::Hotkeys,
     mouse_scroll::MouseScrollTap,
-    preferences::Preferences,
+    preferences::{Preferences, RuntimeSettings},
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -16,8 +16,8 @@ use objc2::{
 };
 use objc2_app_kit::*;
 use objc2_foundation::{
-    ns_string, MainThreadMarker, NSBundle, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo,
-    NSRect, NSSize, NSString, NSUserDefaults,
+    ns_string, MainThreadMarker, NSBundle, NSNotification, NSObject, NSObjectProtocol, NSPoint,
+    NSProcessInfo, NSRect, NSSize, NSString, NSUserDefaults,
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -64,22 +64,17 @@ struct State {
     layout_snapshot: RefCell<Option<windows::LayoutSnapshot>>,
     hotkeys: RefCell<Option<Hotkeys>>,
     personal_enabled: Cell<bool>,
-    personal_item: OnceCell<Retained<NSMenuItem>>,
     pending: RefCell<Option<PendingOpen>>,
     picking: Cell<bool>,
     menu_open: Cell<bool>,
-    gesture_item: OnceCell<Retained<NSMenuItem>>,
-    mouse_scroll_item: OnceCell<Retained<NSMenuItem>>,
     mouse_scroll_requested: Cell<bool>,
     mouse_scroll_filter: RefCell<Option<MouseScrollTap>>,
     mouse_scroll_last: RefCell<String>,
     queued_gesture: Cell<Option<Edge>>,
-    status: OnceCell<Retained<NSMenuItem>>,
-    hotkey_status: OnceCell<Retained<NSMenuItem>>,
+    status: RefCell<String>,
     hotkey_count: Cell<u64>,
     permission_notice: Cell<bool>,
     permission_flow: RefCell<PermissionFlow>,
-    permission_item: OnceCell<Retained<NSMenuItem>>,
     last_permission: Cell<Option<bool>>,
     local_window: RefCell<Option<Retained<NSWindow>>>,
     preferences: RefCell<Option<Preferences>>,
@@ -128,7 +123,7 @@ define_class!(
         #[unsafe(method(shortcutDiagnostics:))]
         fn shortcut_diagnostics(&self, _: Option<&AnyObject>) {
             let registration = self.ivars().hotkeys.borrow().as_ref().map(|h| h.report.clone()).unwrap_or_default();
-            let result = self.ivars().status.get().map(|i| i.title().to_string()).unwrap_or_default();
+            let result = self.ivars().status.borrow().clone();
             alert(self.mtm(), "Diagnostic des raccourcis", &format!(
                 "Kigi Windows {}\n{registration}\nActions reçues : {}\nAccessibilité : {}\nDernier résultat : {result}\n\nEn cas de conflit, quittez temporairement Hammerspoon puis choisissez Réenregistrer les raccourcis. Les menus exécutent les mêmes actions. Aucun fichier Hammerspoon n'est modifié.",
                 env!("CARGO_PKG_VERSION"), self.ivars().hotkey_count.get(), windows::trusted()));
@@ -306,6 +301,7 @@ define_class!(
         #[unsafe(method(togglePersonal:))]
         fn toggle_personal(&self, _: Option<&AnyObject>) {
             self.ivars().personal_enabled.set(!self.ivars().personal_enabled.get());
+            NSUserDefaults::standardUserDefaults().setBool_forKey(self.ivars().personal_enabled.get(), ns_string!("personalHotkeysEnabled"));
             self.cancel_open();
             self.register_hotkeys();
         }
@@ -467,7 +463,7 @@ define_class!(
             let listening = self.ivars().tap.borrow().is_some();
             self.stop_tap();
             if listening {
-                self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Réactivez-la depuis le menu.");
+                self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Réactivez-la dans Gestes et souris.");
             }
         }
         #[unsafe(method(toggleMouseHorizontal:))]
@@ -507,6 +503,8 @@ define_class!(
                 self.update_mouse_scroll_label();
             }
         }
+        #[unsafe(method(workspaceContextChanged:))]
+        fn context_changed(&self, _: &NSNotification) { self.remember_context(); }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
             self.cancel_permission_poll();
@@ -516,6 +514,14 @@ define_class!(
             self.stop_mouse_scroll();
             NSApplication::sharedApplication(self.mtm()).stop(None);
         }
+    }
+    unsafe impl NSApplicationDelegate for Controller {
+        #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
+        fn reopen(&self, _: &NSApplication, _: bool) -> bool { self.open_profiles(); true }
+        #[unsafe(method(applicationShouldTerminateAfterLastWindowClosed:))]
+        fn keep_running(&self, _: &NSApplication) -> bool { false }
+        #[unsafe(method(applicationDidBecomeActive:))]
+        fn became_active(&self, _: &NSNotification) { self.refresh_permission(); }
     }
     unsafe impl NSMenuDelegate for Controller {
         #[unsafe(method(menuWillOpen:))]
@@ -534,6 +540,36 @@ impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
+    }
+    fn sync_preferences(&self) {
+        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+            let registration = self
+                .ivars()
+                .hotkeys
+                .borrow()
+                .as_ref()
+                .map(|h| h.report.clone())
+                .unwrap_or_default();
+            prefs.update_runtime(RuntimeSettings {
+                personal_hotkeys: self.ivars().personal_enabled.get(),
+                shortcuts_received: self.ivars().hotkey_count.get(),
+                registration: &registration,
+                gestures: self.gestures_active(),
+                mouse_requested: self.ivars().mouse_scroll_requested.get(),
+                mouse_active: self.mouse_scroll_active(),
+                accessibility: windows::trusted(),
+                input_access: Tap::input_trusted(),
+            });
+        }
+    }
+    fn remember_context(&self) {
+        if let Some(pid) = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier())
+            .filter(|pid| *pid != std::process::id() as i32)
+        {
+            self.ivars().preferences_anchor.set(Some(pid));
+        }
     }
     fn read_catalog(&self) -> Result<(config::Catalog, bool), String> {
         Ok(config::load(&config::path()?)?.unwrap_or_else(|| (config::Catalog::default(), false)))
@@ -589,15 +625,27 @@ impl Controller {
                 .preferences
                 .replace(Some(Preferences::new(self.mtm(), self)));
         }
-        let selected = self
+        let visible = self
             .ivars()
             .preferences
             .borrow()
             .as_ref()
-            .and_then(Preferences::selected_id)
-            .or_else(|| self.ivars().catalog.borrow().profiles.first().map(|p| p.id));
-        self.refresh_profiles(selected);
+            .is_some_and(|p| p.window.isVisible() || p.window.isMiniaturized());
+        if !visible {
+            let selected = self
+                .ivars()
+                .preferences
+                .borrow()
+                .as_ref()
+                .and_then(Preferences::selected_id)
+                .or_else(|| self.ivars().catalog.borrow().profiles.first().map(|p| p.id));
+            self.refresh_profiles(selected);
+        }
+        self.refresh_permission();
         if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+            if prefs.window.isMiniaturized() {
+                prefs.window.deminiaturize(None);
+            }
             prefs.window.makeKeyAndOrderFront(None);
         }
         #[allow(deprecated)]
@@ -656,21 +704,7 @@ impl Controller {
             .is_some_and(MouseScrollTap::active)
     }
     fn update_mouse_scroll_label(&self) {
-        if let Some(item) = self.ivars().mouse_scroll_item.get() {
-            let requested = self.ivars().mouse_scroll_requested.get();
-            item.setState(if requested {
-                NSControlStateValueOn
-            } else {
-                NSControlStateValueOff
-            });
-            item.setTitle(&NSString::from_str(if self.mouse_scroll_active() {
-                "Blocage horizontal souris : actif — désactiver"
-            } else if requested {
-                "Blocage horizontal souris : inactif — désactiver"
-            } else {
-                "Bloquer le scroll horizontal des souris (Magic Mouse…)"
-            }));
-        }
+        self.sync_preferences();
     }
     fn stop_mouse_scroll(&self) {
         let _: () = unsafe {
@@ -709,13 +743,7 @@ impl Controller {
             .is_some_and(Tap::active_actions)
     }
     fn update_gesture_label(&self) {
-        if let Some(item) = self.ivars().gesture_item.get() {
-            item.setTitle(&NSString::from_str(if self.gestures_active() {
-                "Gestes de bord : actifs — désactiver"
-            } else {
-                "Activer les gestes de bord Teams / Chrome"
-            }));
-        }
+        self.sync_preferences();
     }
     fn cancel_gesture_dispatch(&self) {
         self.ivars().queued_gesture.take();
@@ -736,23 +764,7 @@ impl Controller {
         self.update_gesture_label();
     }
     fn update_shortcut_label(&self) {
-        if let Some(item) = self.ivars().hotkey_status.get() {
-            let report = self.ivars().hotkeys.borrow();
-            let conflict = report
-                .as_ref()
-                .is_some_and(|h| h.report.contains("indisponible") || h.report.contains("refusée"));
-            item.setTitle(&NSString::from_str(&format!(
-                "Raccourcis : {} — reçus {} fois (diagnostic)",
-                if conflict {
-                    "conflit / erreur"
-                } else if self.ivars().personal_enabled.get() {
-                    "enregistrés"
-                } else {
-                    "personnels suspendus"
-                },
-                self.ivars().hotkey_count.get()
-            )));
-        }
+        self.sync_preferences();
     }
     fn register_hotkeys(&self) {
         self.ivars().hotkeys.borrow_mut().take(); // unregister before reacquiring
@@ -760,15 +772,6 @@ impl Controller {
         diagnostics::record("shortcut.registration", &keys.report);
         self.ivars().hotkeys.replace(Some(keys));
         self.update_shortcut_label();
-        if let Some(item) = self.ivars().personal_item.get() {
-            item.setTitle(&NSString::from_str(
-                if self.ivars().personal_enabled.get() {
-                    "Suspendre les raccourcis personnels"
-                } else {
-                    "Activer les raccourcis personnels"
-                },
-            ));
-        }
     }
     fn cancel_open(&self) {
         if self.ivars().pending.borrow_mut().take().is_some() {
@@ -1062,6 +1065,9 @@ impl Controller {
         if self.refresh_permission() {
             return true;
         }
+        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
+            prefs.show_permissions();
+        }
         self.status("Placement bloqué : Accessibilité non autorisée pour cette copie de Kigi.");
         if !self.ivars().permission_notice.replace(true) {
             let bundle = NSBundle::mainBundle().bundlePath();
@@ -1084,16 +1090,7 @@ impl Controller {
                 self.status("Accessibilité reconnue pour le processus actif.");
             }
         }
-        if let Some(item) = self.ivars().permission_item.get() {
-            let label = if trusted {
-                "Accessibilité : autorisée — vérifier"
-            } else if self.ivars().permission_flow.borrow().requested {
-                "Accessibilité : non reconnue — revérifier sans demander"
-            } else {
-                "Accessibilité : non autorisée — demander"
-            };
-            item.setTitle(&NSString::from_str(label));
-        }
+        self.sync_preferences();
         trusted
     }
     fn schedule_permission_poll(&self) {
@@ -1127,12 +1124,7 @@ impl Controller {
             .as_ref()
             .map(|h| h.report.clone())
             .unwrap_or_default();
-        let result = self
-            .ivars()
-            .status
-            .get()
-            .map(|i| i.title().to_string())
-            .unwrap_or_default();
+        let result = self.ivars().status.borrow().clone();
         let mut executable = std::env::current_exe()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "unknown".into());
@@ -1177,9 +1169,8 @@ impl Controller {
         if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
             prefs.status.setStringValue(&NSString::from_str(text));
         }
-        if let Some(item) = self.ivars().status.get() {
-            item.setTitle(&NSString::from_str(text));
-        }
+        self.ivars().status.replace(text.into());
+        self.sync_preferences();
     }
 }
 
@@ -1403,7 +1394,6 @@ pub fn run() {
             ),
         );
         let app = NSApplication::sharedApplication(mtm);
-        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
         let peers = other_instances();
         if !peers.is_empty() {
             let copies = peers
@@ -1424,93 +1414,33 @@ pub fn run() {
             return;
         }
         let controller = Controller::new(mtm);
+        controller.remember_context();
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         let status_bar = NSStatusBar::systemStatusBar();
         let status_item = status_bar.statusItemWithLength(-1.0);
         if let Some(button) = status_item.button(mtm) {
             button.setTitle(ns_string!("Kigi"));
         }
         let menu = NSMenu::new(mtm);
-        let status = NSMenuItem::new(mtm);
-        status.setTitle(ns_string!(
-            "Prêt — gestes activables à la demande depuis le menu."
-        ));
-        status.setEnabled(false);
-        menu.addItem(&status);
-        controller.ivars().status.set(status).ok();
-        let shortcut = menu_action(
-            &menu,
-            &controller,
-            "Raccourcis : enregistrement en cours",
-            sel!(shortcutDiagnostics:),
-        );
-        controller.ivars().hotkey_status.set(shortcut).ok();
-        let permission = menu_action(
-            &menu,
-            &controller,
-            "Accessibilité : à vérifier",
-            sel!(permission:),
-        );
-        controller.ivars().permission_item.set(permission).ok();
-        menu_action(
-            &menu,
-            &controller,
-            "Diagnostic Accessibilité",
-            sel!(permissionDiagnostics:),
-        );
-        menu_action(
-            &menu,
-            &controller,
-            "Afficher la copie active dans Finder",
-            sel!(revealApp:),
-        );
-        menu.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
-        controller.refresh_permission();
+        menu_action(&menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        for action in &Action::ALL[1..] {
-            let selector = Sel::register(
-                std::ffi::CString::new(action.selector())
-                    .unwrap()
-                    .as_c_str(),
-            );
-            menu_action(&menu, &controller, action.label(), selector);
-        }
-        let personal = menu_action(
-            &menu,
-            &controller,
-            "Suspendre les raccourcis personnels",
-            sel!(togglePersonal:),
-        );
-        controller.ivars().personal_item.set(personal).ok();
+        let profiles_menu = NSMenu::new(mtm);
+        let profiles_parent = NSMenuItem::new(mtm);
+        profiles_parent.setTitle(ns_string!("Espaces enregistrés"));
+        profiles_parent.setSubmenu(Some(&profiles_menu));
+        menu.addItem(&profiles_parent);
+        controller.ivars().profiles_menu.set(profiles_menu).ok();
+        controller.refresh_profiles(None);
         menu_action(
             &menu,
             &controller,
-            "Réenregistrer les raccourcis (après conflit)",
-            sel!(retryHotkeys:),
-        );
-        menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu_action(
-            &menu,
-            &controller,
-            "Détecter les fenêtres (sans titres)",
-            sel!(inventory:),
-        );
-        menu_action(
-            &menu,
-            &controller,
-            "Tester / restaurer la fenêtre active — ⌃⌥T",
-            sel!(testWindow:),
-        );
-        menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu_action(
-            &menu,
-            &controller,
-            "Espace Travail — Chrome 100 %",
+            "Travail — Chrome 100 %",
             sel!(workspaceWork:),
         );
         menu_action(
             &menu,
             &controller,
-            "Espace Réunion — Teams gauche / Chrome droite",
+            "Réunion — Teams / Chrome",
             sel!(workspaceMeeting:),
         );
         menu_action(
@@ -1519,64 +1449,67 @@ pub fn run() {
             "Restaurer la disposition précédente",
             sel!(workspaceRestore:),
         );
-        menu_action(
-            &menu,
-            &controller,
-            "Gérer les espaces de travail…",
-            sel!(openProfiles:),
-        );
-        let profiles_menu = NSMenu::new(mtm);
-        let profiles_parent = NSMenuItem::new(mtm);
-        profiles_parent.setTitle(&NSString::from_str("Espaces enregistrés"));
-        profiles_parent.setSubmenu(Some(&profiles_menu));
-        menu.addItem(&profiles_parent);
-        controller.ivars().profiles_menu.set(profiles_menu).ok();
-        controller.refresh_profiles(None);
-        menu_action(
-            &menu,
-            &controller,
-            "Afficher la configuration dans Finder",
-            sel!(revealConfig:),
-        );
-        let mouse_scroll = menu_action(
-            &menu,
-            &controller,
-            "Bloquer le scroll horizontal des souris (Magic Mouse…)",
-            sel!(toggleMouseHorizontal:),
-        );
-        controller.ivars().mouse_scroll_item.set(mouse_scroll).ok();
-        let gestures = menu_action(
-            &menu,
-            &controller,
-            "Activer les gestes de bord Teams / Chrome",
-            sel!(toggleGestures:),
-        );
-        controller.ivars().gesture_item.set(gestures).ok();
-        menu_action(
-            &menu,
-            &controller,
-            "Tester le geste dans une fenêtre locale",
-            sel!(localProbe:),
-        );
-        menu_action(
-            &menu,
-            &controller,
-            "Démarrer / arrêter le diagnostic global passif",
-            sel!(globalProbe:),
-        );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu_action(
-            &menu,
-            &controller,
-            "Copier les logs de diagnostic",
-            sel!(copyLogs:),
-        );
-        menu_action(&menu, &controller, "Exporter les logs…", sel!(exportLogs:));
-        menu.addItem(&NSMenuItem::separatorItem(mtm));
-        menu_action(&menu, &controller, "Quitter", sel!(quit:));
+        menu_action(&menu, &controller, "Quitter Kigi", sel!(quit:));
+        menu.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
+        app.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
+        let main_menu = NSMenu::new(mtm);
+        let app_menu = NSMenu::new(mtm);
+        let open = menu_action(&app_menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
+        open.setKeyEquivalent(ns_string!(","));
+        let quit = menu_action(&app_menu, &controller, "Quitter Kigi", sel!(quit:));
+        quit.setKeyEquivalent(ns_string!("q"));
+        let app_parent = NSMenuItem::new(mtm);
+        app_parent.setSubmenu(Some(&app_menu));
+        main_menu.addItem(&app_parent);
+        for (title, entries) in [
+            (
+                "Édition",
+                vec![
+                    ("Annuler", sel!(undo:), "z"),
+                    ("Rétablir", sel!(redo:), "Z"),
+                    ("Couper", sel!(cut:), "x"),
+                    ("Copier", sel!(copy:), "c"),
+                    ("Coller", sel!(paste:), "v"),
+                    ("Tout sélectionner", sel!(selectAll:), "a"),
+                ],
+            ),
+            (
+                "Fenêtre",
+                vec![
+                    ("Fermer", sel!(performClose:), "w"),
+                    ("Réduire", sel!(performMiniaturize:), "m"),
+                ],
+            ),
+        ] {
+            let submenu = NSMenu::new(mtm);
+            submenu.setTitle(&NSString::from_str(title));
+            for (label, action, key) in entries {
+                let item = unsafe {
+                    NSMenuItem::initWithTitle_action_keyEquivalent(
+                        NSMenuItem::alloc(mtm),
+                        &NSString::from_str(label),
+                        Some(action),
+                        &NSString::from_str(key),
+                    )
+                };
+                submenu.addItem(&item);
+            }
+            let parent = NSMenuItem::new(mtm);
+            parent.setTitle(&NSString::from_str(title));
+            parent.setSubmenu(Some(&submenu));
+            main_menu.addItem(&parent);
+        }
+        app.setMainMenu(Some(&main_menu));
         status_item.setMenu(Some(&menu));
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
-        controller.ivars().personal_enabled.set(true);
+        let defaults = NSUserDefaults::standardUserDefaults();
+        controller.ivars().personal_enabled.set(
+            defaults
+                .objectForKey(ns_string!("personalHotkeysEnabled"))
+                .is_none()
+                || defaults.boolForKey(ns_string!("personalHotkeysEnabled")),
+        );
         controller.register_hotkeys();
         controller.ivars().mouse_scroll_requested.set(
             NSUserDefaults::standardUserDefaults()
@@ -1617,7 +1550,18 @@ pub fn run() {
                 );
             }
         }
+        controller.remember_context();
+        unsafe {
+            center.addObserver_selector_name_object(
+                &controller,
+                sel!(workspaceContextChanged:),
+                Some(NSWorkspaceDidActivateApplicationNotification),
+                None,
+            );
+            let _: () = msg_send![&*controller, performSelector:sel!(openProfiles:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64];
+        }
         app.run();
+        app.setDelegate(None);
         unsafe {
             center.removeObserver(&controller);
         }

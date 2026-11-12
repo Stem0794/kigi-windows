@@ -462,3 +462,17 @@ Archive téléchargée, SHA256 de l'artefact et CRC applicatif vérifiés ; vers
 octets. Aucun clic ni rendu
 interactif de la fenêtre AppKit exécuté ici ; création/duplication/édition/
 application depuis la nouvelle UI restent à essayer sur le Mac pilote.
+
+## 0.4.1 — Interface principale
+
+Fenêtre AppKit au lancement, présence Dock et réouverture de la même fenêtre.
+Cinq onglets : Espaces, Raccourcis, Gestes et souris, Autorisations, Diagnostics.
+Le menu de statut garde ouverture/espaces/dispositions/restauration/quitter.
+Options synchronisées sur l’état réel ; activation des raccourcis personnels
+mémorisée. Gestes toujours volontaires et arrêtés après veille. Fermeture de
+fenêtre sans arrêt des fonctions, ⌘Q pour quitter. Menus Édition/Fenêtre natifs
+pour copier/coller, sélectionner, fermer/réduire. Le contexte de capture garde
+le dernier PID externe en mémoire, sans titres ni détection de réunions.
+Pas de nouvelle dépendance, seulement les classes AppKit NSTabView(Item).
+Validation interactive et présentation à confirmer sur Mac pilote ; aucun
+rendu/clic AppKit réalisé sur l’hôte Linux.
