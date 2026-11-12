@@ -141,3 +141,13 @@ Sources : [retour asynchrone AXIsProcessTrustedWithOptions](https://developer.ap
 [explication Apple des changements d'identité ad hoc](https://developer.apple.com/forums/thread/819406)
 (dans un cas ScreenCapture ; piste d'identité à vérifier ici, sans cause AX
 confirmée sur le Mac utilisateur).
+
+## Restauration du test fenêtre (0.0.6)
+
+Le test doit alterner entre la moitié droite et la géométrie initiale. Le
+passage durable par une moitié gauche au deuxième appui est un résultat partiel,
+pas un troisième état voulu. La version 0.0.6 positionne d'abord la fenêtre
+avant de l'agrandir, puis réapplique sa position, pour éviter qu'une expansion
+depuis le bord droit soit limitée à la largeur restante de l'écran. Vérifier
+sur le Mac le parcours 100 % / moitié droite / 100 % avec deux appuis. Les logs
+contiennent l'ordre des écritures AX, la cible et la géométrie obtenue.

@@ -174,3 +174,22 @@ ad hoc/plist/lipo et intégrité ZIP vérifiés. [Run 43254778878](https://githu
 source du package : a11b3eeb8c2455ca33bedbefef9e28e8185567c2.
 Les manipulations TCC, le rafraîchissement après grant, Finder et le blocage des
 copies multiples n'ont pas été validés interactivement sur le Mac utilisateur.
+
+## 2026-11-12 — P0 0.0.6 : restauration à gauche avant retour 100 %
+
+L'utilisateur confirme que les fenêtres se déplacent et que le geste haut-gauche
+fonctionne. Il observe exactement : 100 %, puis moitié droite, puis moitié gauche,
+puis 100 % après trois appuis. Le code précédent demandait la taille avant la
+position ; agrandir depuis le bord droit peut être limité à la largeur restante.
+Le snapshot était conservé après ce résultat partiel, permettant au troisième
+appui d'achever la restauration depuis la gauche. C'est l'explication cohérente
+avec le code et le retour, à vérifier avec les frames réelles si cela persiste.
+
+Correctif ciblé : position cible, taille cible, position cible réappliquée.
+Ce dernier placement couvre aussi le cas d'une fenêtre encore large déplacée
+vers la moitié droite avant réduction. Trois appels bornés, aucune boucle de
+retry, aucune nouvelle abstraction/dépendance. Ordre inscrit dans les logs,
+géométrie finale toujours relue et snapshot conservé si résultat partiel.
+Pas de nouveau test simulant macOS : les six tests existants et la compilation
+seront exécutés ; essai fonctionnel requis sur le Mac : 100 % / droite / 100 %
+avec deux appuis. Le geste et ses seuils ne sont pas modifiés. P0 uniquement.

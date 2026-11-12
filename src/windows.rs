@@ -123,9 +123,16 @@ impl Element {
     fn set_frame(&self, frame: Rect) -> Result<Rect, String> {
         require_permission()?;
         self.ensure_normal()?;
-        diagnostics::record("ax.frame.request", format!("target={frame:?}"));
+        diagnostics::record(
+            "ax.frame.request",
+            format!("target={frame:?} order=position,size,position"),
+        );
         self.can_set("AXPosition")?;
         self.can_set("AXSize")?;
+        // Anchor before expanding: resizing at the right edge can be clamped
+        // to the remaining display width. Reapply after sizing because moving
+        // a still-large window to the right can itself be clamped.
+        self.set_pair("AXPosition", 1, [frame.x, frame.y])?;
         self.set_pair("AXSize", 2, [frame.width, frame.height])?;
         self.set_pair("AXPosition", 1, [frame.x, frame.y])?;
         let actual = self.frame()?;
