@@ -1,4 +1,4 @@
-# Kigi Windows — raccourcis configurables 0.5.0
+# Kigi Windows — raccourcis configurables 0.5.1
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -75,7 +75,7 @@ Cela reste une option pilote à vérifier avec la Magic Mouse et le trackpad ré
 
 Un tap modifiable, limité aux événements ScrollWheel, est créé uniquement quand
 l'option est demandée. Accessibilité est nécessaire. Il est indépendant du tap
-passif des gestes à 5 % ; aucun clavier/clic/mouvement de pointeur n'est surveillé.
+passif des gestes à 10 % ; aucun clavier/clic/mouvement de pointeur n'est surveillé.
 En cas d'interruption par macOS, les événements passent et l’onglet Gestes et souris indique le
 filtre inactif ; désactiver/réactiver l'option pour le relancer. Après veille/
 retour de session, un seul essai de reprise est fait à chaque notification
@@ -120,18 +120,18 @@ demande, Surveillance de l'entrée.
 
 | Départ et mouvement, un seul doigt | Action |
 | --- | --- |
-| 5 % les plus à gauche, glissement horizontal vers le milieu | Teams au premier plan |
-| 5 % les plus à droite, glissement horizontal vers le milieu | Chrome au premier plan à 100 % |
+| 10 % les plus à gauche, glissement horizontal vers le milieu | Teams au premier plan |
+| 10 % les plus à droite, glissement horizontal vers le milieu | Chrome au premier plan à 100 % |
 
 Le retour utilisateur 0.4.1 signale une absence de détection dans les logs.
 La réception globale n’est donc pas considérée corrigée. Cette version affiche
 les compteurs en direct, journalise la première réception et arrête le test
 après 12 s sans contact avec `trackpad.no_contacts`. Le test local vérifie le
-même geste horizontal à 5 %, sans lancer d’application. Les diagnostics locaux
+même geste horizontal à 10 %, sans lancer d’application. Les diagnostics locaux
 et globaux n’utilisent plus l’ancien geste vertical de coin. Une création de
 tap réussie n’est jamais présentée comme une preuve de réception de contacts.
 
-Le départ peut se faire sur **toute la hauteur** : x≤0,05 à gauche ou x≥0,95
+Le départ peut se faire sur **toute la hauteur** : x≤0,10 à gauche ou x≥0,90
 à droite. Le doigt doit atteindre la ligne centrale x=0,50 en ≤1,5 s avec
 une dérive verticale ≤0,12 ; tolérance de recul vers l'extérieur de 0,03.
 Une action par contact, cooldown global 1 s. Deux doigts, clic/drag observé,
@@ -224,7 +224,7 @@ les erreurs partielles et reste en mémoire seulement. Modifier/renommer un
 espace ne change pas le retour déjà capturé. Aucune fenêtre n'est recréée, aucun
 onglet n'est ouvert par les espaces.
 
-Les raccourcis personnels, gestes horizontaux à 5 % et filtre souris sont
+Les raccourcis personnels, gestes horizontaux à 10 % et filtre souris sont
 conservés. Les gestes gardent leurs actions Teams/Chrome. Cette première UI P4
 n'inclut pas encore le glisser-déposer des rectangles, les raccourcis configurables
 ou l'affectation des gestes aux espaces ; ces sous-étapes restent distinctes.

@@ -525,3 +525,12 @@ artefact/CRC outer-inner vérifiés, Info.plist 0.5.0/build15, Mach-O Intel/ARM,
 762111 octets ; SHA256 ZIP bfdd2a89b4814bbddbc966213d140688f37f8f48245d92a51db9362fea0f5ad4.
 Retour Mac requis : réaffectation ⌥T à une autre app, changement de combinaison,
 annulation/focus/conflit/persistance ; test local 5 % puis global 12 s et logs.
+
+## 0.5.1 — Essai des bords à 10 %
+
+À la demande de l’utilisateur, départ x≤0,10 à gauche ou x≥0,90 à droite,
+au lieu de 5 %. Reconnaisseur partagé par actions et diagnostics local/global ;
+libellés et logs alignés. Arrivée x=0,50, durée, dérive, annulation et cooldown
+conservés. Test des bornes ajusté (incluses 0,10/0,90, exclus 0,10001/0,89999).
+Cela élargit la zone de départ sans résoudre une éventuelle absence de contacts.
+Essai matériel requis ; aucune API privée ajoutée.

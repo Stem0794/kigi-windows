@@ -56,7 +56,7 @@ pub fn no_contacts_after_trial(samples: u64, seconds: u64) -> bool {
     samples == 0 && seconds >= 12
 }
 
-/// Opt-in horizontal gestures: start within the outermost 5% and reach x=0.5.
+/// Opt-in horizontal gestures: start within the outermost 10% and reach x=0.5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Edge {
     Left,
@@ -92,9 +92,9 @@ impl EdgeProbe {
             self.cancel();
             return;
         }
-        let edge = if (0.0..=0.05).contains(&c.x) {
+        let edge = if (0.0..=0.10).contains(&c.x) {
             Some(Edge::Left)
-        } else if (0.95..=1.0).contains(&c.x) {
+        } else if (0.90..=1.0).contains(&c.x) {
             Some(Edge::Right)
         } else {
             None
@@ -187,23 +187,23 @@ mod tests {
     #[test]
     fn edges_require_center_and_share_cooldown() {
         let mut p = EdgeProbe::default();
-        p.begin(contact(0.05, 0.5, 0), 1);
+        p.begin(contact(0.10, 0.5, 0), 1);
         assert_eq!(p.moved(contact(0.45, 0.55, 100), 1), None);
         assert_eq!(p.moved(contact(0.5, 0.56, 140), 1), Some(Edge::Left));
         assert_eq!(p.moved(contact(0.7, 0.56, 200), 1), None);
-        p.begin(contact(0.05, 0.5, 210), 1);
+        p.begin(contact(0.10, 0.5, 210), 1);
         assert_eq!(p.moved(contact(0.5, 0.5, 240), 1), None);
         p.release();
-        p.begin(contact(0.95, 0.6, 400), 1);
+        p.begin(contact(0.90, 0.6, 400), 1);
         assert_eq!(p.moved(contact(0.5, 0.6, 500), 1), None);
         p.release();
-        p.begin(contact(0.95, 0.4, 1200), 1);
+        p.begin(contact(0.90, 0.4, 1200), 1);
         assert_eq!(p.moved(contact(0.5, 0.42, 1300), 1), Some(Edge::Right));
     }
     #[test]
-    fn edges_five_percent_bounds_and_direction() {
+    fn edges_ten_percent_bounds_and_direction() {
         let mut p = EdgeProbe::default();
-        for x in [0.05001, 0.5, 0.94999] {
+        for x in [0.10001, 0.5, 0.89999] {
             p.release();
             p.begin(contact(x, 0.5, 0), 1);
             assert_eq!(p.moved(contact(0.5, 0.5, 100), 1), None);
@@ -217,19 +217,19 @@ mod tests {
         assert_eq!(p.moved(contact(0.0, 0.5, 100), 1), None); // outward motion
         assert_eq!(p.moved(contact(0.5, 0.5, 200), 1), None);
         p.release();
-        p.begin(contact(0.95, 0.9, 0), 1);
+        p.begin(contact(0.90, 0.9, 0), 1);
         assert_eq!(p.moved(contact(0.5, 0.9, 200), 1), Some(Edge::Right));
         p.release();
-        p.begin(contact(0.05, 0.1, 2000), 1);
+        p.begin(contact(0.10, 0.1, 2000), 1);
         assert_eq!(p.moved(contact(0.5, 0.1, 2100), 1), Some(Edge::Left));
     }
     #[test]
     fn edges_block_until_lift_after_invalid_contact() {
         let mut p = EdgeProbe::default();
         assert_eq!(p.moved(contact(0.5, 0.5, 100), 1), None);
-        p.begin(contact(0.05, 0.5, 0), 1);
+        p.begin(contact(0.10, 0.5, 0), 1);
         assert_eq!(p.moved(contact(0.5, 0.5, 100), 2), None);
-        p.begin(contact(0.05, 0.5, 200), 1);
+        p.begin(contact(0.10, 0.5, 200), 1);
         assert_eq!(p.moved(contact(0.5, 0.5, 300), 1), None);
         for bad in [
             Contact {
@@ -244,7 +244,7 @@ mod tests {
             contact(0.5, f64::NAN, 600),
         ] {
             p.release();
-            p.begin(contact(0.05, 0.5, 500), 1);
+            p.begin(contact(0.10, 0.5, 500), 1);
             assert_eq!(p.moved(bad, 1), None);
             assert_eq!(p.moved(contact(0.5, 0.5, 700), 1), None);
         }

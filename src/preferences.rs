@@ -422,7 +422,7 @@ impl Preferences {
             sel!(toggleGestures:),
             417.0,
         );
-        label(mtm,&input,"Un doigt, départ dans les 5 % extrêmes, mouvement horizontal jusqu'au milieu.\nBord gauche : Teams. Bord droit : Chrome à 100 %.",rect(22.0,337.0,576.0,66.0));
+        label(mtm,&input,"Un doigt, départ dans les 10 % extrêmes, mouvement horizontal jusqu'au milieu.\nBord gauche : Teams. Bord droit : Chrome à 100 %.",rect(22.0,337.0,576.0,66.0));
         label(mtm,&input,"Lancez le test puis passez dans Chrome ou Teams pour faire le geste. Le bilan distingue contacts reçus et gestes reconnus.",rect(22.0,279.0,576.0,48.0));
         let trackpad_state = label(
             mtm,

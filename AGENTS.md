@@ -78,3 +78,9 @@ combinaison dans un champ focalisé volontairement, sans moniteur clavier global
 ni journalisation de frappes. Conserver le filtre souris et les espaces.
 Afficher réception/absence de contacts sans annoncer une correction terrain.
 Aucune API multitouch privée ni P5 autorisés par cette demande.
+
+## Essai 10 % — 0.5.1
+
+L’utilisateur demande d’essayer 10 % par bord. Appliquer le même seuil aux
+gestes actifs et aux diagnostics local/global, sans changer l’arrivée au
+milieu ni les autres critères. Ne pas conclure que le transport est réparé.

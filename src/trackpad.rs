@@ -132,10 +132,10 @@ impl Tap {
     }
     pub fn report(&self) -> String {
         if self.stats.actions {
-            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Événements : {} ; avec contacts : {} ; échantillons : {}. Tap interrompu : {}.\nGauche 5 % vers milieu → Teams ; droite 5 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle dans Gestes et souris. Résultats propres à ce Mac.",
+            return format!("Gestes de bord : gauche {} / droite {} détecté(s). Événements : {} ; avec contacts : {} ; échantillons : {}. Tap interrompu : {}.\nGauche 10 % vers milieu → Teams ; droite 10 % vers milieu → Chrome. Une action/contact, cooldown 1 s.\nAprès veille/session inactive/interruption, réactivation manuelle dans Gestes et souris. Résultats propres à ce Mac.",
                 self.stats.left, self.stats.right, self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.disabled);
         }
-        format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} geste(s) bords 5 % → milieu. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
+        format!("Essai global passif : {} événement(s), {} avec contacts, {} échantillon(s), {} geste(s) bords 10 % → milieu. Tap interrompu : {}.\n\n{}\nAucune action de fenêtre déclenchée. Résultats propres à ce Mac et à ces permissions.",
             self.stats.events, self.stats.with_touches, self.stats.samples, self.stats.recognized,
             self.stats.disabled,
             if self.stats.with_touches == 0 { "Aucun contact reçu : geste global NON VALIDÉ. Utilisez le test local pour vérifier le trackpad." } else if self.stats.samples == 0 { "Contacts reçus, mais aucun échantillon valide à un seul doigt." } else { "Des contacts ont été reçus : validation terrain encore nécessaire (phases, veille, Intel/ARM, faux positifs)." })

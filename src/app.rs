@@ -489,7 +489,7 @@ define_class!(
         }
         #[unsafe(method(localProbe:))]
         fn local_probe(&self, _: Option<&AnyObject>) {
-            diagnostics::record("trackpad.local.open", "mode=edges width=0.05");
+            diagnostics::record("trackpad.local.open", "mode=edges width=0.10");
             let mtm = self.mtm();
             // New probe each opening; no stale finger identity across sessions.
             let window = unsafe {
@@ -499,9 +499,9 @@ define_class!(
                     NSBackingStoreType::Buffered, false)
             };
             unsafe { window.setReleasedWhenClosed(false) };
-            window.setTitle(ns_string!("Test local — bords du trackpad à 5 %"));
+            window.setTitle(ns_string!("Test local — bords du trackpad à 10 %"));
             let view = TouchView::new(mtm);
-            let text = NSTextField::labelWithString(ns_string!("Test local : gardez le pointeur dans cette fenêtre et levez les doigts.\nUn doigt depuis les 5 % extrêmes gauche ou droite jusqu’au milieu.\nLes compteurs confirment les contacts et les gestes ; aucune application n’est activée.\nCe test local ne valide pas la réception globale."), mtm);
+            let text = NSTextField::labelWithString(ns_string!("Test local : gardez le pointeur dans cette fenêtre et levez les doigts.\nUn doigt depuis les 10 % extrêmes gauche ou droite jusqu’au milieu.\nLes compteurs confirment les contacts et les gestes ; aucune application n’est activée.\nCe test local ne valide pas la réception globale."), mtm);
             text.setFrame(NSRect::new(NSPoint::new(20.0,35.0),NSSize::new(560.0,170.0)));
             view.addSubview(&text);
             // hitTest routes the whole diagnostic area to TouchView.
@@ -553,7 +553,7 @@ define_class!(
                     self.ivars().tap.replace(Some(tap));
                     self.begin_trackpad_poll();
                     self.update_gesture_label();
-                    diagnostics::record("gestures.start", "left=0.05 right=0.05 target_x=0.50 direction=inward whole_height=true");
+                    diagnostics::record("gestures.start", "left=0.10 right=0.10 target_x=0.50 direction=inward whole_height=true");
                     self.status("Test global démarré. Réception des contacts non confirmée ; effectuez un geste puis consultez le bilan.");
                 }
                 Err(e) => self.status(&e),
@@ -824,7 +824,7 @@ impl Controller {
             self.ivars().trackpad_last_summary.replace(
                 "Aucun contact global reçu en 12 s. Test arrêté ; essayez le test local.".into(),
             );
-            self.status("Aucun contact global reçu : les gestes 5 % ne sont pas disponibles avec cet essai. Le test local vérifie séparément les contacts et le seuil.");
+            self.status("Aucun contact global reçu : les gestes 10 % ne sont pas disponibles avec cet essai. Le test local vérifie séparément les contacts et le seuil.");
             return;
         }
         self.sync_preferences();
@@ -1547,7 +1547,7 @@ impl TouchView {
             self.ivars().last_ui.set(Instant::now());
             if let Some(label) = self.ivars().label.get() {
                 label.setStringValue(&NSString::from_str(&format!(
-                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 5 % vers milieu : {}.\nLevez les doigts pour recommencer. Aucune action globale.",
+                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 10 % vers milieu : {}.\nLevez les doigts pour recommencer. Aucune action globale.",
                     point.x, point.y, touch.phase(), self.ivars().count.get()
                 )));
             }
