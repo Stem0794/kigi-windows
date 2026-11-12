@@ -47,10 +47,25 @@ handover pour la future reproduction, sans déclarer ces fonctions implémentée
 - L'intégration AppleScript devra rester dans le processus macOS ; pas de
   processus `osascript`, d'analyse du contenu des pages ou d'historique Chrome.
 
-## Gate actuel
+## État P1 0.1.0
 
-Le retour utilisateur de 0.0.3 prouve que 11 raccourcis ont été reçus ;
-l'Accessibilité n'est pas autorisée. La détection clavier n'est donc plus le
-blocage observé : il faut d'abord vérifier déplacement/restauration avec AX
-accordée pour achever P0. Le profil complet ci-dessus n'est pas activé par
-0.0.4. Prochain jalon : migration des raccourcis manuels une fois AX validée.
+L'utilisateur confirme l'Accessibilité fonctionnelle et le retour direct
+100 % / droite / 100 % en 0.0.6. Le diagnostic trackpad fonctionne sur son Mac.
+P1 est autorisé par sa demande de poursuivre l'implémentation.
+
+Implémenté : ⌥T, ⌥B, ⌥C (URL simple), ⌘⇧↑ et les deux sélections
+⌘⇧←/→, avec second choix focalisé. Les sélecteurs sont des listes natives
+simples, sans champ de recherche à ce stade. ⌃⌥T reste le test/restauration.
+Les conflits sont individuels, affichés et réenregistrables depuis le menu ;
+suspension des raccourcis personnels pour la session.
+
+Écarts explicites : ⌥C peut ouvrir un nouvel onglet ; pas d'Apple Events ni de
+réutilisation d'onglet. Maximiser refuse le plein écran natif au lieu de forcer
+sa sortie ; Chrome minimisé est déminimisé. Aucun ⌘⇧↓ ajouté : absent de la
+référence réelle. Les gestes actifs et l'automatisation Teams restent à faire.
+
+Les titres sont limités au sélecteur en mémoire ; aucune trace dans les logs.
+Un lancement/focus ne demande pas de nouvelle fenêtre. La fin du lancement et
+l'apparition AX sont attendues au plus 3 s, uniquement pendant l'action.
+Validation fonctionnelle des nouvelles commandes, p95 et RSS encore à relever
+sur le Mac pilote. Les tableaux P0 précédents restent le relevé historique.

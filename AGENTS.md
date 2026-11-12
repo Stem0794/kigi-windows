@@ -18,3 +18,12 @@
 ## Première mission
 
 **P0 uniquement :** application barre de menus minimale, un raccourci, test Accessibility, spike du trackpad. Rapport bref `docs/trackpad-spike.md`, puis s'arrêter. Pas d'éditeur de scènes, de réunion Teams automatique, de licensing ou de CI avancée pendant P0.
+
+## Phase actuelle — 12 novembre 2026
+
+L'utilisateur a validé déplacement/restauration 0.0.6 et le diagnostic trackpad
+sur son Mac, puis demandé de continuer. La première mission P0 ci-dessus est
+historique : poursuivre **P1, raccourcis et actions manuelles**, en utilisant le
+relevé `docs/migration-audit.md` comme référence. P2 gestes actifs et P5 réunion
+automatique restent distincts. Ne pas annoncer les performances ou les nouveaux
+comportements validés sur matériel avant retour utilisateur.

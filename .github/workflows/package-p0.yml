@@ -1,4 +1,4 @@
-name: Package P0 macOS
+name: Package macOS
 on:
   workflow_dispatch:
   push:
@@ -23,15 +23,15 @@ jobs:
           cargo fmt --check
           cargo check --locked
           cargo test --locked
-      - name: Build universal prototype
+      - name: Build universal application
         run: bash scripts/bundle.sh universal
       - name: Archive application
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"
-          ditto -c -k --sequesterRsrc --keepParent "dist/Kigi Windows.app" dist/Kigi-Windows-P0-macOS-universal.zip
+          ditto -c -k --sequesterRsrc --keepParent "dist/Kigi Windows.app" dist/Kigi-Windows-macOS-universal.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: Kigi-Windows-P0-macOS-universal
-          path: dist/Kigi-Windows-P0-macOS-universal.zip
+          name: Kigi-Windows-macOS-universal
+          path: dist/Kigi-Windows-macOS-universal.zip
           if-no-files-found: error
           retention-days: 14

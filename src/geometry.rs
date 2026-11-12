@@ -17,6 +17,13 @@ impl Rect {
         }
     }
 
+    pub fn left_half(self) -> Self {
+        Self {
+            width: self.width / 2.0,
+            ..self
+        }
+    }
+
     pub fn right_half(self) -> Self {
         Self {
             x: self.x + self.width / 2.0,
@@ -54,5 +61,9 @@ mod tests {
         assert_eq!(above.y, -1080.0);
         assert_eq!(r.overlap(above), 0.0);
         assert!(r.approximately(r));
+        let full = Rect::from_appkit(-1440.0, 120.0, 1440.0, 860.0, 1080.0);
+        assert_eq!(full.left_half().x, -1440.0);
+        assert_eq!(full.left_half().width, 720.0);
+        assert_eq!(full.left_half().overlap(full.right_half()), 0.0);
     }
 }

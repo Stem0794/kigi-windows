@@ -1,7 +1,8 @@
 use crate::{
-    diagnostics,
+    actions::Action,
+    applications, diagnostics,
     gestures::{Contact, CornerProbe},
-    hotkey::Hotkey,
+    hotkey::Hotkeys,
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -18,7 +19,8 @@ use objc2_foundation::{
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
-    time::Instant,
+    sync::mpsc::{Receiver, TryRecvError},
+    time::{Duration, Instant},
 };
 
 thread_local! { static CONTROLLER: RefCell<Option<Retained<Controller>>> = const { RefCell::new(None) }; }
@@ -47,9 +49,21 @@ impl PermissionFlow {
     }
 }
 
+struct PendingOpen {
+    action: Action,
+    result: Receiver<Result<i32, isize>>,
+    pid: Option<i32>,
+    started: Instant,
+}
+
 #[derive(Default)]
 struct State {
     snapshot: RefCell<Option<Snapshot>>,
+    hotkeys: RefCell<Option<Hotkeys>>,
+    personal_enabled: Cell<bool>,
+    personal_item: OnceCell<Retained<NSMenuItem>>,
+    pending: RefCell<Option<PendingOpen>>,
+    picking: Cell<bool>,
     status: OnceCell<Retained<NSMenuItem>>,
     hotkey_status: OnceCell<Retained<NSMenuItem>>,
     hotkey_count: Cell<u64>,
@@ -99,13 +113,33 @@ define_class!(
         }
         #[unsafe(method(shortcutDiagnostics:))]
         fn shortcut_diagnostics(&self, _: Option<&AnyObject>) {
-            let registration = self.ivars().hotkey_status.get().map(|i| i.title().to_string()).unwrap_or_default();
+            let registration = self.ivars().hotkeys.borrow().as_ref().map(|h| h.report.clone()).unwrap_or_default();
             let result = self.ivars().status.get().map(|i| i.title().to_string()).unwrap_or_default();
-            alert(self.mtm(), "Diagnostic du raccourci", &format!(
-                "Kigi Windows {}\n{}\nAccessibilité : {}\nDernier résultat : {}\n\nAppuyez sur Control + Option + T depuis Chrome. Le compteur doit augmenter à l'appui.\nCompteur inchangé : raccourci non reçu (conflit ou routage).\nCompteur augmenté : consultez le dernier résultat AX ci-dessus.\nLe menu Tester / restaurer permet d'essayer la même action sans raccourci.",
-                env!("CARGO_PKG_VERSION"), registration,
-                if windows::trusted() { "autorisée" } else { "non autorisée" }, result
-            ));
+            alert(self.mtm(), "Diagnostic des raccourcis", &format!(
+                "Kigi Windows {}\n{registration}\nActions reçues : {}\nAccessibilité : {}\nDernier résultat : {result}\n\nEn cas de conflit, quittez temporairement Hammerspoon puis choisissez Réenregistrer les raccourcis. Les menus exécutent les mêmes actions. Aucun fichier Hammerspoon n'est modifié.",
+                env!("CARGO_PKG_VERSION"), self.ivars().hotkey_count.get(), windows::trusted()));
+        }
+        #[unsafe(method(focusTeams:))]
+        fn focus_teams(&self, _: Option<&AnyObject>) { self.execute(Action::Teams); }
+        #[unsafe(method(focusBrowser:))]
+        fn focus_browser(&self, _: Option<&AnyObject>) { self.execute(Action::Browser); }
+        #[unsafe(method(openChatGpt:))]
+        fn open_chatgpt(&self, _: Option<&AnyObject>) { self.execute(Action::ChatGpt); }
+        #[unsafe(method(maximizeWindow:))]
+        fn maximize_window(&self, _: Option<&AnyObject>) { self.execute(Action::Maximize); }
+        #[unsafe(method(pairLeft:))]
+        fn pair_left(&self, _: Option<&AnyObject>) { self.execute(Action::PairLeft); }
+        #[unsafe(method(pairRight:))]
+        fn pair_right(&self, _: Option<&AnyObject>) { self.execute(Action::PairRight); }
+        #[unsafe(method(openPoll:))]
+        fn open_poll(&self, _: Option<&AnyObject>) { self.poll_open(); }
+        #[unsafe(method(retryHotkeys:))]
+        fn retry_hotkeys(&self, _: Option<&AnyObject>) { self.register_hotkeys(); }
+        #[unsafe(method(togglePersonal:))]
+        fn toggle_personal(&self, _: Option<&AnyObject>) {
+            self.ivars().personal_enabled.set(!self.ivars().personal_enabled.get());
+            self.cancel_open();
+            self.register_hotkeys();
         }
         #[unsafe(method(permission:))]
         fn permission(&self, _: Option<&AnyObject>) {
@@ -161,6 +195,8 @@ define_class!(
         }
         #[unsafe(method(testWindow:))]
         fn test_window(&self, _: Option<&AnyObject>) {
+            if self.ivars().picking.get() { return; }
+            self.cancel_open();
             self.record_state("action.window.start");
             if !self.refresh_permission() {
                 self.status("Déplacement bloqué : Accessibilité non autorisée pour cette application.");
@@ -236,6 +272,7 @@ define_class!(
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
             self.cancel_permission_poll();
+            self.cancel_open();
             diagnostics::record("application.quit", "requested=true");
             self.ivars().tap.borrow_mut().take();
             NSApplication::sharedApplication(self.mtm()).stop(None);
@@ -250,6 +287,191 @@ impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
+    }
+    fn update_shortcut_label(&self) {
+        if let Some(item) = self.ivars().hotkey_status.get() {
+            let report = self.ivars().hotkeys.borrow();
+            let conflict = report
+                .as_ref()
+                .is_some_and(|h| h.report.contains("indisponible") || h.report.contains("refusée"));
+            item.setTitle(&NSString::from_str(&format!(
+                "Raccourcis : {} — reçus {} fois (diagnostic)",
+                if conflict {
+                    "conflit / erreur"
+                } else if self.ivars().personal_enabled.get() {
+                    "enregistrés"
+                } else {
+                    "personnels suspendus"
+                },
+                self.ivars().hotkey_count.get()
+            )));
+        }
+    }
+    fn register_hotkeys(&self) {
+        self.ivars().hotkeys.borrow_mut().take(); // unregister before reacquiring
+        let keys = Hotkeys::register(self.ivars().personal_enabled.get());
+        diagnostics::record("shortcut.registration", &keys.report);
+        self.ivars().hotkeys.replace(Some(keys));
+        self.update_shortcut_label();
+        if let Some(item) = self.ivars().personal_item.get() {
+            item.setTitle(&NSString::from_str(
+                if self.ivars().personal_enabled.get() {
+                    "Suspendre les raccourcis personnels"
+                } else {
+                    "Activer les raccourcis personnels"
+                },
+            ));
+        }
+    }
+    fn cancel_open(&self) {
+        if self.ivars().pending.borrow_mut().take().is_some() {
+            diagnostics::record("application.open.cancelled", "superseded_or_shutdown=true");
+        }
+        let _: () = unsafe {
+            msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(openPoll:), object:std::ptr::null::<AnyObject>()]
+        };
+    }
+    fn schedule_open_poll(&self) {
+        let _: () = unsafe {
+            msg_send![self, performSelector:sel!(openPoll:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.2f64]
+        };
+    }
+    fn execute(&self, action: Action) {
+        if self.ivars().picking.get() {
+            return;
+        }
+        self.cancel_open();
+        let started = Instant::now();
+        diagnostics::record("action.start", format!("action={action:?}"));
+        let result = match action {
+            Action::Teams | Action::Browser | Action::ChatGpt => {
+                let bundle = if action == Action::Teams {
+                    applications::teams_bundle()
+                } else {
+                    Ok(applications::CHROME)
+                };
+                bundle
+                    .and_then(|bundle| applications::open(bundle, action == Action::ChatGpt))
+                    .map(|result| {
+                        self.ivars().pending.replace(Some(PendingOpen {
+                            action,
+                            result,
+                            pid: None,
+                            started,
+                        }));
+                        self.schedule_open_poll();
+                        "Activation demandée…".to_owned()
+                    })
+            }
+            Action::Maximize => windows::maximize(self.mtm(), None),
+            Action::PairLeft | Action::PairRight => self.pick_pair(action == Action::PairLeft),
+            Action::Test => return,
+        };
+        diagnostics::record(
+            "action.dispatch",
+            format!(
+                "action={action:?} success={} elapsed_ms={}",
+                result.is_ok(),
+                started.elapsed().as_millis()
+            ),
+        );
+        self.status(&result.unwrap_or_else(|e| e));
+    }
+    fn poll_open(&self) {
+        let Some(mut pending) = self.ivars().pending.borrow_mut().take() else {
+            return;
+        };
+        if pending.pid.is_none() {
+            match pending.result.try_recv() {
+                Ok(Ok(pid)) => pending.pid = Some(pid),
+                Ok(Err(code)) => {
+                    self.status(&format!("Ouverture refusée par macOS (code {code})."));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.status("Réponse d'ouverture interrompue.");
+                    return;
+                }
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+        let result = if let Some(pid) = pending.pid {
+            match pending.action {
+                Action::Teams => Some(Ok(
+                    "Teams activé (aucune nouvelle fenêtre demandée).".to_owned()
+                )),
+                Action::ChatGpt => Some(Ok(
+                    "ChatGPT ouvert dans Chrome ; un onglet supplémentaire est possible."
+                        .to_owned(),
+                )),
+                _ => {
+                    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid);
+                    if let Some(app) = app {
+                        // Do not reposition an app after the user has switched elsewhere.
+                        if !app.isActive() {
+                            Some(Err(
+                                "Chrome n'est plus actif : maximisation annulée. Réessayez ⌥B."
+                                    .into(),
+                            ))
+                        } else {
+                            if !windows::trusted() || windows::application_window_ready(&app) {
+                                Some(windows::maximize(self.mtm(), Some(&app)))
+                            } else {
+                                None
+                            } // wait for a window, never repeat geometry writes
+                        }
+                    } else {
+                        Some(Err("Chrome a quitté avant le positionnement.".into()))
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(result) = result {
+            diagnostics::record(
+                "action.complete",
+                format!(
+                    "action={:?} success={} elapsed_ms={}",
+                    pending.action,
+                    result.is_ok(),
+                    pending.started.elapsed().as_millis()
+                ),
+            );
+            self.status(&result.unwrap_or_else(|e| e));
+        } else if pending.started.elapsed() >= Duration::from_secs(3) {
+            self.status(
+                "Ouverture non confirmée après 3 secondes. Réessayez une fois l'application prête.",
+            );
+        } else {
+            self.ivars().pending.replace(Some(pending));
+            self.schedule_open_poll();
+        }
+    }
+    fn pick_pair(&self, first_left: bool) -> Result<String, String> {
+        let (display, mut choices, partial) = windows::pair_candidates(self.mtm())?;
+        self.ivars().picking.set(true);
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+        let result = (|| {
+            let side = if first_left { "gauche" } else { "droite" };
+            let Some(first) = choose_window(self.mtm(), side, &choices, partial) else {
+                return Ok("Partage annulé ; aucune fenêtre déplacée.".into());
+            };
+            let first = choices.remove(first);
+            let side = if first_left { "droite" } else { "gauche" };
+            let Some(second) = choose_window(self.mtm(), side, &choices, partial) else {
+                return Ok("Partage annulé ; aucune fenêtre déplacée.".into());
+            };
+            let second = &choices[second];
+            if first_left {
+                windows::arrange_pair(display, &first, second, false)
+            } else {
+                windows::arrange_pair(display, second, &first, true)
+            }
+        })();
+        self.ivars().picking.set(false);
+        result
     }
     fn refresh_permission(&self) -> bool {
         let trusted = windows::trusted();
@@ -303,9 +525,10 @@ impl Controller {
     fn log_report(&self) -> String {
         let shortcut = self
             .ivars()
-            .hotkey_status
-            .get()
-            .map(|i| i.title().to_string())
+            .hotkeys
+            .borrow()
+            .as_ref()
+            .map(|h| h.report.clone())
             .unwrap_or_default();
         let result = self
             .ivars()
@@ -443,6 +666,38 @@ impl TouchView {
         }
     }
 }
+fn choose_window(
+    mtm: MainThreadMarker,
+    side: &str,
+    choices: &[windows::Choice],
+    partial: bool,
+) -> Option<usize> {
+    let dialog = NSAlert::new(mtm);
+    dialog.setMessageText(&NSString::from_str(&format!(
+        "Choisir la fenêtre de {side}"
+    )));
+    dialog.setInformativeText(&NSString::from_str(if partial {
+        "Liste partielle : certaines applications n'ont pas répondu à temps. Annulez puis réessayez si une fenêtre manque." } else {
+        "Sélectionnez une fenêtre. Le placement sera appliqué après les deux choix. Échap annule." }));
+    let picker = NSPopUpButton::initWithFrame_pullsDown(
+        NSPopUpButton::alloc(mtm),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(520.0, 28.0)),
+        false,
+    );
+    for (i, choice) in choices.iter().enumerate() {
+        // Prefix keeps entries distinct even when two windows have identical titles.
+        picker.addItemWithTitle(&NSString::from_str(&format!("{}. {}", i + 1, choice.label)));
+    }
+    dialog.setAccessoryView(Some(&picker));
+    dialog.addButtonWithTitle(&NSString::from_str("Choisir"));
+    dialog.addButtonWithTitle(&NSString::from_str("Annuler"));
+    if dialog.runModal() != NSAlertFirstButtonReturn {
+        return None;
+    }
+    usize::try_from(picker.indexOfSelectedItem())
+        .ok()
+        .filter(|i| *i < choices.len())
+}
 fn alert(mtm: MainThreadMarker, title: &str, text: &str) {
     let alert = NSAlert::new(mtm);
     alert.setMessageText(&NSString::from_str(title));
@@ -469,29 +724,17 @@ fn menu_action(
     menu.addItem(&item);
     item
 }
-pub fn shortcut_event(error: Option<i32>) {
-    diagnostics::record("shortcut.received", format!("parameter_error={error:?}"));
+pub fn schedule_action(action: Action) {
     CONTROLLER.with(|slot| {
         if let Some(controller) = slot.borrow().as_ref() {
-            let text = if let Some(code) = error {
-                format!("Raccourci : événement reçu, lecture ID refusée ({code})")
-            } else {
-                let count = controller.ivars().hotkey_count.get() + 1;
-                controller.ivars().hotkey_count.set(count);
-                format!("Raccourci ⌃⌥T : enregistré — reçu {count} fois")
-            };
-            if let Some(item) = controller.ivars().hotkey_status.get() {
-                item.setTitle(&NSString::from_str(&text));
-            }
-        }
-    });
-}
-pub fn schedule_test() {
-    diagnostics::record("action.window.queued", "source=shortcut");
-    CONTROLLER.with(|slot| {
-        if let Some(controller) = slot.borrow().as_ref() {
-            // Use the documented main-thread queue, including common run-loop modes.
-            let _: () = unsafe { msg_send![&**controller, performSelectorOnMainThread:sel!(testWindow:), withObject:std::ptr::null::<AnyObject>(), waitUntilDone:false] };
+            if controller.ivars().picking.get() { return; }
+            let count = controller.ivars().hotkey_count.get() + 1;
+            controller.ivars().hotkey_count.set(count);
+            diagnostics::record("shortcut.received", format!("action={action:?} count={count}"));
+            controller.update_shortcut_label();
+            let selector = Sel::register(std::ffi::CString::new(action.selector()).unwrap().as_c_str());
+            // Carbon callback only queues; never perform AX or modal UI here.
+            let _: () = unsafe { msg_send![&**controller, performSelectorOnMainThread:selector, withObject:std::ptr::null::<AnyObject>(), waitUntilDone:false] };
         }
     });
 }
@@ -544,7 +787,7 @@ pub fn run() {
         let menu = NSMenu::new(mtm);
         let status = NSMenuItem::new(mtm);
         status.setTitle(ns_string!(
-            "P0 — prêt. Accessibilité demandée uniquement sur action."
+            "P1 — raccourcis manuels. Gestes en diagnostic uniquement."
         ));
         status.setEnabled(false);
         menu.addItem(&status);
@@ -552,7 +795,7 @@ pub fn run() {
         let shortcut = menu_action(
             &menu,
             &controller,
-            "Raccourci ⌃⌥T : enregistrement en cours",
+            "Raccourcis : enregistrement en cours",
             sel!(shortcutDiagnostics:),
         );
         controller.ivars().hotkey_status.set(shortcut).ok();
@@ -577,6 +820,29 @@ pub fn run() {
         );
         menu.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
         controller.refresh_permission();
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
+        for action in &Action::ALL[1..] {
+            let selector = Sel::register(
+                std::ffi::CString::new(action.selector())
+                    .unwrap()
+                    .as_c_str(),
+            );
+            menu_action(&menu, &controller, action.label(), selector);
+        }
+        let personal = menu_action(
+            &menu,
+            &controller,
+            "Suspendre les raccourcis personnels",
+            sel!(togglePersonal:),
+        );
+        controller.ivars().personal_item.set(personal).ok();
+        menu_action(
+            &menu,
+            &controller,
+            "Réenregistrer les raccourcis (après conflit)",
+            sel!(retryHotkeys:),
+        );
+        menu.addItem(&NSMenuItem::separatorItem(mtm));
         menu_action(
             &menu,
             &controller,
@@ -614,20 +880,11 @@ pub fn run() {
         menu_action(&menu, &controller, "Quitter", sel!(quit:));
         status_item.setMenu(Some(&menu));
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
-        let hotkey = Hotkey::register();
-        let registration = match &hotkey {
-            Ok(_) => "Raccourci ⌃⌥T : enregistré — reçu 0 fois".to_owned(),
-            Err(e) => format!("Raccourci non enregistré : {e}"),
-        };
-        diagnostics::record("shortcut.registration", &registration);
-        if let Some(item) = controller.ivars().hotkey_status.get() {
-            item.setTitle(&NSString::from_str(&registration));
-        }
-        if let Err(e) = &hotkey {
-            controller.status(e);
-        }
+        controller.ivars().personal_enabled.set(true);
+        controller.register_hotkeys();
         app.run();
-        drop(hotkey);
+        controller.ivars().hotkeys.borrow_mut().take();
+        controller.cancel_open();
         CONTROLLER.with(|c| c.borrow_mut().take());
         controller.ivars().tap.borrow_mut().take();
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {

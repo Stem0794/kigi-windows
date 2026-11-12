@@ -1,4 +1,5 @@
 //! Public Carbon hotkey registration; no keyboard event monitoring.
+use crate::actions::Action;
 use std::{
     ffi::{c_ulong, c_void},
     ptr,
@@ -16,10 +17,7 @@ struct HotkeyId {
     signature: u32,
     id: u32,
 }
-const ID: HotkeyId = HotkeyId {
-    signature: u32::from_be_bytes(*b"Kigi"),
-    id: 1,
-};
+const SIGNATURE: u32 = u32::from_be_bytes(*b"Kigi");
 #[link(name = "Carbon", kind = "framework")]
 extern "C" {
     fn GetEventDispatcherTarget() -> Handle;
@@ -53,16 +51,21 @@ extern "C" {
     ) -> i32;
 }
 
-pub struct Hotkey {
-    key: Handle,
+pub struct Hotkeys {
+    keys: Vec<Handle>,
     handler: Handle,
-    down: Box<bool>,
+    down: Box<[bool; 7]>,
+    pub report: String,
 }
-impl Hotkey {
-    pub fn register() -> Result<Self, String> {
+impl Hotkeys {
+    pub fn register(personal: bool) -> Self {
+        let mut this = Self {
+            keys: Vec::new(),
+            handler: ptr::null_mut(),
+            down: Box::new([false; 7]),
+            report: String::new(),
+        };
         unsafe {
-            // Dispatch target receives the registered shortcut before AppKit's
-            // application handlers. Handle both phases, act on press only.
             let target = GetEventDispatcherTarget();
             let events = [
                 EventType {
@@ -74,36 +77,55 @@ impl Hotkey {
                     kind: 6,
                 },
             ];
-            let mut this = Self {
-                key: ptr::null_mut(),
-                handler: ptr::null_mut(),
-                down: Box::new(false),
-            };
             let code = InstallEventHandler(
                 target,
                 on_hotkey,
                 events.len() as c_ulong,
                 events.as_ptr(),
-                (&mut *this.down as *mut bool).cast(),
+                this.down.as_mut_ptr().cast(),
                 &mut this.handler,
             );
             if code != 0 {
-                return Err(format!("Installation du raccourci refusée ({code})."));
+                this.report = format!(
+                    "Installation du gestionnaire refusée ({code}). Les menus restent utilisables."
+                );
+                return this;
             }
-            // kVK_ANSI_T = 17, optionKey = 1 << 11, controlKey = 1 << 12. Physical T position.
-            let code = RegisterEventHotKey(17, (1 << 11) | (1 << 12), ID, target, 1, &mut this.key);
-            if code != 0 {
-                return Err(format!("⌃⌥T indisponible ({code}). Vérifiez Hammerspoon et les raccourcis système. Le menu reste utilisable."));
+            for action in Action::ALL {
+                if action != Action::Test && !personal {
+                    continue;
+                }
+                let (key, modifiers) = action.binding();
+                let mut handle = ptr::null_mut();
+                let code = RegisterEventHotKey(
+                    key,
+                    modifiers,
+                    HotkeyId {
+                        signature: SIGNATURE,
+                        id: action as u32,
+                    },
+                    target,
+                    1,
+                    &mut handle,
+                );
+                let state = if code == 0 {
+                    this.keys.push(handle);
+                    "enregistré".to_owned()
+                } else {
+                    format!("indisponible ({code}) — conflit possible avec macOS ou Hammerspoon")
+                };
+                this.report
+                    .push_str(&format!("{} : {state}\n", action.label()));
             }
-            Ok(this)
         }
+        this
     }
 }
-impl Drop for Hotkey {
+impl Drop for Hotkeys {
     fn drop(&mut self) {
         unsafe {
-            if !self.key.is_null() {
-                UnregisterEventHotKey(self.key);
+            for key in &self.keys {
+                UnregisterEventHotKey(*key);
             }
             if !self.handler.is_null() {
                 RemoveEventHandler(self.handler);
@@ -126,16 +148,15 @@ unsafe extern "C" fn on_hotkey(_: Handle, event: Handle, user: Handle) -> i32 {
         (&mut id as *mut HotkeyId).cast(),
     );
     if code != 0 {
-        crate::app::shortcut_event(Some(code));
+        crate::diagnostics::record("shortcut.parameter_error", format!("code={code}"));
         return code;
     }
-    if id.signature != ID.signature || id.id != ID.id || user.is_null() {
-        return -9874; // eventNotHandledErr
+    if id.signature != SIGNATURE || id.id as usize >= Action::ALL.len() || user.is_null() {
+        return -9874;
     }
-    if press_transition(&mut *user.cast::<bool>(), GetEventKind(event)) {
-        crate::app::shortcut_event(None);
-        // No AX in this callback; queue the action on the main run loop.
-        crate::app::schedule_test();
+    let index = id.id as usize;
+    if press_transition(&mut *user.cast::<bool>().add(index), GetEventKind(event)) {
+        crate::app::schedule_action(Action::ALL[index]);
     }
     0
 }
@@ -162,5 +183,11 @@ mod tests {
         assert!(!press_transition(&mut down, 5));
         assert!(!press_transition(&mut down, 6));
         assert!(press_transition(&mut down, 5));
+        let mut keys = [false; 7];
+        assert!(press_transition(&mut keys[1], 5));
+        assert!(press_transition(&mut keys[2], 5));
+        assert!(!press_transition(&mut keys[1], 5));
+        assert!(!press_transition(&mut keys[1], 6));
+        assert!(!press_transition(&mut keys[2], 5));
     }
 }

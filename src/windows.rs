@@ -1,7 +1,7 @@
 //! Small owned CoreFoundation wrapper around the public Accessibility C API.
 use crate::{diagnostics, geometry::Rect};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSScreen, NSWorkspace};
+use objc2_app_kit::{NSRunningApplication, NSScreen, NSWorkspace};
 use objc2_foundation::NSString;
 use std::{
     ffi::c_void,
@@ -20,6 +20,7 @@ extern "C" {
     fn AXUIElementCopyAttributeValue(element: Ref, name: Ref, value: *mut Ref) -> i32;
     fn AXUIElementIsAttributeSettable(element: Ref, name: Ref, result: *mut u8) -> i32;
     fn AXUIElementSetAttributeValue(element: Ref, name: Ref, value: Ref) -> i32;
+    fn AXUIElementPerformAction(element: Ref, action: Ref) -> i32;
     fn AXValueCreate(kind: u32, value: *const c_void) -> Ref;
     fn AXValueGetValue(value: Ref, kind: u32, result: *mut c_void) -> u8;
 }
@@ -39,6 +40,9 @@ extern "C" {
     ) -> Ref;
     fn CFBooleanGetValue(value: Ref) -> u8;
     static kCFBooleanTrue: Ref;
+    static kCFBooleanFalse: Ref;
+    fn CFGetTypeID(value: Ref) -> usize;
+    fn CFStringGetTypeID() -> usize;
 }
 
 pub struct Element(Ref);
@@ -327,6 +331,15 @@ pub fn move_frontmost(
     window.ensure_normal()?;
     let frame = window.frame()?;
     diagnostics::record("ax.frame.before", format!("frame={frame:?}"));
+    let target = visible_frame(mtm, frame)?.right_half();
+    // Save BEFORE either write: partial writes and errors must stay restorable.
+    *snapshot = Some(Snapshot { window, frame });
+    let actual = snapshot.as_ref().unwrap().window.set_frame(target)?;
+    Ok(result_message(actual, target, "déplacée à droite"))
+}
+
+/// Screen with greatest overlap, preserving AX/AppKit conversion on all displays.
+pub fn visible_frame(mtm: MainThreadMarker, frame: Rect) -> Result<Rect, String> {
     let screens = NSScreen::screens(mtm);
     let primary = screens
         .firstObject()
@@ -349,17 +362,216 @@ pub fn move_frontmost(
             frame.overlap(rect(a)).total_cmp(&frame.overlap(rect(b)))
         })
         .ok_or("Aucun écran disponible.")?;
+    let screen = if frame.overlap({
+        let r = screen.frame();
+        Rect::from_appkit(
+            r.origin.x,
+            r.origin.y,
+            r.size.width,
+            r.size.height,
+            primary_top,
+        )
+    }) > 0.0
+    {
+        screen
+    } else {
+        screens.firstObject().unwrap()
+    };
     let v = screen.visibleFrame();
-    let target = Rect::from_appkit(
+    Ok(Rect::from_appkit(
         v.origin.x,
         v.origin.y,
         v.size.width,
         v.size.height,
         primary_top,
-    )
-    .right_half();
-    // Save BEFORE either write: partial writes and errors must stay restorable.
-    *snapshot = Some(Snapshot { window, frame });
-    let actual = snapshot.as_ref().unwrap().window.set_frame(target)?;
-    Ok(result_message(actual, target, "déplacée à droite"))
+    ))
+}
+
+impl Element {
+    fn text(&self, name: &str) -> Option<String> {
+        let value = self.attribute(name).ok()?;
+        if unsafe { CFGetTypeID(value.0) != CFStringGetTypeID() } {
+            return None;
+        }
+        // NSString/CFString are toll-free bridged; value keeps the string alive.
+        Some(unsafe { &*value.0.cast::<NSString>() }.to_string())
+    }
+    fn is_standard(&self) -> bool {
+        self.text("AXSubrole")
+            .is_some_and(|s| s == "AXStandardWindow")
+    }
+    fn unminimize(&self) -> Result<(), String> {
+        let value = self.attribute("AXMinimized")?;
+        if unsafe { CFBooleanGetValue(value.0) } != 0 {
+            let key = NSString::from_str("AXMinimized");
+            check(unsafe {
+                AXUIElementSetAttributeValue(self.0, name_ref(&key), kCFBooleanFalse)
+            })?;
+        }
+        Ok(())
+    }
+    fn raise(&self) -> Result<(), String> {
+        let action = NSString::from_str("AXRaise");
+        check(unsafe { AXUIElementPerformAction(self.0, name_ref(&action)) })
+    }
+}
+fn frontmost() -> Result<objc2::rc::Retained<NSRunningApplication>, String> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .filter(|a| a.processIdentifier() != std::process::id() as i32)
+        .ok_or_else(|| "Activez d'abord une fenêtre d'une autre application.".into())
+}
+fn preferred_window(app: &NSRunningApplication) -> Result<Element, String> {
+    let root = Element::app(app.processIdentifier());
+    for name in ["AXFocusedWindow", "AXMainWindow"] {
+        if let Ok(window) = root.attribute(name) {
+            if window.is_standard() {
+                return Ok(window);
+            }
+        }
+    }
+    let array = root.attribute("AXWindows")?;
+    let count = unsafe { CFArrayGetCount(array.0) };
+    let mut candidates = Vec::new();
+    let started = Instant::now();
+    for i in 0..count.min(64) {
+        if started.elapsed() > Duration::from_secs(1) {
+            break;
+        }
+        let window = Element(unsafe { CFRetain(CFArrayGetValueAtIndex(array.0, i)) });
+        if window.is_standard() {
+            candidates.push(window);
+        }
+    }
+    if candidates.len() == 1 {
+        Ok(candidates.remove(0))
+    } else {
+        Err(
+            "Aucune fenêtre principale identifiable. Activez la fenêtre souhaitée et réessayez."
+                .into(),
+        )
+    }
+}
+pub fn application_window_ready(app: &NSRunningApplication) -> bool {
+    preferred_window(app).is_ok()
+}
+pub fn maximize(
+    mtm: MainThreadMarker,
+    app: Option<&NSRunningApplication>,
+) -> Result<String, String> {
+    require_permission()?;
+    let foreground;
+    let app = if let Some(app) = app {
+        app
+    } else {
+        foreground = frontmost()?;
+        &foreground
+    };
+    let window = preferred_window(app)?;
+    window.unminimize()?;
+    window.ensure_normal()?;
+    let target = visible_frame(mtm, window.frame()?)?;
+    let actual = window.set_frame(target)?;
+    window.raise()?;
+    Ok(result_message(actual, target, "maximisée"))
+}
+
+/// Titles exist only in memory for this explicit picker; never diagnostic logs.
+pub struct Choice {
+    pub label: String,
+    window: Element,
+    app: objc2::rc::Retained<NSRunningApplication>,
+}
+pub fn pair_candidates(mtm: MainThreadMarker) -> Result<(Rect, Vec<Choice>, bool), String> {
+    require_permission()?;
+    let active = frontmost()?;
+    let anchor = preferred_window(&active)?.frame()?;
+    let display = visible_frame(mtm, anchor)?; // Capture BEFORE the modal UI takes focus.
+    let started = Instant::now();
+    let mut choices = Vec::new();
+    let mut partial = false;
+    'apps: for app in NSWorkspace::sharedWorkspace().runningApplications().iter() {
+        if started.elapsed() > Duration::from_secs(2) {
+            partial = true;
+            break;
+        }
+        if app.processIdentifier() == std::process::id() as i32
+            || app
+                .bundleIdentifier()
+                .is_some_and(|b| b.to_string() == "org.hammerspoon.Hammerspoon")
+        {
+            continue;
+        }
+        if app.activationPolicy() != objc2_app_kit::NSApplicationActivationPolicy::Regular {
+            continue;
+        }
+        let Ok(array) = Element::app(app.processIdentifier()).attribute("AXWindows") else {
+            continue;
+        };
+        let count = unsafe { CFArrayGetCount(array.0) };
+        for i in 0..count.min(64) {
+            if started.elapsed() > Duration::from_secs(2) || choices.len() >= 64 {
+                partial = true;
+                break 'apps;
+            }
+            let window = Element(unsafe { CFRetain(CFArrayGetValueAtIndex(array.0, i)) });
+            if !window.is_standard() || window.ensure_normal().is_err() {
+                continue;
+            }
+            let title = window
+                .text("AXTitle")
+                .unwrap_or_else(|| "Sans titre".into());
+            let name = app
+                .localizedName()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "Application".into());
+            choices.push(Choice {
+                label: format!("{name} — {title}"),
+                window,
+                app: app.clone(),
+            });
+        }
+    }
+    diagnostics::record(
+        "picker.inventory",
+        format!("count={} partial={partial}", choices.len()),
+    );
+    if choices.len() < 2 {
+        return Err("Deux fenêtres standard accessibles sont nécessaires. Ouvrez-les, quittez le plein écran et déminimisez-les.".into());
+    }
+    Ok((display, choices, partial))
+}
+pub fn arrange_pair(
+    display: Rect,
+    left: &Choice,
+    right: &Choice,
+    focus_left: bool,
+) -> Result<String, String> {
+    // Preflight both before writing either; windows may still close after this check.
+    left.window.ensure_normal()?;
+    right.window.ensure_normal()?;
+    for window in [&left.window, &right.window] {
+        window.can_set("AXPosition")?;
+        window.can_set("AXSize")?;
+    }
+    let first = left.window.set_frame(display.left_half());
+    let second = right.window.set_frame(display.right_half());
+    diagnostics::record(
+        "action.pair.write",
+        format!("left_ok={} right_ok={}", first.is_ok(), second.is_ok()),
+    );
+    let left_actual = first.map_err(|e| format!("Partage incomplet, gauche : {e}"))?;
+    let right_actual = second.map_err(|e| format!("Partage incomplet, droite : {e}"))?;
+    left.window.raise()?;
+    right.window.raise()?;
+    let focused = if focus_left { left } else { right };
+    crate::applications::activate(&focused.app)?;
+    focused.window.raise()?;
+    if left_actual.approximately(display.left_half())
+        && right_actual.approximately(display.right_half())
+    {
+        Ok("Deux fenêtres placées à 50 % sur l'écran choisi.".into())
+    } else {
+        Ok("Partage partiel : une application impose ses dimensions. Consultez les logs.".into())
+    }
 }

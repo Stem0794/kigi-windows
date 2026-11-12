@@ -1,8 +1,59 @@
-# Kigi Windows — prototype P0
+# Kigi Windows — actions manuelles P1 (0.1.0)
 
 Application macOS native en Rust, un seul processus et un seul crate. Cible
 macOS 11, Intel et Apple Silicon. Le code natif est vérifiable depuis Linux,
 mais le fonctionnement sur Mac et la compatibilité OS restent à valider.
+
+## Utilisation de 0.1.0
+
+Quitter l'ancienne copie et remplacer `Kigi Windows.app` au même emplacement.
+Pour tester la migration, quitter temporairement Hammerspoon, puis utiliser
+**Kigi → Réenregistrer les raccourcis**. Ses fichiers ne sont jamais modifiés.
+Le menu « Raccourcis » affiche chaque enregistrement et chaque conflit ; les
+actions restent également disponibles par clic dans le menu.
+
+| Raccourci | Action |
+| --- | --- |
+| ⌥T | Activer Teams, ou lancer le bundle principal installé si absent |
+| ⌥B | Activer/lancer Chrome et maximiser sa fenêtre principale |
+| ⌥C | Ouvrir ChatGPT dans Chrome ; peut créer un onglet supplémentaire |
+| ⌘⇧↑ | Maximiser la fenêtre active dans la zone visible de son écran |
+| ⌘⇧← | Choisir la fenêtre gauche, puis droite, et placer les deux à 50 % |
+| ⌘⇧→ | Même partage, choix de la fenêtre droite en premier |
+| ⌃⌥T | Conserver le test déplacement à droite / restauration P0 |
+
+Les touches désignent les positions physiques macOS. Les sélecteurs proposent
+les fenêtres standard non minimisées/hors plein écran. Les titres sont affichés
+dans le sélecteur uniquement, jamais dans les logs. Annuler l'un des choix ne
+déplace rien ; la deuxième fenêtre choisie reçoit le focus. Le partage utilise
+l'écran de la fenêtre active avant ouverture du sélecteur. Un inventaire borné
+peut être partiel : le sélecteur l'indique.
+
+« Suspendre les raccourcis personnels » libère leurs combinaisons ; ⌃⌥T et les
+menus restent disponibles. Cette option vaut pour la session uniquement.
+L'enregistrement est indépendant : un conflit n'invalide pas les autres touches.
+
+Accessibilité est nécessaire pour le placement et le sélecteur. Teams/Chrome
+sont activés via NSWorkspace ; aucun processus auxiliaire ou AppleScript.
+Les lancements sont asynchrones et leur résultat est contrôlé pendant au plus
+3 secondes, sans attente bloquante. Une autre commande Kigi annule l'action en
+attente ; Chrome n'est pas repositionné s'il n'est plus actif au traitement.
+Une fenêtre principale absente/ambiguë est signalée, sans création arbitraire.
+
+Les fenêtres Chrome minimisées peuvent être déminimisées pour ⌥B. Le plein
+écran natif reste refusé explicitement : quitter ce mode avant de maximiser.
+L'identification de l'onglet ChatGPT existant, la recherche dans le sélecteur,
+les automatismes Teams et les gestes déclenchant une action ne sont pas encore
+implémentés. Le diagnostic trackpad P0 est conservé sans changer ses seuils.
+
+Les logs exportables conservent 200 événements de session, avec action,
+conflit, résultat natif/AX, rectangles et durées. Les durées incluant le choix
+humain ne mesurent pas la latence AX ; RSS et p95 restent à mesurer sur Mac.
+
+Essai court : ⌥T, ⌥B, ⌘⇧↑, un partage ⌘⇧← (puis annulation), ⌥C.
+En cas de panne, copier les logs avant de quitter. Cette version est compilée
+pour Intel/Apple Silicon, mais les nouvelles interactions doivent être essayées
+sur le Mac pilote. macOS 11 reste une cible non testée sur matériel.
 
 ## Lancer sur un Mac
 
@@ -37,7 +88,7 @@ Aucun package commercial signé/notarisé n'est fourni à ce stade.
    le geste. Recliquer sur le même menu arrête l'écoute et affiche les compteurs.
    Une absence d'événements ne constitue pas une validation du geste.
 
-**⌃⌥T est un raccourci de test P0**, pas encore l'action Teams de P1. Le code
+**⌃⌥T reste le raccourci de test P0** ; ⌥T est désormais l’action Teams P1. Le code
 Carbon utilise la position physique de la touche T. Cette combinaison évite le ⌥T Teams de Hammerspoon. En cas de conflit, l'erreur
 reste visible et le menu fonctionne. Quitter temporairement Hammerspoon et relancer Kigi pour
 l'essai si nécessaire ; son fichier `init.lua` n'est jamais modifié.
@@ -62,14 +113,14 @@ MACOSX_DEPLOYMENT_TARGET=11.0 cargo check --locked --target aarch64-apple-darwin
 bash scripts/bundle.sh universal
 ```
 
-Les six tests sur Mac portent sur la conversion d'écrans et les cas critiques du
+Les tests ciblés sur Mac portent sur la conversion d'écrans et les cas critiques du
 classifieur diagnostic et le déclenchement unique du raccourci, ainsi que la borne du journal de diagnostic et la demande unique d’Accessibilité. `cargo check` ne valide ni l'édition de liens Apple,
 ni TCC, ni les appels exécutés, ni la détection du trackpad.
 
 Voir [le rapport trackpad](docs/trackpad-spike.md), la
 [décision API](docs/adr-001-trackpad.md) et le [suivi P0](docs/progress.md).
 Le JSON du handover reste indicatif et n'est pas chargé par P0. Aucun éditeur,
-workspace, automatisme Teams, lancement de navigateur ou système commercial.
+workspace, automatisme Teams ou système commercial. Le lancement d’applications est disponible en P1.
 
 ## Si le raccourci semble sans effet (0.0.3)
 

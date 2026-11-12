@@ -200,3 +200,34 @@ vérifiés. [Run 43259628603](https://github.com/Stem0794/kigi-windows/actions/r
 source du package : 7533eeb39f227f513d92aa7caabca8e2222629cd.
 L'efficacité du nouvel ordre contre la restauration partielle reste à confirmer
 sur le Mac utilisateur ; aucun test unitaire ne simule les contraintes AX.
+
+## 2026-11-12 — P1 0.1.0 : raccourcis manuels autorisés
+
+Retour utilisateur : « oui c'est corrigé, continue l'implémentation ». La
+restauration directe 0.0.6 est validée sur son Mac ; il a aussi confirmé le
+diagnostic trackpad. Cela ouvre P1, sans valider d'autres Mac ou macOS.
+
+Implémenté : Teams ⌥T, Chrome/maximiser ⌥B, URL ChatGPT ⌥C, maximiser
+⌘⇧↑, sélection de deux fenêtres ⌘⇧←/→ conforme à la référence (ordre
+et focus du second choix). Pas de ⌘⇧↓ inventé. Carbon enregistre chaque
+touche indépendamment et journalise son conflit ; réenregistrement et suspension
+personnelle depuis le menu. ⌃⌥T/restauration et diagnostic trackpad conservés.
+
+Un seul crate/processus ; ajout de block2 pour les callbacks publics NSWorkspace.
+Les callbacks transmettent seulement leur résultat au thread principal via un
+canal standard ; contrôle borné de lancement/fenêtre pendant 3 s, aucune boucle
+au repos. AX réutilise l'ordre position/taille/position validé. Titres uniquement
+dans les deux sélecteurs, exclus des diagnostics. Annulation avant le second
+choix : aucune écriture. Les erreurs/placements partiels restent visibles.
+
+Limites : pas de sortie forcée de fullscreen, pas de réutilisation de l'onglet
+ChatGPT ni recherche dans le sélecteur. P2 gestes actifs et automatisation Teams
+non commencés. p95/RSS et interactions nouvelles à mesurer/tester sur Mac ;
+aucun résultat inventé pour les fenêtres, TCC, Intel physique ou macOS 11.
+
+Vérifications locales : fmt, check hôte, cinq tests hôte (dont mapping unique
+et géométrie gauche/droite), checks macOS Intel/ARM cible 11 réussis. Le test
+Carbon est étendu à l'indépendance de deux touches maintenues. Packaging et
+tests natifs macOS : résultat du run à consigner après compilation.
+Prochain sous-ticket : validation manuelle P1 sur Mac puis activation opt-in
+du geste dans P2, sans migrer les réunions automatiques par anticipation.
