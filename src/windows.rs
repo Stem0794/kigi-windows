@@ -576,7 +576,6 @@ pub fn arrange_pair(
     }
 }
 
-
 /// Manual P3 pilot: one in-memory return point for two already-open windows.
 /// Geometry only; no window titles or session data are retained.
 pub struct MeetingSnapshot {
@@ -610,9 +609,7 @@ impl MeetingSnapshot {
             }
         }
         if let Some(pid) = self.prior_pid {
-            if let Some(app) =
-                NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-            {
+            if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
                 let _ = crate::applications::activate(&app);
             }
         }
@@ -628,9 +625,7 @@ pub fn meeting_browser(
 ) -> Result<String, String> {
     require_permission()?;
     if snapshot.is_some() {
-        return Ok(
-            "Scène réunion déjà active. Restaurez-la avant d'en créer une autre.".into()
-        );
+        return Ok("Scène réunion déjà active. Restaurez-la avant d'en créer une autre.".into());
     }
     // This first pilot deliberately does not launch applications or guess
     // which Teams pop-out is a meeting. The user opens the wanted windows.
