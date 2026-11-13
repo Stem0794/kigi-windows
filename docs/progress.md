@@ -671,3 +671,33 @@ vérifiés ; 806 932 octets, SHA256
 `8d8f47c8cb706cf15c2a3444ab7ded8794e85d7da03dfa0ddceb2c06cb69f0f7`.
 Le retour sur macOS 26.7.2 ARM64 et le trackpad physique reste à confirmer.
 Ces essais utilisent des fenêtres contrôlées, pas Teams/Chrome sur le Mac pilote.
+
+## 2026-11-13 — Studio 0.6.0, phases 0–1 (branche dédiée)
+
+L’utilisateur confirme la correction 0.5.4 et demande l’étape suivante. Reprise
+sur main67f0305 ; contrat Studio utilisateur lu, phases0–1 sur ui/studio-shell.
+Audit/branchements/baseline dans docs/studio-contract.md.
+
+Fenêtre redimensionnable locale WKWebView, trois colonnes, Accueil/Espaces/
+Autorisations/Diagnostics en lecture seule. Catalogue réel relu sans écriture,
+profils libres conservés, fallback signalé, mémoire des auxiliaires inconnue.
+Bridge JSON v1 borné/strict/allowlist, document principal local et vue vérifiés,
+navigation externe bloquée, assets packagés, CSP sans réseau et valeurs texte.
+Aucune modification de la reconnaissance des gestes ou de l’activation0.5.4.
+
+Ancienne UI par défaut ; ouvrir Studio via menu ou --studio-ui, --native-ui force
+le secours. Aucun cutover ou merge main dans cette tranche. L’édition des ratios
+et la sauvegarde restent la phase2. CI étendue d’un seul essai WKWebView réel,
+avec rendu DOM, réouverture et config inchangée ; régressions natives conservées.
+Format, typage ARM et22 tests hôte passent. Validation macOS/package en attente.
+
+Validation finale Studio : [run43416541318, tentative2](https://github.com/Stem0794/kigi-windows/actions/runs/43416541318)
+réussi au commit1b479adb :25 tests natifs, deux démarrages, bridge/WKWebView/DOM,
+fermeture-réouverture, config inchangée et quatre régressions de focus. La première
+tentative avait échoué sur un timeout AX250ms à la maximisation plein écran,
+après succès Studio ; relance unique sans modification du moteur ou du contrôle.
+RSS Rust37 343 232→42 467 328 octets (auxiliaires WebKit non mesurés).
+Bundle0.6.0/build20 universel, assets locaux, CRC/plist/architectures vérifiés ;
+868101 octets, SHA256e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74.
+[PR#1](https://github.com/Stem0794/kigi-windows/pull/1), main conservée en0.5.4.
+Essais physiques Studio/VoiceOver encore requis ; phase2 non commencée.

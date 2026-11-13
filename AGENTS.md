@@ -107,3 +107,13 @@ Vérifier le cas maximisé et le cas plein écran natif sur fenêtres de test
 contrôlées, sans screenshots ni événements clavier synthétiques. La fixture
 Swift est uniquement un outil de validation CI, pas une couche livrée dans
 l’app Rust. Le mode de vérification cible uniquement la fixture dédiée.
+
+## Studio autorisé — 13 novembre 2026
+
+Après confirmation de la correction 0.5.4, reprendre le plan utilisateur Studio
+sur branche UI dédiée et PR séparée. Pour cette tranche : phases 0–1, WKWebView
+locale et bridge strict en lecture seule, ancien AppKit conservé par défaut.
+Cette architecture remplace pour l’interface la restriction WebView historique
+du handover initial ; moteur, taps, hotkeys et snapshots restent Rust natifs.
+Ne pas merger main avant revue, ni anticiper CRUD/ratio/Apply/Restore ou parité.
+Références et branchements : docs/studio-contract.md.

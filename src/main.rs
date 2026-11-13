@@ -27,6 +27,9 @@ mod trackpad;
 #[cfg(target_os = "macos")]
 mod windows;
 
+#[cfg(any(target_os = "macos", test))]
+mod studio;
+
 fn main() {
     #[cfg(target_os = "macos")]
     app::run();
