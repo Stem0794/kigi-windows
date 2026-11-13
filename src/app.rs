@@ -107,6 +107,7 @@ struct State {
     studio_store: RefCell<studio::store::Store>,
     studio_quit_confirmed: Cell<bool>,
     studio_editor_polls: Cell<u8>,
+    studio_render_polls: Cell<u8>,
     studio_shortcuts: RefCell<studio::shortcut_store::ShortcutStore>,
     studio_recorder: RefCell<Option<Retained<crate::shortcut_recorder::Recorder>>>,
     studio_capture_result: RefCell<Option<Option<(u32, u32, String)>>>,
@@ -348,9 +349,16 @@ define_class!(
         fn native_fallback(&self,_:Option<&AnyObject>){self.ivars().studio_selected.set(false);self.open_profiles();}
         #[unsafe(method(studioRenderCheck:))]
         fn studio_render_check(&self,_:Option<&AnyObject>){
+            if !std::env::args().any(|a|a=="--studio-check") {return;}
+            let count=self.ivars().studio_render_polls.get()+1;
+            self.ivars().studio_render_polls.set(count);
+            if count > 80 {println!("KIGI_STUDIO_RENDER_TIMEOUT");return;}
+            if let Some(studio)=self.ivars().studio.borrow().as_ref(){studio.check_render();}
+        }
+        #[unsafe(method(studioCheckReady:))]
+        fn studio_check_ready(&self,_:Option<&AnyObject>){
             if std::env::args().any(|a|a=="--studio-check") {
                 if let Some(studio)=self.ivars().studio.borrow().as_ref(){
-                    studio.check_render();
                     let registered=self.ivars().hotkeys.borrow().is_some();
                     studio.window.close();
                     studio.show(self.mtm());
@@ -2151,6 +2159,17 @@ pub fn studio_loaded() {
     }
     CONTROLLER.with(|slot| {
         if let Some(c)=slot.borrow().as_ref(){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioRenderCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.5f64];}}
+    });
+}
+pub fn studio_render_result(ready: bool) {
+    if !std::env::args().any(|a| a == "--studio-check") {
+        return;
+    }
+    CONTROLLER.with(|slot| {
+        if let Some(c)=slot.borrow().as_ref(){unsafe{
+            let selector=if ready {sel!(studioCheckReady:)}else{sel!(studioRenderCheck:)};
+            let _:()=msg_send![&**c,performSelector:selector,withObject:std::ptr::null::<AnyObject>(),afterDelay:0.1f64];
+        }}
     });
 }
 pub fn studio_failed() {

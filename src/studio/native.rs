@@ -256,7 +256,15 @@ impl Studio {
             if error.is_null() {
                 if let Some(value) = unsafe { value.as_ref() } {
                     if let Some(text) = value.downcast_ref::<NSString>() {
-                        println!("KIGI_STUDIO_RENDER {}", text);
+                        let state =
+                            serde_json::from_str::<serde_json::Value>(&text.to_string()).ok();
+                        let ready = state
+                            .as_ref()
+                            .is_some_and(|s| s["busy"] == "false" && s["title"].is_string());
+                        if ready {
+                            println!("KIGI_STUDIO_RENDER {}", text);
+                        }
+                        crate::app::studio_render_result(ready);
                     }
                 }
             }
