@@ -20,16 +20,20 @@
     assert(q('#apply-space').disabled && !q('#restore-layout').hidden && !q('#restore-layout').disabled, 'Snapshot controls incoherent');
     assert(q('#layout-result').dataset.status === (minimum ? 'partial' : 'applied'), `Wrong apply status; ${q('#layout-result')?.textContent}`);
     const text = q('#layout-result').textContent; assert(text.includes('35 %'), 'Requested split not reported');
+    const reportedWidths = q('#layout-result').querySelectorAll('dd')[1].textContent.split(' / ').map(value => parseFloat(value));
+    assert(reportedWidths.every(Number.isFinite), 'Fixture geometry was not measured');
     let refused = false;
     const saved = await Kigi.request('spaces.list');
     try { await Kigi.request('spaces.apply', {profileId: saved.profiles[0].id, expectedRevision: saved.revision}); } catch (error) { refused = error.code === 'SNAPSHOT_ACTIVE'; }
     assert(refused, 'Existing return point overwritten');
+    // Keep the controlled placement visible long enough for independent CG bounds sampling.
+    await new Promise(resolve => setTimeout(resolve, 750));
     q('#restore-layout').click();
     await wait(() => q('#layout-result')?.dataset.operation === 'restore' && !q('#refresh').disabled);
     assert(q('#layout-result').dataset.status === 'restored', `Restore failed: ${q('#layout-result').textContent}`);
     assert(!(await Kigi.request('diagnostics.summary')).restoreAvailable && q('#restore-layout').hidden, 'Return point not cleared');
     assert(!q('#apply-space').disabled, 'Apply not reenabled after restore');
     const final = await Kigi.request('spaces.list'); assert(final.profiles[0].windows[0].geometry.width === .35, 'Apply/restore changed requested ratio');
-    window.__kigiEditorCheck = {success: true, minimum, ratio: .35, restored: true};
+    window.__kigiEditorCheck = {success: true, minimum, ratio: .35, restored: true, reportedWidths};
   } catch (error) { window.__kigiEditorCheck = {success: false, message: String(error.message)}; }
 })();

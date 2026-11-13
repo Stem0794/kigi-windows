@@ -67,18 +67,29 @@ with tempfile.TemporaryDirectory(prefix="kigi-layout-") as directory:
             environment["KIGI_TEST_STUDIO_CONFIG"] = str(path); environment["KIGI_TEST_STUDIO_LAYOUT"] = "1"
             app = subprocess.Popen([str(binary), "--studio-check", "--studio-editor-check"], env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0); processes.append(app)
             output = []; result = None; deadline = time.monotonic() + 35
+            observed = None; last_sample = 0
             while time.monotonic() < deadline and result is None:
                 if app.poll() is not None: break
+                if time.monotonic() - last_sample >= .15:
+                    current = frames(); last_sample = time.monotonic()
+                    left_frame, right_frame = current[source.pid], current[target.pid]
+                    width, height, x, y = [before[source.pid][key] for key in ["Width", "Height", "X", "Y"]]
+                    left_ok = left_frame["Width"] >= width * .55 - 8 if minimum else abs(left_frame["Width"] - width * .35) <= 8
+                    if left_ok and abs(left_frame["X"]-x) <= 8 and abs(right_frame["X"]-(x+width*.35)) <= 8 and abs(right_frame["Width"]-width*.65) <= 8 and all(abs(frame["Height"]-height)<=8 and abs(frame["Y"]-y)<=8 for frame in [left_frame,right_frame]):
+                        observed = current
                 readable, _, _ = select.select([app.stdout], [], [], .2)
                 if readable:
                     line = app.stdout.readline().decode(errors="replace"); output.append(line)
                     if line.startswith("KIGI_STUDIO_EDITOR "): result = json.loads(line.removeprefix("KIGI_STUDIO_EDITOR "))
             assert result and result["success"] and result["restored"], "".join(output)
+            assert observed, "No independent sample of the requested placement"
+            for pid, reported in zip([source.pid,target.pid], result["reportedWidths"]):
+                assert abs(observed[pid]["Width"] - before[source.pid]["Width"] * reported / 100) <= 8, "Studio geometry differed from CG bounds"
             after = frames()
             for pid in before:
                 assert all(abs(before[pid][key] - after[pid][key]) <= 8 for key in ["X", "Y", "Width", "Height"]), {"before": before, "after": after}
             if minimum: assert path.read_bytes() == saved_bytes, "Apply/restore wrote saved config"
             assert json.loads(path.read_text())["profiles"][0]["windows"][0]["geometry"]["width"] == .35
-            print("LAYOUT_VERIFIED " + json.dumps({"minimum_size": minimum, "real_frames_restored": True, "result": result}))
+            print("LAYOUT_VERIFIED " + json.dumps({"minimum_size": minimum, "real_placement_observed": True, "reported_geometry_matches": True, "real_frames_restored": True, "result": result}))
         finally:
             for process in reversed(processes): stop(process)
