@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.6.2 (aperçu)
+# Kigi Windows — Studio 0.6.3 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -6,7 +6,8 @@ Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 ## Studio : éditeur d’espaces
 
 Depuis le menu Kigi, choisir **Ouvrir Studio…**. Interface redimensionnable :
-Accueil, Espaces, Autorisations et Diagnostics avec données réelles. Dans Espaces :
+Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations et Diagnostics avec
+données réelles. Dans Espaces :
 créer ou sélectionner un espace, choisir ses apps, glisser le séparateur ou saisir
 les proportions1–99 %, puis **Enregistrer**. Presets50/50,35/65,70/30,30/70 ;
 flèches pour ajuster au clavier. L’aperçu et la sauvegarde ne déplacent pas les fenêtres.
@@ -20,8 +21,13 @@ partiel et la proportion demandée est conservée. **Restaurer** revient aux pos
 précédentes, en préservant les fenêtres déplacées manuellement ; un retour incertain
 reste disponible. Un seul retour est conservé, partagé avec les dispositions classiques.
 Ouvrez les deux fenêtres avant d’appliquer ; aucune fenêtre de remplacement n’est créée.
-Les réglages classiques restent le défaut et donnent accès aux raccourcis et gestes.
-Leur parité dans Studio vient à l’étape suivante.
+Studio propose maintenant Raccourcis, Trackpad, Souris, Autorisations et Diagnostics.
+Capture des combinaisons dans une fenêtre native, édition d’app/action, activation,
+conflits et relecture ; les fichiers invalides ne sont pas écrasés. Les essais du
+trackpad affichent les vrais compteurs, sans prétendre valider le global depuis un
+test local. Les options souris distinguent préférence et filtre actif. Copie/export
+utilisent le rapport du moteur. Les réglages classiques restent le secours et le défaut
+de lancement pendant cette validation ; `--studio-ui` permet de choisir Studio.
 
 Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
 fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.

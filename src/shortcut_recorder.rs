@@ -1,6 +1,8 @@
 //! A focused, explicit shortcut field. No global keyboard listener or text storage.
 use objc2::{define_class, msg_send, rc::Retained, DefinedClass, MainThreadOnly};
-use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSTextField, NSView};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSEvent, NSEventModifierFlags, NSTextField, NSView,
+};
 use objc2_foundation::{MainThreadMarker, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, OnceCell};
 
@@ -48,6 +50,7 @@ impl Recorder {
             NSPoint::new(8.0, 8.0),
             NSSize::new(314.0, 28.0),
         ));
+        text.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
         view.addSubview(&text);
         view.ivars().label.set(text).ok();
         view

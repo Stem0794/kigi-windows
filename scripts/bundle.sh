@@ -24,7 +24,7 @@ else
   cp "target/${targets[0]}/release/kigi-windows" "$bundle/Contents/MacOS/kigi-windows"
 fi
 mkdir -p "$bundle/Contents/Resources/studio"
-cp ui/index.html ui/styles.css ui/app.js ui/bridge.js "$bundle/Contents/Resources/studio/"
+cp ui/index.html ui/styles.css ui/app.js ui/bridge.js ui/system.js "$bundle/Contents/Resources/studio/"
 cp resources/Info.plist "$bundle/Contents/Info.plist"
 plutil -lint "$bundle/Contents/Info.plist"
 # Local development only. Not a Developer ID signature or notarization.

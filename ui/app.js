@@ -1,8 +1,8 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}, layoutResult: null};
-  const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
+  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}, layoutResult: null, nativeDirty: false};
+  const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['shortcuts', 'Raccourcis', '⌘'], ['gestures', 'Trackpad', '◫'], ['mouse', 'Souris', '◉'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
   const button = (label, action, className = '') => { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', action); return node; };
   const names = bundle => ({'com.google.Chrome': 'Google Chrome', 'com.microsoft.teams2': 'Microsoft Teams', 'com.microsoft.teams': 'Microsoft Teams', 'com.apple.Safari': 'Safari'})[bundle] || bundle;
@@ -16,7 +16,7 @@
     state.busy = true; $('refresh').disabled = true; $('content').setAttribute('aria-busy', 'true');
     try {
       const data = await Kigi.request('app.bootstrap');
-      state.data = data; state.draft = null; state.original = null; state.invalid.clear();
+      state.data = data; KigiSystem.reset(); state.draft = null; state.original = null; state.invalid.clear();
       if (!profiles().some(p => p.id === state.selected)) state.selected = profiles()[0]?.id ?? null;
       $('error').hidden = true;
       if (data.spaces.usingBackup) failure(new Error('Le catalogue principal est illisible. Les espaces de sauvegarde sont affichés ; ouvrez les réglages classiques pour les vérifier.'));
@@ -26,7 +26,7 @@
     } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou ouvrez les réglages classiques.')); }
     finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); if (state.data) render(); }
   }
-  async function navigate(route, id = state.selected) { if (!(await guardDraft())) return; state.route = route; state.selected = id; state.draft = null; state.original = null; state.invalid.clear(); render(); $('page-title')?.focus(); }
+  async function navigate(route, id = state.selected) { if (!(await guardDraft())) return; KigiSystem.stopPolling(); KigiSystem.reset(); state.route = route; state.selected = id; state.draft = null; state.original = null; state.invalid.clear(); render(); $('page-title')?.focus(); }
   function field(parent, label, value, className = '') { const dl = el('dl', 'field'); dl.append(el('dt', '', label), el('dd', className, value)); parent.append(dl); }
   function heading(parent, title, subtitle) { const h = el('h1', '', title); h.id = 'page-title'; h.tabIndex = -1; parent.append(h); if (subtitle) parent.append(el('p', '', subtitle)); }
   function preview(profile, small = false) {
@@ -77,13 +77,14 @@
     const near = (a, b) => Math.abs(a - b) < 1e-9;
     return percent >= 1 && percent <= 99 && near(a.width * 100, percent) && near(a.x, 0) && near(a.y, 0) && near(b.y, 0) && near(a.height, 1) && near(b.height, 1) && near(b.x, a.width) && near(b.x + b.width, 1) ? percent : null;
   }
+  function syncNativeDirty() {
+    const dirty = state.dirty || KigiSystem.dirty();
+    if (dirty !== state.nativeDirty) { state.nativeDirty = dirty; state.dirtySync = state.dirtySync.catch(() => {}).then(() => Kigi.request('app.setDraftDirty', {dirty})); state.dirtySync.catch(failure); }
+    return state.dirtySync;
+  }
   function dirtyChanged() {
     const dirty = !!state.draft && (!state.original || JSON.stringify(state.draft) !== JSON.stringify(state.original) || state.invalid.size > 0);
-    if (dirty !== state.dirty) {
-      state.dirty = dirty;
-      state.dirtySync = state.dirtySync.catch(() => {}).then(() => Kigi.request('app.setDraftDirty', {dirty}));
-      state.dirtySync.catch(failure);
-    }
+    state.dirty = dirty; syncNativeDirty();
     const indicator = $('draft-indicator'); if (indicator) indicator.hidden = !dirty;
     const save = $('save-space'); if (save) save.disabled = state.busy || !dirty || !state.data?.spaces.canWrite || state.invalid.size > 0;
     const apply = $('apply-space'); if (apply) apply.disabled = state.busy || !state.data?.spaces.canWrite || !!state.data?.diagnostics.restoreAvailable || state.invalid.size > 0 || !state.draft?.name.trim() || state.draft?.windows.some(w => !w.bundle_id);
@@ -95,6 +96,7 @@
   async function discardDraft() { resetDraft(); await state.dirtySync; render(); $('status').textContent = 'Modifications ignorées'; }
   async function guardDraft() {
     if (state.busy || modalResolve) return false;
+    if (KigiSystem.dirty() && !(await KigiSystem.guard())) return false;
     if (!state.dirty) return true;
     const choice = await choose('Modifications non enregistrées', 'Enregistrer cet espace avant de continuer ?', [['save', 'Enregistrer', 'primary'], ['discard', 'Ignorer'], ['cancel', 'Annuler']]);
     if (choice === 'save') return saveDraft();
@@ -105,7 +107,7 @@
     state.busy = busy;
     $('refresh').disabled = busy; $('restore-layout').disabled = busy || !state.data?.diagnostics.restoreAvailable;
     $('content').setAttribute('aria-busy', String(busy));
-    if (busy) document.querySelectorAll('#content button, #inspector button, #inspector input, #navigation button, #spaces-list button').forEach(n => { n.disabled = true; });
+    if (busy) document.querySelectorAll('#content button, #content input, #content select, #inspector button, #inspector input, #inspector select, #navigation button, #spaces-list button').forEach(n => { n.disabled = true; });
   }
   async function newSpace() {
     if (!(await guardDraft())) return;
@@ -239,14 +241,14 @@
     inspector.append(el('div', 'rule'), el('p', '', state.data.diagnostics.restoreAvailable ? 'Une disposition temporaire est active. Restaurez-la avant un nouveau placement.' : 'Appliquer déplace les fenêtres ouvertes et crée un retour de restauration.'), button('Réglages classiques', native, 'subtle'));
     dirtyChanged();
   }
-  window.KigiEditor = {async requestClose(quit) { try { if (await guardDraft()) { await state.dirtySync; await Kigi.request(quit ? 'app.quit' : 'app.closeStudio'); } } catch (error) { failure(error); } }};
+  window.KigiEditor = {async requestClose(quit) { try { if (await guardDraft()) { await state.dirtySync; KigiSystem.stopPolling(); await Kigi.request(quit ? 'app.quit' : 'app.closeStudio'); } } catch (error) { failure(error); } }};
   function render() {
     if (!state.data) return;
     $('restore-layout').hidden = !state.data.diagnostics.restoreAvailable; $('restore-layout').disabled = state.busy || !state.data.diagnostics.restoreAvailable;
     const data = state.data, content = $('content'), inspector = $('inspector');
     content.replaceChildren(); inspector.replaceChildren(); $('navigation').replaceChildren(); $('spaces-list').replaceChildren();
     for (const [route, label, icon] of routes) {
-      const item = button('', () => navigate(route), state.route === route ? 'active' : ''); item.append(el('span', 'nav-icon', icon), el('span', '', label)); item.setAttribute('aria-current', state.route === route ? 'page' : 'false'); $('navigation').append(item);
+      const item = button('', () => navigate(route), state.route === route ? 'active' : ''); item.append(el('span', 'nav-icon', icon), el('span', '', label)); item.dataset.route = route; item.setAttribute('aria-current', state.route === route ? 'page' : 'false'); $('navigation').append(item);
     }
     for (const profile of profiles()) { const item = button('', () => navigate('spaces', profile.id), state.route === 'spaces' && state.selected === profile.id ? 'active' : ''); item.append(el('span', 'space-marker', '▣'), el('span', '', profile.name)); $('spaces-list').append(item); }
     if (!profiles().length) $('spaces-list').append(el('span', 'muted', 'Aucun espace enregistré'));
@@ -259,18 +261,8 @@
       else profiles().forEach(p => content.append(card(p)));
     } else if (state.route === 'spaces') {
       renderEditor(content, inspector);
-    } else if (state.route === 'permissions') {
-      heading(content, 'Autorisations', 'Les droits sont lus depuis macOS, sans déclencher de demande.');
-      for (const [key, label, description] of [['accessibility', 'Accessibilité', 'Déplacement des fenêtres et passage au premier plan.'], ['inputMonitoring', 'Surveillance de l’entrée', 'Réception des événements du trackpad.'], ['chromeAutomation', 'Automatisation Chrome', 'Réutilisation des onglets ChatGPT. Cet accès reste non vérifié dans Studio.']]) {
-        const row = el('div', 'permission'), head = el('div', 'card-head'); head.append(el('h2', '', label), el('span', `state ${data.permissions[key]}`, permissionName(data.permissions[key]))); row.append(head, el('p', '', description)); content.append(row);
-      }
-      const card = el('div', 'card'); card.style.marginTop = '24px'; card.append(el('p', '', 'Demandez un accès ou ouvrez Réglages Système depuis les réglages classiques.'), button('Gérer les autorisations', native)); content.append(card);
-    } else {
-      heading(content, 'Diagnostics', 'Mesures de cette session. Utilisez Actualiser après un essai.');
-      const stats = el('div', 'stats'); for (const [label, bytes] of [['Mémoire Rust actuelle', data.diagnostics.rustRssBytes], ['Pic mémoire Rust', data.diagnostics.rustPeakRssBytes]]) { const stat = el('div', 'stat'); stat.append(el('small', '', label), el('strong', '', bytes == null ? 'Non mesuré' : `${(bytes / 1048576).toFixed(1)} Mio`)); stats.append(stat); } content.append(stats);
-      const report = el('pre', 'report', data.diagnostics.performance); content.append(report, el('p', '', 'La mémoire des processus auxiliaires WebKit n’est pas mesurée. Les valeurs ci-dessus concernent le processus Rust.'), button('Ouvrir les réglages classiques', native));
-    }
-    if (state.route !== 'spaces') {
+    } else { KigiSystem.render(state.route, content, inspector); }
+    if (state.route === 'home') {
       field(inspector, 'Accessibilité', permissionName(data.permissions.accessibility), `state ${data.permissions.accessibility}`);
       field(inspector, 'Raccourcis', data.diagnostics.shortcutConflict ? 'Conflit à vérifier' : data.diagnostics.shortcutsEnabled ? 'Activation demandée' : 'Désactivés');
       field(inspector, 'Gestes du trackpad', data.diagnostics.gesturesActive ? 'Pilote actif' : 'Pilote arrêté');
@@ -281,6 +273,7 @@
   function properties(open) { $('inspector').classList.toggle('open', open); $('properties').setAttribute('aria-expanded', String(open)); }
   $('properties').addEventListener('click', () => properties(!$('inspector').classList.contains('open')));
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('inspector').classList.contains('open')) { properties(false); $('properties').focus(); } });
+  KigiSystem.setup({el, button, field, heading, choose, fail: failure, guard: guardDraft, syncDirty: syncNativeDirty, busy: () => state.busy, setBusy: setEditorBusy, data: () => state.data, route: () => state.route, replace: data => { state.data = data; }, render, status: text => { $('status').textContent = text; }, clearError: () => { if (!state.data?.spaces.usingBackup) $('error').hidden = true; }});
   $('restore-layout').addEventListener('click', () => layoutAction(true));
   $('refresh').addEventListener('click', refresh); $('native').addEventListener('click', native);
   refresh();

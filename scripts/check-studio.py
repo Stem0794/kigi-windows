@@ -24,7 +24,7 @@ try:
                     rows[prefix] = json.loads(line.removeprefix(prefix + " "))
     assert app.poll() is None and len(rows) == 3, "".join(output)
     assert rows["KIGI_STUDIO_READY"]["protocolVersion"] == 1
-    assert rows["KIGI_STUDIO_RENDER"] == {"title": "Un espace pour chaque moment.", "tabs": 4, "busy": "false", "error": False}, rows
+    assert rows["KIGI_STUDIO_RENDER"] == {"title": "Un espace pour chaque moment.", "tabs": 7, "busy": "false", "error": False}, rows
     lifecycle = rows["KIGI_STUDIO_LIFECYCLE"]
     assert lifecycle["reopened"] and lifecycle["hotkeysRetained"], rows
     assert (config.read_bytes() if config.exists() else None) == before, "Read-only UI changed config"

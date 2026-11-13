@@ -183,3 +183,51 @@ changement d’écran restent des vérifications Mac pilote ; pas d’extrapolat
 à Chrome/Teams ou macOS26.7.2 ARM depuis les fixtures macOS15.7.9 Intel.
 Le paquet0.6.2/build22 est Intel/ARM ; le temps total mémoire des auxiliaires WebKit
 reste non mesuré. Les gestes et leurs seuils n’ont pas été modifiés.
+
+## Phase4 — réglages système, 0.6.3
+
+Branche ui/studio-system basée sur ui/studio-apply. Sept pages Studio : Accueil,
+Espaces, Raccourcis, Trackpad, Souris, Autorisations et Diagnostics. Fallback et
+ouverture AppKit par défaut conservés ; cutover et previewApply restent distincts.
+
+Adaptateurs du Controller dans src/studio/controller.rs, services existants seuls
+propriétaires. UI locale supplémentaire system.js, aucune librairie frontend.
+Commandes système typées dans studio/system.rs : pas de shell, URL libre ou JSON
+arbitraire exécuté. Réglages Système ouvert par son bundle installé en allowlist ;
+la section validée sert au guidage, sans prétendre ouvrir un lien profond non public.
+
+Raccourcis : CRUD, choix d’app via sélecteur natif existant, test de commande enregistrée,
+activation globale, reset confirmé, relecture volontaire et réenregistrement. Revision
+opaque associée aux octets exacts et aux réglages réellement chargés. Fichier externe
+modifié/invalide : sauvegarde bloquée, moteur conservé ; relecture explicite avant
+édition. Writer atomique existant renforcé d’un contrôle exact avant rename pour Studio.
+Enregistrement Carbon candidat avant écriture ; rollback sur échec d’enregistrement
+ou d’écriture. Les anciens handlers sont retirés/restaurés selon la même transaction
+que l’interface classique. Global off n’est pas assimilé à une entrée active.
+
+Capture : même Recorder AppKit dans une petite NSWindow modale volontaire, premier
+répondant explicite, anciens hotkeys suspendus, Échap/perte de focus/fermeture/15s
+annulent. Aucun moniteur clavier global ou keydown JS. La combinaison n’est persistée
+qu’au clic Enregistrer. Capture terminée : restitution des hotkeys ; un refus Carbon
+est signalé au lieu d’un succès inventé. Brouillons raccourcis et espaces sont gardés
+par le même Save/Discard/Cancel, y compris fermeture et ⌘Q.
+
+Gestes : activation/désactivation, fenêtre de test local réelle, diagnostic global
+passif, compteurs réels et bilan. Mode expérimental et seuils10 % inchangés, pas de
+mapping configuré fictif. UI : suivi demandé13s au maximum, arrêt à la navigation/
+fermeture ; aucun polling au repos. Le pilote natif garde sa politique d’interruption
+et de réactivation manuelle. Compteurs absents : Non mesuré, pas0.
+
+Souris : préférence/filtre actif séparés, réactivation manuelle et vrai rapport du tap.
+Permissions : lecture sans demande ; demandes AX/entrée seulement sur action. Chrome
+reste unknown tant qu’aucun appel réel n’a fourni une preuve ; denied seulement pour
+-1743, granted après réponse AppleScript ; état de dernier appel, pas une promesse TCC
+actuelle. Rapports copier/export proviennent du backend authentique ; NSSavePanel .txt.
+Tester une commande ne prétend pas qu’une activation asynchrone a déjà réussi.
+
+Validation ajoutée : un raccourci Carbon réservé par une fixture dédiée, échec candidat
+et rollback observés ; vraie fenêtre Recorder ouverte/focalisée, suspension observée,
+annulation native puis restitution ; CRUD/UI, pages, rapport dans pbpaste et relecture
+après relance. Config/shortcuts temporaires uniquement sous mode de vérification,
+NSUserDefaults globaux réels non écrits par cette vérification. Aucune frappe système
+synthétique, aucun contact simulé, aucun screenshot ou contenu tiers.
