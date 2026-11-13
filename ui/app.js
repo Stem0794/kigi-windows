@@ -131,19 +131,20 @@
     if (state.dirty && await choose('Remplacer les positions du brouillon ?', 'La capture remplacera les deux fenêtres et leurs positions. Le nom et le brouillon restent non enregistrés.', [['capture', 'Capturer'], ['cancel', 'Annuler']]) !== 'capture') return;
     const previous = clone(state.draft), original = clone(state.original);
     const revision = previous ? state.draftRevision : state.data.spaces.revision;
+    let feedback = null;
     setEditorBusy(true);
     try {
       const result = await Kigi.request('spaces.capture', {expectedRevision: revision});
-      if (result.canceled) { $('status').textContent = 'Capture annulée · aucune modification'; return; }
+      if (result.canceled) { feedback = 'Capture annulée · aucune modification'; return; }
       const profile = previous || current();
       let name = 'Disposition capturée'; const existing = new Set(profiles().map(p => p.name.toLowerCase()));
       for (let n = 2; existing.has(name.toLowerCase()); n++) name = `Disposition capturée ${n}`;
       state.route = 'spaces'; state.original = previous ? original : clone(profile); state.selected = profile?.id ?? null;
       state.draft = {id: profile?.id ?? null, name: profile?.name || name, windows: result.windows};
       state.draftRevision = revision; state.splitEdited = false; state.invalid.clear();
-      dirtyChanged(); $('error').hidden = true; $('status').textContent = 'Disposition capturée · cliquez sur Enregistrer';
+      dirtyChanged(); $('error').hidden = true; feedback = 'Disposition capturée · cliquez sur Enregistrer';
     } catch (error) { failure(error); }
-    finally { setEditorBusy(false); render(); }
+    finally { setEditorBusy(false); render(); if (feedback) $('status').textContent = feedback; }
   }
   async function saveDraft() {
     if (state.busy || !state.draft) return false;
