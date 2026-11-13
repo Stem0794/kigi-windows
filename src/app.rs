@@ -6,6 +6,7 @@ use crate::{
     mouse_scroll::MouseScrollTap,
     preferences::{Preferences, RuntimeSettings},
     shortcuts::{self, Binding, Command, Shortcuts},
+    studio,
     trackpad::Tap,
     windows::{self, Snapshot},
 };
@@ -99,6 +100,8 @@ struct State {
     local_window: RefCell<Option<Retained<NSWindow>>>,
     preferences: RefCell<Option<Preferences>>,
     preferences_anchor: Cell<Option<i32>>,
+    studio: RefCell<Option<studio::Studio>>,
+    studio_selected: Cell<bool>,
     catalog: RefCell<config::Catalog>,
     profiles_menu: OnceCell<Retained<NSMenu>>,
     tap: RefCell<Option<Tap>>,
@@ -230,7 +233,7 @@ define_class!(
         }
         #[unsafe(method(startupReport:))]
         fn startup_report(&self,_:Option<&AnyObject>){
-            let visible=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.window.isVisible());
+            let visible=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.window.isVisible()) || self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible());
             println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
         }
         #[unsafe(method(copyLogs:))]
@@ -334,7 +337,31 @@ define_class!(
         #[unsafe(method(applyLayout:))]
         fn apply_layout(&self, _: Option<&AnyObject>) { self.open_profiles(); }
         #[unsafe(method(openProfiles:))]
-        fn open_profiles_action(&self, _: Option<&AnyObject>) { self.open_profiles(); }
+        fn open_profiles_action(&self, _: Option<&AnyObject>) { self.open_main_ui(); }
+        #[unsafe(method(openStudio:))]
+        fn open_studio_action(&self,_:Option<&AnyObject>){self.open_studio();}
+        #[unsafe(method(nativeFallback:))]
+        fn native_fallback(&self,_:Option<&AnyObject>){self.ivars().studio_selected.set(false);self.open_profiles();}
+        #[unsafe(method(studioRenderCheck:))]
+        fn studio_render_check(&self,_:Option<&AnyObject>){
+            if std::env::args().any(|a|a=="--studio-check") {
+                if let Some(studio)=self.ivars().studio.borrow().as_ref(){
+                    studio.check_render();
+                    let registered=self.ivars().hotkeys.borrow().is_some();
+                    studio.window.close();
+                    studio.show(self.mtm());
+                    println!("KIGI_STUDIO_LIFECYCLE {}",serde_json::json!({"reopened":studio.window.isVisible(),"hotkeysRetained":registered && self.ivars().hotkeys.borrow().is_some()}));
+                }
+            }
+        }
+        #[unsafe(method(studioLoadTimeout:))]
+        fn studio_timeout(&self,_:Option<&AnyObject>){
+            if self.ivars().studio.borrow().as_ref().is_some_and(|s|!s.ready()) {
+                diagnostics::record("studio.load_failed","bootstrap_timeout=true");
+                self.ivars().studio_selected.set(false);
+                self.open_profiles();
+            }
+        }
         #[unsafe(method(profileSelected:))]
         fn profile_selected(&self, _: Option<&AnyObject>) {
             if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
@@ -663,7 +690,7 @@ define_class!(
     }
     unsafe impl NSApplicationDelegate for Controller {
         #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
-        fn reopen(&self, _: &NSApplication, _: bool) -> bool { self.open_profiles(); true }
+        fn reopen(&self, _: &NSApplication, _: bool) -> bool { self.open_main_ui(); true }
         #[unsafe(method(applicationShouldTerminateAfterLastWindowClosed:))]
         fn keep_running(&self, _: &NSApplication) -> bool { false }
         #[unsafe(method(applicationDidBecomeActive:))]
@@ -925,6 +952,41 @@ impl Controller {
                 }
             }
             Err(e) => self.status(&e),
+        }
+    }
+    fn open_main_ui(&self) {
+        if !std::env::args().any(|a| a == "--native-ui")
+            && (self.ivars().studio_selected.get()
+                || std::env::args().any(|a| a == "--studio-ui" || a == "--studio-check"))
+        {
+            self.open_studio();
+        } else {
+            self.open_profiles();
+        }
+    }
+    fn open_studio(&self) {
+        if self.ivars().picking.get() {
+            return;
+        }
+        self.cancel_shortcut_capture();
+        if self.ivars().studio.borrow().is_none() {
+            match studio::Studio::new(self.mtm()) {
+                Ok(studio) => {
+                    self.ivars().studio.replace(Some(studio));
+                }
+                Err(_) => {
+                    diagnostics::record("studio.load_failed", "assets_unavailable=true");
+                    self.open_profiles();
+                    return;
+                }
+            }
+        }
+        self.ivars().studio_selected.set(true);
+        if let Some(studio) = self.ivars().studio.borrow().as_ref() {
+            studio.show(self.mtm());
+        }
+        unsafe {
+            let _: () = msg_send![self,performSelector:sel!(studioLoadTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:15.0f64];
         }
     }
     fn open_profiles(&self) {
@@ -1841,6 +1903,45 @@ fn menu_action(
     menu.addItem(&item);
     item
 }
+/// Studio reads the same backend state; never exports process metadata or paths.
+pub fn studio_command(method: &str) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    CONTROLLER.with(|slot| {
+        let slot=slot.borrow();
+        let c=slot.as_ref().ok_or("Moteur indisponible.")?;
+        let permissions=json!({"accessibility":if windows::trusted(){"granted"}else{"denied"},"inputMonitoring":if Tap::input_trusted(){"granted"}else{"denied"},"chromeAutomation":"unknown"});
+        let spaces=|| -> Result<serde_json::Value,String> {
+            let path=config::path()?;
+            let (catalog,using_backup)=config::load(&path)?.unwrap_or_default();
+            Ok(json!({"profiles":catalog.profiles,"usingBackup":using_backup}))
+        };
+        let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some()});
+        match method {
+            "app.bootstrap"=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
+            "spaces.list"=>spaces(),
+            "permissions.get"=>Ok(permissions),
+            "diagnostics.summary"=>Ok(summary()),
+            "app.openNativeFallback"=>{
+                unsafe{let _:()=msg_send![&**c,performSelector:sel!(nativeFallback:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}
+                Ok(json!({"requested":true}))
+            }
+            _=>Err("Commande indisponible.".into()),
+        }
+    })
+}
+pub fn studio_loaded() {
+    if !std::env::args().any(|a| a == "--studio-check") {
+        return;
+    }
+    CONTROLLER.with(|slot| {
+        if let Some(c)=slot.borrow().as_ref(){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioRenderCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.5f64];}}
+    });
+}
+pub fn studio_failed() {
+    diagnostics::record("studio.load_failed", "native_fallback=true");
+    let _ = studio_command("app.openNativeFallback");
+}
+
 /// Called from the main-loop CG tap. Only store one small event and defer UI/AX
 /// until the callback has returned. Disabled/menu/busy states never queue work.
 pub fn queue_gesture(edge: Edge) {
@@ -1956,6 +2057,13 @@ pub fn run() {
         }
         let menu = NSMenu::new(mtm);
         menu_action(&menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
+        menu_action(&menu, &controller, "Ouvrir Studio…", sel!(openStudio:));
+        menu_action(
+            &menu,
+            &controller,
+            "Réglages classiques…",
+            sel!(nativeFallback:),
+        );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         let profiles_menu = NSMenu::new(mtm);
         let profiles_parent = NSMenuItem::new(mtm);
@@ -1990,6 +2098,13 @@ pub fn run() {
         let app_menu = NSMenu::new(mtm);
         let open = menu_action(&app_menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
         open.setKeyEquivalent(ns_string!(","));
+        menu_action(&app_menu, &controller, "Ouvrir Studio…", sel!(openStudio:));
+        menu_action(
+            &app_menu,
+            &controller,
+            "Réglages classiques…",
+            sel!(nativeFallback:),
+        );
         let quit = menu_action(&app_menu, &controller, "Quitter Kigi", sel!(quit:));
         quit.setKeyEquivalent(ns_string!("q"));
         let app_parent = NSMenuItem::new(mtm);
@@ -2136,6 +2251,7 @@ pub fn run() {
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
         }
+        controller.ivars().studio.borrow_mut().take();
         status_bar.removeStatusItem(&status_item);
     });
 }

@@ -1,7 +1,20 @@
-# Kigi Windows — raccourcis configurables 0.5.4
+# Kigi Windows — Studio 0.6.0 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
+
+## Studio : première tranche
+
+Depuis le menu Kigi, choisir **Ouvrir Studio…**. Interface redimensionnable :
+Accueil, Espaces enregistrés, Autorisations et Diagnostics, avec données réelles
+en lecture seule. Les réglages classiques restent le défaut et donnent accès
+aux modifications, raccourcis et actions existantes. **Actualiser** relit le moteur.
+Les proportions enregistrées sont préservées ; leur édition arrive à l’étape suivante.
+
+Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
+fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
+Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
+auxiliaires WebKit non mesurés. Aperçu livré sur branche UI, avant fusion.
 
 ## Installer et utiliser
 
