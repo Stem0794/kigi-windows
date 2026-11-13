@@ -701,3 +701,13 @@ Bundle0.6.0/build20 universel, assets locaux, CRC/plist/architectures vérifiés
 868101 octets, SHA256e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74.
 [PR#1](https://github.com/Stem0794/kigi-windows/pull/1), main conservée en0.5.4.
 Essais physiques Studio/VoiceOver encore requis ; phase2 non commencée.
+
+## 2026-11-13 — Studio0.6.1, phase2 éditeur (branche séparée)
+
+Suite demandée pendant l’essai0.6.0. Base ui/studio-shell66ab813, nouvelle branche
+ui/studio-editor. Édition1–99 %, presets, drag/clavier, champs liés, choix d’apps natif,
+CRUD et sauvegarde Rust. Broillons non persistés, garde des changements à la navigation,
+fermeture et ⌘Q. Profils libres et snapshots conservés ; aucun Apply/Restore Studio.
+Révision opaque + comparaison des octets, backup/écriture atomique et refus d’un primaire
+invalide. Le détail de la fenêtre de concurrence résiduelle est dans studio-contract.
+Typage ARM, syntaxeJS et24 tests hôte passent. Essais natifs/package en attente.

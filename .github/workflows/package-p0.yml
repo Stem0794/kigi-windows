@@ -85,10 +85,12 @@ jobs:
           print("NATIVE_VALIDATION " + json.dumps({"macOS": platform.mac_ver()[0], "machine": platform.machine(), "launches": results}))
           print("Two same-bundle startups verified; no input or screenshot taken.")
           PYTHON
-      - name: Verify local Studio WebView and real bridge
-        run: python3 scripts/check-studio.py
       - name: Verify focus from maximized and native-fullscreen fixtures
         run: python3 scripts/check-focus.py
+      - name: Verify local Studio WebView and real bridge
+        run: python3 scripts/check-studio.py
+      - name: Verify isolated Studio editor and persisted relaunch
+        run: python3 scripts/check-studio-editor.py
       - name: Archive application
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"
@@ -100,7 +102,7 @@ jobs:
           with zipfile.ZipFile(path) as archive:
               assert archive.testzip() is None
               plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
-              assert plist["CFBundleShortVersionString"] == "0.6.0" and plist["CFBundleVersion"] == "20"
+              assert plist["CFBundleShortVersionString"] == "0.6.1" and plist["CFBundleVersion"] == "21"
               binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
               assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
               assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}

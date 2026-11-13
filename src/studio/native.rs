@@ -6,7 +6,9 @@ use objc2::{
     runtime::{AnyObject, ProtocolObject},
     DefinedClass, MainThreadOnly,
 };
-use objc2_app_kit::{NSApplication, NSBackingStoreType, NSScreen, NSWindow, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSApplication, NSBackingStoreType, NSScreen, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+};
 use objc2_foundation::{
     MainThreadMarker, NSBundle, NSError, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
@@ -18,6 +20,8 @@ struct HandlerState {
     entry: String,
     view: Cell<usize>,
     ready: Cell<bool>,
+    dirty: Cell<bool>,
+    editor_done: Cell<bool>,
     opened: Instant,
 }
 define_class!(
@@ -54,7 +58,7 @@ define_class!(
                 } else {
                     match bridge::parse(&raw.to_string()) {
                         Ok(request) => {
-                            let result = crate::app::studio_command(&request.method);
+                            let result = crate::app::studio_command(&request.command);
                             if request.method == "app.bootstrap"
                                 && result.is_ok()
                                 && !self.ivars().ready.replace(true)
@@ -70,11 +74,9 @@ define_class!(
                             }
                             match result {
                                 Ok(data) => bridge::success(&request.id, data),
-                                Err(message) => bridge::error(
-                                    Some(&request.id),
-                                    "BACKEND_UNAVAILABLE",
-                                    &message,
-                                ),
+                                Err(failure) => {
+                                    bridge::error(Some(&request.id), failure.code, &failure.message)
+                                }
                             }
                         }
                         Err(error) => error,
@@ -88,6 +90,26 @@ define_class!(
                 (&*text as *const NSString).cast_mut().cast(),
                 std::ptr::null_mut(),
             ));
+        }
+    }
+    unsafe impl NSWindowDelegate for Handler {
+        #[unsafe(method(windowShouldClose:))]
+        fn should_close(&self, window: &NSWindow) -> bool {
+            if !self.ivars().ready.get() {
+                return true.into();
+            }
+            if let Some(view) = window
+                .contentView()
+                .and_then(|v| v.downcast::<WKWebView>().ok())
+            {
+                unsafe {
+                    view.evaluateJavaScript_completionHandler(
+                        &NSString::from_str("window.KigiEditor.requestClose(false)"),
+                        None,
+                    );
+                }
+            }
+            false
         }
     }
     unsafe impl WKNavigationDelegate for Handler {
@@ -157,6 +179,8 @@ impl Studio {
                 .to_string(),
             view: Cell::new(0),
             ready: Cell::new(false),
+            dirty: Cell::new(false),
+            editor_done: Cell::new(false),
             opened,
         });
         let handler: Retained<Handler> = unsafe { msg_send![super(handler), init] };
@@ -210,6 +234,7 @@ impl Studio {
         unsafe {
             window.setReleasedWhenClosed(false);
         }
+        window.setDelegate(Some(ProtocolObject::from_ref(&*handler)));
         window.setTitle(&NSString::from_str("Kigi Studio"));
         window.setContentMinSize(NSSize::new(760., 520.));
         window.setContentView(Some(&view));
@@ -241,6 +266,63 @@ impl Studio {
                 .evaluateJavaScript_completionHandler(&script, Some(&reply));
         }
     }
+    pub fn check_editor(&self) {
+        let source = if std::env::var_os("KIGI_TEST_STUDIO_READBACK").is_some() {
+            "Kigi.request('spaces.list').then(s=>{window.__kigiEditorCheck={success:s.profiles.length===1&&s.profiles[0].name==='Ratio35'&&s.profiles[0].windows[0].geometry.width===0.35,width:s.profiles[0]?.windows[0].geometry.width,schema:2}}).catch(e=>{window.__kigiEditorCheck={success:false,message:e.message}});void 0;"
+        } else {
+            include_str!("../../scripts/studio-editor-check.js")
+        };
+        unsafe {
+            self.view
+                .evaluateJavaScript_completionHandler(&NSString::from_str(source), None);
+        }
+    }
+    pub fn editor_done(&self) -> bool {
+        self.handler.ivars().editor_done.get()
+    }
+    pub fn poll_editor_result(&self) {
+        let handler = self.handler.clone();
+        let reply = block2::RcBlock::new(move |value: *mut AnyObject, error: *mut NSError| {
+            if handler.ivars().editor_done.get() {
+                return;
+            }
+            if !error.is_null() {
+                handler.ivars().editor_done.set(true);
+                println!("KIGI_STUDIO_EDITOR {{\"success\":false,\"message\":\"DOM evaluation failed\"}}");
+                return;
+            }
+            if let Some(text) = unsafe { value.as_ref() }.and_then(|v| v.downcast_ref::<NSString>())
+            {
+                if text.to_string() != "null" {
+                    handler.ivars().editor_done.set(true);
+                    println!("KIGI_STUDIO_EDITOR {}", text);
+                }
+            }
+        });
+        unsafe {
+            self.view.evaluateJavaScript_completionHandler(
+                &NSString::from_str("JSON.stringify(window.__kigiEditorCheck || null)"),
+                Some(&reply),
+            );
+        }
+    }
+    pub fn dirty(&self) -> bool {
+        self.handler.ivars().dirty.get()
+    }
+    pub fn set_dirty(&self, dirty: bool) {
+        self.handler.ivars().dirty.set(dirty);
+    }
+    pub fn request_close(&self, quit: bool) {
+        let source = if quit {
+            "window.KigiEditor.requestClose(true)"
+        } else {
+            "window.KigiEditor.requestClose(false)"
+        };
+        unsafe {
+            self.view
+                .evaluateJavaScript_completionHandler(&NSString::from_str(source), None);
+        }
+    }
     pub fn ready(&self) -> bool {
         self.handler.ivars().ready.get()
     }
@@ -262,6 +344,7 @@ impl Drop for Studio {
                 &NSString::from_str("kigi"),
                 &WKContentWorld::pageWorld(self.window.mtm()),
             );
+            self.window.setDelegate(None);
             self.window.close();
         }
     }

@@ -77,3 +77,38 @@ Package0.6.0/build20 : 868101 octets, SHA256
 `e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74`.
 Intel/ARM et ressources locales validés. Revue visuelle/VoiceOver et essais M5
 physiques restent à réaliser ; aucun résultat Chromium ou terrain inventé.
+
+## Phase2 — éditeur, 0.6.1
+
+Branche ui/studio-editor, basée sur la phase1 encore en revue. Édition du nom,
+des deux apps via NSOpenPanel, proportions1–99 %, presets et séparateur clavier/
+pointer capture. Aucun appel de sauvegarde pendant le drag. Création en brouillon,
+renommage, copie et suppression confirmée ; aucun placement AX dans cette tranche.
+Les coordonnées libres et anciennes proportions fractionnaires restent intactes
+jusqu’au choix explicite de deux colonnes. Schéma2 inchangé : NormalizedRect.
+
+Ajouts bridge typés : spaces.create/update/duplicate/delete/selectApp ; état UI
+app.setDraftDirty, app.closeStudio et app.quit. Les mutations portent expectedRevision.
+Revision opaque de session associée aux octets exacts du primaire : comparaison
+à la lecture puis juste avant remplacement atomique, après backup. Primaire
+invalide ou plus récent : pas d’écriture, backup affiché en lecture seule.
+Cela ne constitue pas un verrou universel contre un éditeur externe qui écrit
+simultanément entre la dernière comparaison et le rename ; aucun verrou imposé
+aux autres logiciels. Conflit connu : conserver le brouillon et proposer Actualiser.
+
+Les requêtes de split peuvent porter leftPercent transitoire : Rust valide la
+cohérence avec les deux rectangles et les reconstruit sans aller-retour en pixels.
+Ce champ n’est jamais persisté dans config.json. Les profils libres n’envoient pas
+de proportion et gardent leurs rectangles exacts.
+
+Changer d’espace/actualiser/fermer : Enregistrer/Ignorer/Annuler. La fermeture native
+passe par windowShouldClose et un callback JS fixe ; elle est acquittée seulement
+après traitement du brouillon. ⌘Q suit le même parcours quand Studio est chargé.
+Un NSOpenPanel volontaire ne subit pas le timeout réseau de8s du bridge ; les
+autres requêtes restent bornées. Aucun eval fourni par UI, shell ou chemin libre.
+
+Contrôles natifs ciblés : config temporaire isolée uniquement sous le mode interne
+--studio-editor-check, vraie WebView/bridge/save/relaunch ; aucun fichier des espaces
+du pilote modifié. Tests purs de géométrie, CRUD, conflit, backup, conservation libre.
+Le contrôle de focus précède maintenant l’ouverture des processus WebKit : fixtures
+indépendantes, mêmes assertions et limite AX250ms, aucune régression masquée.

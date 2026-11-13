@@ -102,6 +102,9 @@ struct State {
     preferences_anchor: Cell<Option<i32>>,
     studio: RefCell<Option<studio::Studio>>,
     studio_selected: Cell<bool>,
+    studio_store: RefCell<studio::store::Store>,
+    studio_quit_confirmed: Cell<bool>,
+    studio_editor_polls: Cell<u8>,
     catalog: RefCell<config::Catalog>,
     profiles_menu: OnceCell<Retained<NSMenu>>,
     tap: RefCell<Option<Tap>>,
@@ -351,6 +354,22 @@ define_class!(
                     studio.window.close();
                     studio.show(self.mtm());
                     println!("KIGI_STUDIO_LIFECYCLE {}",serde_json::json!({"reopened":studio.window.isVisible(),"hotkeysRetained":registered && self.ivars().hotkeys.borrow().is_some()}));
+                    if std::env::args().any(|a|a=="--studio-editor-check") {
+                        studio.check_editor();
+                        unsafe{let _:()=msg_send![self,performSelector:sel!(studioEditorPoll:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.5f64];}
+                    }
+                }
+            }
+        }
+        #[unsafe(method(studioEditorPoll:))]
+        fn studio_editor_poll(&self,_:Option<&AnyObject>){
+            if std::env::args().any(|a|a=="--studio-editor-check") {
+                if let Some(studio)=self.ivars().studio.borrow().as_ref(){
+                    if !studio.editor_done(){
+                        studio.poll_editor_result();
+                        let n=self.ivars().studio_editor_polls.get()+1;self.ivars().studio_editor_polls.set(n);
+                        if n<40 {unsafe{let _:()=msg_send![self,performSelector:sel!(studioEditorPoll:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.5f64];}}
+                    }
                 }
             }
         }
@@ -679,6 +698,11 @@ define_class!(
         fn context_changed(&self, _: &NSNotification) { self.remember_context(); }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
+            if !self.ivars().studio_quit_confirmed.replace(false) {
+                if let Some(studio)=self.ivars().studio.borrow().as_ref().filter(|s|s.ready()) {
+                    studio.request_close(true);return;
+                }
+            }
             self.cancel_shortcut_capture();
             self.cancel_permission_poll();
             self.cancel_open();
@@ -1904,28 +1928,82 @@ fn menu_action(
     item
 }
 /// Studio reads the same backend state; never exports process metadata or paths.
-pub fn studio_command(method: &str) -> Result<serde_json::Value, String> {
+fn studio_path() -> Result<std::path::PathBuf, String> {
+    if std::env::args().any(|a| a == "--studio-editor-check") {
+        let path = std::env::var_os("KIGI_TEST_STUDIO_CONFIG")
+            .map(std::path::PathBuf::from)
+            .ok_or("Configuration de test absente.")?;
+        if !path.starts_with(std::env::temp_dir())
+            || path.file_name().and_then(|s| s.to_str()) != Some("config.json")
+        {
+            return Err("Configuration de test invalide.".into());
+        }
+        Ok(path)
+    } else {
+        config::path()
+    }
+}
+pub fn studio_command(
+    command: &studio::bridge::Command,
+) -> Result<serde_json::Value, studio::bridge::Failure> {
     use serde_json::json;
+    use studio::{
+        bridge::{Command as C, Failure},
+        store::Mutation,
+    };
     CONTROLLER.with(|slot| {
         let slot=slot.borrow();
-        let c=slot.as_ref().ok_or("Moteur indisponible.")?;
+        let c=slot.as_ref().ok_or_else(||Failure::new("BACKEND_UNAVAILABLE","Moteur indisponible."))?;
         let permissions=json!({"accessibility":if windows::trusted(){"granted"}else{"denied"},"inputMonitoring":if Tap::input_trusted(){"granted"}else{"denied"},"chromeAutomation":"unknown"});
-        let spaces=|| -> Result<serde_json::Value,String> {
-            let path=config::path()?;
-            let (catalog,using_backup)=config::load(&path)?.unwrap_or_default();
-            Ok(json!({"profiles":catalog.profiles,"usingBackup":using_backup}))
+        let spaces=|| -> Result<serde_json::Value,Failure> {
+            let listing=c.ivars().studio_store.borrow_mut().list(&studio_path().map_err(Failure::invalid)?)?;
+            serde_json::to_value(listing).map_err(|_|Failure::invalid("Catalogue indisponible."))
         };
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some()});
-        match method {
-            "app.bootstrap"=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
-            "spaces.list"=>spaces(),
-            "permissions.get"=>Ok(permissions),
-            "diagnostics.summary"=>Ok(summary()),
-            "app.openNativeFallback"=>{
+        match command {
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
+            C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
+            C::Create(_) | C::Update(_) | C::Duplicate(_) | C::Delete(_)=>{
+                if c.ivars().picking.get(){return Err(Failure::new("BUSY","Terminez le dialogue en cours."));}
+                let (revision,mutation)=match command {
+                    C::Create(input)|C::Update(input)=>(input.expected_revision.as_str(),Mutation::Save(input)),
+                    C::Duplicate(input)=>(input.expected_revision.as_str(),Mutation::Duplicate(input.profile_id)),
+                    C::Delete(input)=>(input.expected_revision.as_str(),Mutation::Delete(input.profile_id)),
+                    _=>unreachable!(),
+                };
+                let (listing,catalog,selected)=c.ivars().studio_store.borrow_mut().mutate(&studio_path().map_err(Failure::invalid)?,revision,mutation)?;
+                c.set_catalog(catalog,selected,false);
+                diagnostics::record("studio.catalog.saved",format!("profile_count={}",listing.profiles.len()));
+                Ok(json!({"spaces":listing,"profileId":selected,"saved":true}))
+            }
+            C::SelectApp=>{
+                if c.ivars().picking.replace(true){return Err(Failure::new("BUSY","Un sélecteur est déjà ouvert."));}
+                c.cancel_shortcut_capture();c.cancel_open();c.cancel_gesture_dispatch();
+                let panel=NSOpenPanel::openPanel(c.mtm());
+                panel.setTitle(Some(ns_string!("Choisir une application")));panel.setPrompt(Some(ns_string!("Choisir")));
+                panel.setCanChooseDirectories(false);panel.setCanChooseFiles(true);panel.setAllowsMultipleSelection(false);
+                #[allow(deprecated)]panel.setAllowedFileTypes(Some(&NSArray::from_slice(&[ns_string!("app")])));
+                let result=panel.runModal();c.ivars().picking.set(false);
+                if result!=NSModalResponseOK{return Ok(json!({"canceled":true}));}
+                let url=panel.URL().ok_or_else(||Failure::invalid("Aucune application sélectionnée."))?;
+                let bundle=NSBundle::bundleWithURL(&url).and_then(|b|b.bundleIdentifier()).ok_or_else(||Failure::invalid("Identifiant d’application absent."))?.to_string();
+                if bundle=="io.kigi.windows"{return Err(Failure::invalid("Choisissez une autre application que Kigi."));}
+                let geometry=crate::geometry::normalized_split(50).map_err(Failure::invalid)?;
+                config::SavedLayout{schema_version:1,windows:[config::SavedWindow{bundle_id:bundle.clone(),geometry:geometry[0]},config::SavedWindow{bundle_id:bundle.clone(),geometry:geometry[1]}]}.validate().map_err(Failure::invalid)?;
+                let name=url.lastPathComponent().map(|s|s.to_string().trim_end_matches(".app").to_owned()).unwrap_or_else(||bundle.clone());
+                Ok(json!({"canceled":false,"bundleId":bundle,"name":name}))
+            }
+            C::SetDirty(input)=>{if let Some(studio)=c.ivars().studio.borrow().as_ref(){studio.set_dirty(input.dirty);}Ok(json!({"dirty":input.dirty}))}
+            C::Close|C::Quit=>{
+                if c.ivars().studio.borrow().as_ref().is_some_and(|s|s.dirty()){return Err(Failure::new("UNSAVED_CHANGES","Enregistrez ou ignorez les modifications."));}
+                if matches!(command,C::Quit){c.ivars().studio_quit_confirmed.set(true);unsafe{let _:()=msg_send![&**c,performSelector:sel!(quit:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}}
+                else if let Some(studio)=c.ivars().studio.borrow().as_ref(){studio.window.close();}
+                Ok(json!({"requested":true}))
+            }
+            C::Fallback=>{
                 unsafe{let _:()=msg_send![&**c,performSelector:sel!(nativeFallback:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}
                 Ok(json!({"requested":true}))
             }
-            _=>Err("Commande indisponible.".into()),
         }
     })
 }
@@ -1939,7 +2017,7 @@ pub fn studio_loaded() {
 }
 pub fn studio_failed() {
     diagnostics::record("studio.load_failed", "native_fallback=true");
-    let _ = studio_command("app.openNativeFallback");
+    let _ = studio_command(&studio::bridge::Command::Fallback);
 }
 
 /// Called from the main-loop CG tap. Only store one small event and defer UI/AX

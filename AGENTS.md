@@ -117,3 +117,11 @@ Cette architecture remplace pour l’interface la restriction WebView historique
 du handover initial ; moteur, taps, hotkeys et snapshots restent Rust natifs.
 Ne pas merger main avant revue, ni anticiper CRUD/ratio/Apply/Restore ou parité.
 Références et branchements : docs/studio-contract.md.
+
+## Studio phase2 — suite autorisée
+
+Pendant l’essai de l’aperçu0.6.0, l’utilisateur demande de poursuivre. Branche
+ui/studio-editor basée sur ui/studio-shell, PR distincte, pas de merge main.
+Éditeur de proportions1–99 %, brouillon, sélection d’apps native et CRUD contrôlé
+avec révision/exact bytes. Préserver les profils libres, schémas et snapshots.
+Phase3 Apply/Restore et parité système restent pour la tranche suivante.
