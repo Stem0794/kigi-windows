@@ -848,3 +848,34 @@ CRC/plist/architectures Intel+ARM et cinq assets UI vérifiés. [PR#6](https://g
 empilée sur PR#5 ; main conservée. Réarmement continu validé par classificateur
 pur partagé, pas encore physiquement sur trackpad. Les interruptions réelles de
 contact/clic/multitouch restent sécurisées par annulation jusqu’au lever.
+
+## 2026-11-13 — Studio0.7.0 par défaut
+
+Suite de la bascule autorisée. Lancement/Dock/menus ouvrent Studio, doublons de menus
+retirés ; ancien écran limité au secours Diagnostics/échec WebKit/--native-ui.
+Capture native de deux fenêtres vers brouillon, géométrie libre conservée, révision
+contrôlée avant/après sélecteurs ; Enregistrer reste explicite. Récupération de
+sauvegarde affichée en lecture seule après confirmation, comparaison exacte des
+octets du primaire et de la sauvegarde, copie durable du primaire invalide avant
+remplacement atomique ; sauvegarde intacte. Fichier primaire absent également traité.
+29 tests hôte et typage ARM passent ; protocole/récupération/conflits étendus. Parcours
+natif supplémentaire pour confirmation/annulation/recovery/conservation, et assertion
+Studio ouvert par défaut. Capture physique/choix des fenêtres restent à essayer.
+
+Validation finale : [run43461695305](https://github.com/Stem0794/kigi-windows/actions/runs/43461695305)
+réussi au commit681f2e503e685a9745d7bf9544e99f72344ded45, macOS15.7.9 Intel.
+32 tests natifs ; Studio visible par défaut sur deux lancements, focus maximisé/
+plein écran, UI/éditeur, placement/restauration et capture raccourci passent.
+Parcours recovery réel : backup en lecture seule, refus sans confirmation, Annuler
+conserve le primaire, confirmation récupère exactement les profils, backup intact et
+config.invalid-*.json contenant les octets invalides initiaux. Capture deux fenêtres
+proposée dans Studio ; choix/annulation physique restent à tester sur le Mac pilote.
+Le premier run43460728595 passait déjà ; second après correction du message de
+capture, pour qu’il reste visible après le rendu du brouillon.
+
+Package0.7.0/build26 :1079048 octets, SHA256
+53797123aaba24b264b49e4d952de3ec9f986768d077a8cdd0f8a4f03f65bff2.
+CRC/plist/architectures et cinq assets UI comparés au source. [PR#7](https://github.com/Stem0794/kigi-windows/pull/7)
+empilée sur PR#6 ; main conservée avant retour pilote. Écran classique gardé en
+secours pour cette version, retrait définitif après validation. Clippy : seuls5
+avertissements préexistants du filtre souris.

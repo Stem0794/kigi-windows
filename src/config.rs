@@ -160,7 +160,7 @@ impl Catalog {
         Ok(())
     }
 }
-fn decode(bytes: &[u8]) -> Result<Catalog, String> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<Catalog, String> {
     let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|_| "Configuration JSON invalide ; fichier conservé.".to_owned())?;
     let catalog = match value.get("schema_version").and_then(|v| v.as_u64()) {
@@ -185,7 +185,7 @@ fn decode(bytes: &[u8]) -> Result<Catalog, String> {
     catalog.validate()?;
     Ok(catalog)
 }
-fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -280,6 +280,47 @@ fn save_inner(
     }
     atomic_write(path, &bytes)
 }
+/// Explicit recovery only: preserve an invalid primary and keep the validated backup intact.
+pub fn recover_backup(
+    path: &Path,
+    expected: &Option<Vec<u8>>,
+    backup: &[u8],
+) -> Result<Catalog, String> {
+    let catalog = decode(backup)?;
+    let unchanged = || -> Result<bool, String> {
+        Ok(read(path)? == *expected
+            && read(&path.with_extension("json.bak"))?.as_deref() == Some(backup))
+    };
+    if !unchanged()? {
+        return Err(CONFLICT.into());
+    }
+    if expected.is_some() && read_primary(path).is_ok() {
+        return Err(CONFLICT.into());
+    }
+    if let Some(bytes) = expected {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "Horloge indisponible.")?
+            .as_nanos();
+        let copy = path.with_extension(format!("invalid-{stamp}.json"));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(copy)
+            .map_err(|_| "Impossible de conserver le fichier invalide.")?;
+        file.write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "Copie du fichier invalide impossible.")?;
+    }
+    if !unchanged()? {
+        return Err(CONFLICT.into());
+    }
+    let bytes =
+        serde_json::to_vec_pretty(&catalog).map_err(|_| "Configuration non sérialisable.")?;
+    atomic_write(path, &bytes)?;
+    Ok(catalog)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

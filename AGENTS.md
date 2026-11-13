@@ -162,3 +162,13 @@ a lieu tout près de la limite. Un contact peut commencer au centre puis rejoind
 un bord. Les interruptions multitouch/clic/périphérique restent bloquantes jusqu’au
 lever. Mêmes seuils10 % et délai1,5s par geste, sans nouvelle API de transport.
 Branche ui/trackpad-rearm, PR séparée, aucune fusion main.
+
+## Bascule Studio0.7.0 autorisée
+
+L’utilisateur valide la recommandation : compléter capture/récupération, ouvrir
+Studio par défaut au lancement/Dock, unifier les menus. Capture de deux fenêtres
+vers brouillon via sélecteurs natifs, pas de sauvegarde implicite ; vérification
+de révision avant/après sélecteurs. Récupération backup explicite/confirmée, octets
+primaire/backup vérifiés, ancien invalide conservé. Ancien écran disponible via
+Diagnostics, erreur WebKit ou --native-ui pendant cette version ; pas de suppression
+du code ni de fusion main avant retour pilote. Branche ui/studio-default, PR dédiée.

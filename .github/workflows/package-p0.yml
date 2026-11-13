@@ -76,6 +76,7 @@ jobs:
                   print("".join(output))
               assert len(rows) == 1, "Missing native startup evidence"
               row = rows[0]
+              assert row["studio_visible"], "Studio is not the default window"
               assert row["window_visible"], "Settings window did not open"
               assert row["rss_bytes"] > 0 and row["peak_rss_bytes"] > 0
               results.append(row)
@@ -106,7 +107,7 @@ jobs:
           with zipfile.ZipFile(path) as archive:
               assert archive.testzip() is None
               plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
-              assert plist["CFBundleShortVersionString"] == "0.6.5" and plist["CFBundleVersion"] == "25"
+              assert plist["CFBundleShortVersionString"] == "0.7.0" and plist["CFBundleVersion"] == "26"
               binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
               assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
               assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}

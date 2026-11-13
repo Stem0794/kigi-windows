@@ -1,11 +1,11 @@
-# Kigi Windows — Studio 0.6.5 (aperçu)
+# Kigi Windows — Studio 0.7.0 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 
 ## Studio : éditeur d’espaces
 
-Depuis le menu Kigi, choisir **Ouvrir Studio…**. Interface redimensionnable :
+Studio s’ouvre au lancement et depuis le Dock/menu **Ouvrir Kigi…**. Interface redimensionnable :
 Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations et Diagnostics avec
 données réelles. Dans Espaces :
 créer ou sélectionner un espace, choisir ses apps, glisser le séparateur ou saisir
@@ -30,8 +30,13 @@ Un raccourci d’espace suit son identifiant stable après renommage ; supprimer
 l’espace laisse une référence signalée manquante, sans appliquer un autre espace. Les essais du
 trackpad affichent les vrais compteurs, sans prétendre valider le global depuis un
 test local. Les options souris distinguent préférence et filtre actif. Copie/export
-utilisent le rapport du moteur. Les réglages classiques restent le secours et le défaut
-de lancement pendant cette validation ; `--studio-ui` permet de choisir Studio.
+utilisent le rapport du moteur. Studio est l’interface par défaut. L’ancien écran reste disponible dans Diagnostics
+ou avec `--native-ui`, uniquement comme secours pendant cette transition.
+
+**Capturer deux fenêtres…** choisit deux fenêtres ouvertes et place leur disposition
+dans un brouillon, sans déplacement ni sauvegarde implicite. Cliquez sur Enregistrer.
+Si le catalogue est absent/illisible avec une sauvegarde valide, **Récupérer la sauvegarde…**
+permet de la restaurer après confirmation ; l’ancien fichier invalide est conservé.
 
 Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
 fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
@@ -42,8 +47,8 @@ auxiliaires WebKit non mesurés. Aperçu livré sur branche UI, avant fusion.
 
 Quitter l'ancienne copie, remplacer `Kigi Windows.app` au même emplacement,
 puis relancer. La fenêtre Kigi s’ouvre au lancement et reste accessible dans le Dock.
-Cinq onglets regroupent Espaces, Raccourcis, Gestes et souris, Autorisations et
-Diagnostics. Fermer la fenêtre conserve les fonctions de fond ; ⌘Q quitte Kigi.
+Sept pages regroupent Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations
+et Diagnostics. Fermer la fenêtre conserve les fonctions de fond ; ⌘Q quitte Kigi.
 Le menu Kigi conserve seulement l’ouverture, les espaces et les dispositions rapides.
 Cette version utilise une
 signature ad hoc, sans Developer ID ni notarisation ; les autorisations macOS

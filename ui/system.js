@@ -141,7 +141,7 @@ window.KigiSystem = (() => {
   }
   function diagnostics(content, inspector) {
     const data = ctx.data().diagnostics; ctx.heading(content, 'Diagnostics', 'État et mesures de la session. Actualisez après un essai.');
-    tools(content, [['Copier le rapport', () => operation('diagnostics.copy', {}, 'Rapport backend copié')], ['Exporter .txt', async () => { const result = await operation('diagnostics.export'); if (result) ctx.status(result.saved ? 'Rapport backend exporté' : 'Export annulé'); }], ['Réenregistrer les raccourcis', () => operation('shortcuts.reregister', {}, 'État de l’enregistrement actualisé')]]);
+    tools(content, [['Copier le rapport', () => operation('diagnostics.copy', {}, 'Rapport backend copié')], ['Exporter .txt', async () => { const result = await operation('diagnostics.export'); if (result) ctx.status(result.saved ? 'Rapport backend exporté' : 'Export annulé'); }], ['Réenregistrer les raccourcis', () => operation('shortcuts.reregister', {}, 'État de l’enregistrement actualisé')], ['Interface de secours', () => operation('app.openNativeFallback')]]);
     content.append(ctx.el('pre', 'report', data.performance), ctx.el('h2', '', 'Dernier résultat'), ctx.el('p', '', data.lastResult || 'Aucune action mesurée.'));
     inspector.replaceChildren(ctx.el('h2', '', 'MESURES')); ctx.field(inspector, 'RSS du processus Rust', data.rustRssBytes == null ? 'Non mesuré' : `${(data.rustRssBytes / 1048576).toFixed(1)} Mio`); ctx.field(inspector, 'Mémoire auxiliaire WebKit', 'Non mesurée'); ctx.field(inspector, 'Raccourcis reçus', String(data.shortcutsReceived)); ctx.field(inspector, 'Retour de restauration', data.restoreAvailable ? 'Disponible' : 'Absent');
   }

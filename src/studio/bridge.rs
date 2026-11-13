@@ -27,6 +27,8 @@ pub enum Command {
     SelectApp,
     Apply(IdParams),
     Restore,
+    Capture(RevisionParams),
+    Recover(RecoveryParams),
     Create(EditParams),
     Update(EditParams),
     Duplicate(IdParams),
@@ -58,6 +60,17 @@ pub struct IdParams {
 pub struct DeleteParams {
     pub expected_revision: String,
     pub profile_id: u32,
+    pub confirmed: bool,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RevisionParams {
+    pub expected_revision: String,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecoveryParams {
+    pub expected_revision: String,
     pub confirmed: bool,
 }
 #[derive(Debug, Deserialize)]
@@ -179,6 +192,8 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
                 Command::Update(input)
             }
         }
+        "spaces.capture" => Command::Capture(parameters(p, id)?),
+        "spaces.recoverBackup" => Command::Recover(parameters(p, id)?),
         "spaces.apply" => Command::Apply(parameters(p, id)?),
         "spaces.duplicate" => Command::Duplicate(parameters(p, id)?),
         "spaces.delete" => {
@@ -226,6 +241,17 @@ mod tests {
             format!(r#"{{"protocolVersion":1,"id":"req-1","method":"{method}","params":{params}}}"#)
         };
         assert!(parse(&request("spaces.list", "{}")).is_ok());
+        assert!(parse(&request("spaces.capture", r#"{"expectedRevision":"rev"}"#)).is_ok());
+        assert!(parse(&request(
+            "spaces.capture",
+            r#"{"expectedRevision":"rev","path":"/tmp"}"#
+        ))
+        .is_err());
+        assert!(parse(&request(
+            "spaces.recoverBackup",
+            r#"{"expectedRevision":"rev","confirmed":true}"#
+        ))
+        .is_ok());
         assert!(parse(&request("spaces.delete", "{}")).is_err());
         assert!(parse(&request("spaces.list", r#"{"path":"/tmp"}"#)).is_err());
         assert!(
