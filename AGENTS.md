@@ -142,3 +142,13 @@ Autorisations et Diagnostics en réutilisant les services natifs. Capture dans
 le Recorder natif, timeout/annulation et restitution Carbon. Aucun keydown WebView
 pour capturer, aucune nouvelle règle de geste ou commande vers un espace.
 Garder le fallback et le défaut AppKit jusqu’au cutover dédié après essais.
+
+## Retour Studio0.6.3 — corrections0.6.4 autorisées
+
+Capture réussie bloquée jusqu’à Annuler : corriger la livraison du callback/timeout
+dans la boucle modale, fermer et afficher un retour explicite sans sauvegarde implicite.
+Compléter les actions de raccourci avec Travail, Réunion, Restaurer et espace stable.
+Utilisateur signale gestes irréguliers : retirer le délai artificiel après réussite,
+conserver bande10 %, déplacement10 %, un doigt et lever pour réarmer. Ne pas
+annoncer réparer le transport ou confirmer le matériel sans essai. Branche
+ui/studio-actions, PR distincte, main et aperçus précédents conservés.

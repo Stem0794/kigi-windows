@@ -793,3 +793,33 @@ CRC/plist/architectures et cinq ressources UI comparés au source. [PR#4](https:
 empilée sur PR#3 ; main conservée. Capture physique, timeout/perte de focus,
 sélecteur d’app, prompts TCC, trackpad et souris restent à essayer sur le Mac pilote.
 Ouverture AppKit par défaut maintenue jusqu’au cutover dédié.
+
+## 2026-11-13 — Retour pilote0.6.3, correctifs0.6.4
+
+Capture restait ouverte après combinaison, callback différé seulement en default
+pendant runModal. Completion/timeout maintenant planifiés dans les deux modes ;
+message UI explicite, sauvegarde toujours volontaire. Actions Work/Meeting/Restore/
+ApplyProfile ajoutées aux deux interfaces, profil par ID stable résolu au lancement.
+Trackpad : délai artificiel1s retiré, une action par contact/lever conservée et testée.
+27 tests hôte, typage ARM et syntaxeJS passent. Validation native étendue pour
+la capture réussie via événement local au Recorder, sans frappe système. En attente CI.
+
+Validation finale : [run43448237760](https://github.com/Stem0794/kigi-windows/actions/runs/43448237760)
+réussi au commite727d5a04f97bee90ca449734c2c9d9b8a484530, macOS15.7.9 Intel.
+30 tests natifs, deux relances, quatre cas de focus, Studio/éditeur et placement/
+restauration réels passent. Capture native réussie par NSEvent fixe livré uniquement
+à notre Recorder : fermeture sans Annuler et message/combinaison/brouillon UI sous2,5s ;
+réglages disque inchangés avant Enregistrer et hotkeys rétablis. Annulation/conflit
+Carbon/relecture passent encore. Les quatre nouvelles actions sont proposées.
+
+Premier run43446725088 : lecture DOM avant rendu fini (tabs0, busytrue), sans erreur
+de bootstrap. Contrôle CI corrigé pour attendre busyfalse + titre, borné80 essais,
+puis seulement lancer les parcours suivants ; assertions de résultat conservées.
+Clippy ARM : seuls5 avertissements préexistants mouse_scroll.rs.
+
+Package0.6.4/build24 :1065609 octets, SHA256
+39f6db838ce93d804203af8220ad1f3fe3fb0f59eb2cd62aadd64328cf47ffeb.
+CRC/plist/architectures et cinq assets vérifiés. [PR#5](https://github.com/Stem0794/kigi-windows/pull/5)
+empilée sur PR#4, main conservée. La capture physique, timeout/perte de focus et
+les nouveaux raccourcis d’espaces restent à essayer sur le Mac pilote. Le test pur
+valide deux gestes rapprochés après lever, pas la constance du transport matériel.

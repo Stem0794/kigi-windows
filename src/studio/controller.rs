@@ -136,8 +136,13 @@ impl Controller {
         NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
         self.ivars().studio_recorder.replace(Some(recorder.clone()));
         if recorder.start() {
-            unsafe {
-                let _: () = msg_send![self,performSelector:sel!(shortcutCaptureTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:15.0f64];
+            self.schedule_capture(sel!(shortcutCaptureTimeout:), 15.0);
+            if std::env::args().any(|a| a == "--studio-system-check") {
+                let count = self.ivars().capture_check_count.get() + 1;
+                self.ivars().capture_check_count.set(count);
+                if count == 2 {
+                    self.schedule_capture(sel!(studioCaptureFixture:), 0.15);
+                }
             }
             NSApplication::sharedApplication(self.mtm()).runModalForWindow(&window);
         }
@@ -233,6 +238,10 @@ impl Controller {
                     settings.entries[index] = input.binding.clone();
                 }
                 settings.validate().map_err(Failure::invalid)?;
+                if let Command::ApplyProfile { profile_id } = input.binding.command {
+                    let (catalog, _) = self.read_catalog().map_err(Failure::invalid)?;
+                    catalog.profile(profile_id).map_err(Failure::invalid)?;
+                }
                 self.persist_shortcuts_transaction(settings, index, Some(&source))
                     .map_err(|e| Failure::new("SHORTCUT_CONFLICT", e))?;
                 Ok(self.studio_shortcuts_data())

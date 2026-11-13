@@ -231,3 +231,20 @@ annulation native puis restitution ; CRUD/UI, pages, rapport dans pbpaste et rel
 après relance. Config/shortcuts temporaires uniquement sous mode de vérification,
 NSUserDefaults globaux réels non écrits par cette vérification. Aucune frappe système
 synthétique, aucun contact simulé, aucun screenshot ou contenu tiers.
+
+## Corrections0.6.4 et actions complémentaires
+
+Completion et timeout du Recorder programmés explicitement en modes default ET
+NSModalPanelRunLoopMode. La capture réussie retourne sans clic Annuler ; UI affiche
+la combinaison capturée et demande Enregistrer. Aucun enregistrement implicite.
+CI : second essai de capture, NSEvent fixe livré directement à notre Recorder
+focalisé, sans injection système ; retour et message UI vérifiés en moins2,5s.
+
+Commandes ajoutées : Work, Meeting, Restore, ApplyProfile{profile_id}. Moteurs et
+snapshot existants partagés, pas de commande shell libre. Catalogue relu au
+déclenchement ; identifiant stable, pas nom/index. Référence absente : erreur,
+aucune substitution. Sélecteurs Studio et AppKit affichent les espaces enregistrés.
+
+Gestes : supprimer cooldown1s qui annulait entièrement un contact commencé trop
+tôt. Le doigt doit toujours être levé entre deux actions. Seuils, direction, durée,
+multitouch et politique du tap inchangés. Ne corrige pas des contacts non livrés.

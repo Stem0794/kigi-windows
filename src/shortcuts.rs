@@ -20,6 +20,12 @@ pub enum Command {
     PairLeft,
     PairRight,
     Test,
+    Work,
+    Meeting,
+    Restore,
+    ApplyProfile {
+        profile_id: u32,
+    },
 }
 impl Command {
     pub fn label(&self) -> String {
@@ -32,6 +38,10 @@ impl Command {
             Self::PairLeft => "Partager : gauche puis droite".into(),
             Self::PairRight => "Partager : droite puis gauche".into(),
             Self::Test => "Tester / restaurer la fenêtre".into(),
+            Self::Work => "Travail — Chrome 100 %".into(),
+            Self::Meeting => "Réunion — Teams / Chrome".into(),
+            Self::Restore => "Restaurer la disposition".into(),
+            Self::ApplyProfile { profile_id } => format!("Appliquer l’espace #{profile_id}"),
         }
     }
 }
@@ -130,6 +140,9 @@ impl Shortcuts {
         }
         let mut seen = std::collections::HashSet::new();
         for b in &self.entries {
+            if matches!(b.command, Command::ApplyProfile { profile_id: 0 }) {
+                return Err("Choisissez un espace enregistré.".into());
+            }
             if !valid_combination(b.key, b.modifiers)
                 || b.key_label.is_empty()
                 || b.key_label.chars().count() > 16
@@ -240,6 +253,25 @@ fn save_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn workspace_commands_roundtrip_and_require_a_stable_profile_id() {
+        let mut settings = Shortcuts::default();
+        for command in [
+            Command::Work,
+            Command::Meeting,
+            Command::Restore,
+            Command::ApplyProfile { profile_id: 7 },
+        ] {
+            settings.entries[0].command = command;
+            settings.validate().unwrap();
+            assert_eq!(
+                decode(Some(&serde_json::to_vec(&settings).unwrap())).unwrap(),
+                settings
+            );
+        }
+        settings.entries[0].command = Command::ApplyProfile { profile_id: 0 };
+        assert!(settings.validate().is_err());
+    }
     #[test]
     fn defaults_reassignment_duplicates_and_modifiers() {
         let mut s = Shortcuts::default();

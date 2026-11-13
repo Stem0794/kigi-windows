@@ -23,6 +23,7 @@ pub struct Preferences {
     app_maximize: Retained<NSButton>,
     shortcut_buttons: Vec<Retained<NSButton>>,
     draft: std::cell::RefCell<Binding>,
+    shortcut_profiles: std::cell::RefCell<Vec<u32>>,
     trackpad_state: Retained<NSTextField>,
     pub window: Retained<NSWindow>,
     pub profiles: Retained<NSPopUpButton>,
@@ -327,6 +328,9 @@ impl Preferences {
             "Partager : gauche puis droite",
             "Partager : droite puis gauche",
             "Tester / restaurer la fenêtre",
+            "Travail — Chrome 100 %",
+            "Réunion — Teams / Chrome",
+            "Restaurer la disposition",
         ] {
             shortcut_action.addItemWithTitle(&NSString::from_str(title));
         }
@@ -621,6 +625,7 @@ impl Preferences {
             recorder,
             shortcut_enabled,
             shortcut_action,
+            shortcut_profiles: Default::default(),
             app_target,
             app_choose,
             app_maximize,
@@ -645,7 +650,31 @@ impl Preferences {
             selected_buttons: vec![rename, duplicate, apply, geometry, delete],
         }
     }
-    pub fn populate_shortcuts(&self, settings: &Shortcuts, selected: usize) {
+    pub fn populate_shortcuts(&self, settings: &Shortcuts, selected: usize, catalog: &Catalog) {
+        while self.shortcut_action.numberOfItems() > 9 {
+            self.shortcut_action.removeItemAtIndex(9);
+        }
+        let mut ids = self.shortcut_profiles.borrow_mut();
+        ids.clear();
+        for profile in &catalog.profiles {
+            ids.push(profile.id);
+            self.shortcut_action
+                .addItemWithTitle(&NSString::from_str(&format!(
+                    "Appliquer l’espace : {}",
+                    profile.name
+                )));
+        }
+        for binding in &settings.entries {
+            if let Command::ApplyProfile { profile_id } = binding.command {
+                if !ids.contains(&profile_id) {
+                    ids.push(profile_id);
+                    self.shortcut_action
+                        .addItemWithTitle(&NSString::from_str(&format!(
+                            "Espace supprimé #{profile_id}"
+                        )));
+                }
+            }
+        }
         self.shortcut_list.removeAllItems();
         for (i, b) in settings.entries.iter().enumerate() {
             self.shortcut_list
@@ -668,6 +697,12 @@ impl Preferences {
                 Command::PairLeft => 3,
                 Command::PairRight => 4,
                 Command::Test => 5,
+                Command::Work => 6,
+                Command::Meeting => 7,
+                Command::Restore => 8,
+                Command::ApplyProfile { profile_id } => {
+                    9 + ids.iter().position(|id| *id == profile_id).unwrap_or(0) as isize
+                }
             });
         } else {
             self.recorder
@@ -741,7 +776,17 @@ impl Preferences {
             2 => Command::Maximize,
             3 => Command::PairLeft,
             4 => Command::PairRight,
-            _ => Command::Test,
+            5 => Command::Test,
+            6 => Command::Work,
+            7 => Command::Meeting,
+            8 => Command::Restore,
+            index => Command::ApplyProfile {
+                profile_id: *self
+                    .shortcut_profiles
+                    .borrow()
+                    .get((index - 9) as usize)
+                    .ok_or("Choisissez un espace enregistré.")?,
+            },
         };
         Ok(b)
     }

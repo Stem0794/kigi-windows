@@ -6,7 +6,7 @@ window.KigiSystem = (() => {
   const isDirty = () => draft != null && (original == null || JSON.stringify(draft) !== JSON.stringify(original));
   const settings = () => ctx.data().shortcuts;
   const combo = binding => [[4096, '⌃'], [2048, '⌥'], [512, '⇧'], [256, '⌘']].filter(([flag]) => binding.modifiers & flag).map(([, glyph]) => glyph).join('') + binding.key_label;
-  const actionName = command => ({Application: command.name || 'Application', ChatGpt: 'ChatGPT dans Chrome', Maximize: 'Maximiser', PairLeft: 'Gauche puis droite', PairRight: 'Droite puis gauche', Test: 'Test / restauration de fenêtre'})[command.kind];
+  const actionName = command => ({Application: command.name || 'Application', ChatGpt: 'ChatGPT dans Chrome', Maximize: 'Maximiser', PairLeft: 'Gauche puis droite', PairRight: 'Droite puis gauche', Test: 'Test / restauration de fenêtre', Work: 'Travail — Chrome 100 %', Meeting: 'Réunion — Teams / Chrome', Restore: 'Restaurer la disposition', ApplyProfile: ctx?.data().spaces.profiles.find(p => p.id === command.profile_id)?.name ? `Espace : ${ctx.data().spaces.profiles.find(p => p.id === command.profile_id).name}` : `Espace supprimé #${command.profile_id}`})[command.kind];
   const rowState = binding => !binding.enabled ? 'Désactivé' : !settings().globalEnabled ? 'Globaux désactivés' : settings().capturing ? 'Capture en cours' : settings().registrationFailed || !settings().registered ? 'À vérifier' : 'Enregistré';
   const dirtyChanged = () => { ctx.syncDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
   function reset() { draft = null; original = null; revision = null; ctx?.syncDirty(); }
@@ -26,6 +26,7 @@ window.KigiSystem = (() => {
   }
   async function save() {
     if (!draft || ctx.busy()) return false;
+    if (draft.command.kind === 'ApplyProfile' && !draft.command.profile_id) { ctx.fail(new Error('Choisissez un espace enregistré.')); return false; }
     if (draft.command.kind === 'Application' && !draft.command.bundle) { ctx.fail(new Error('Choisissez une application.')); return false; }
     ctx.setBusy(true);
     try {
@@ -52,7 +53,7 @@ window.KigiSystem = (() => {
   }
   async function capture() {
     const result = await operation('shortcuts.startCapture', {}, 'Capture terminée');
-    if (result && !result.canceled) { draft.key = result.key; draft.modifiers = result.modifiers; draft.key_label = result.keyLabel; dirtyChanged(); ctx.render(); }
+    if (result && !result.canceled) { draft.key = result.key; draft.modifiers = result.modifiers; draft.key_label = result.keyLabel; dirtyChanged(); ctx.render(); ctx.status(`Combinaison ${combo(draft)} capturée. Cliquez sur Enregistrer pour l’appliquer.`); }
     if (result && !result.registrationRestored) ctx.fail(new Error('La capture est terminée, mais macOS refuse le réenregistrement. Consultez les diagnostics.'));
   }
   function field(parent, label, input) { const group = ctx.el('div', 'field'); const text = ctx.el('label', '', label); if (input.id) text.htmlFor = input.id; group.append(text, input); parent.append(group); }
@@ -83,11 +84,20 @@ window.KigiSystem = (() => {
     check(inspector, 'Activer cette entrée', draft.enabled, enabled => { draft.enabled = enabled; dirtyChanged(); }, 'shortcut-enabled').disabled = !data.canWrite;
     const record = ctx.button(combo(draft), capture, 'app-picker'); record.id = 'capture-shortcut'; record.disabled = !data.canWrite; field(inspector, 'Capturer la combinaison', record);
     const action = ctx.el('select'); action.id = 'shortcut-command';
-    for (const [value, label] of [['Application', 'Ouvrir / activer une application'], ['ChatGpt', 'Retrouver ChatGPT'], ['Maximize', 'Maximiser'], ['PairLeft', 'Partager : gauche puis droite'], ['PairRight', 'Partager : droite puis gauche'], ['Test', 'Test / restauration de fenêtre']]) { const option = ctx.el('option', '', label); option.value = value; action.append(option); }
-    action.value = draft.command.kind; action.disabled = !data.canWrite; action.addEventListener('change', () => { draft.command = action.value === 'Application' ? {kind: 'Application', bundle: '', name: '', maximize: false} : {kind: action.value}; dirtyChanged(); ctx.render(); }); field(inspector, 'Action', action);
+    for (const [value, label] of [['Application', 'Ouvrir / activer une application'], ['ChatGpt', 'Retrouver ChatGPT'], ['Maximize', 'Maximiser'], ['PairLeft', 'Partager : gauche puis droite'], ['PairRight', 'Partager : droite puis gauche'], ['Test', 'Test / restauration de fenêtre'], ['Work', 'Travail — Chrome 100 %'], ['Meeting', 'Réunion — Teams / Chrome'], ['Restore', 'Restaurer la disposition'], ['ApplyProfile', 'Appliquer un espace enregistré']]) { const option = ctx.el('option', '', label); option.value = value; action.append(option); }
+    action.value = draft.command.kind; action.disabled = !data.canWrite; action.addEventListener('change', () => { draft.command = action.value === 'Application' ? {kind: 'Application', bundle: '', name: '', maximize: false} : action.value === 'ApplyProfile' ? {kind: 'ApplyProfile', profile_id: ctx.data().spaces.profiles[0]?.id || 0} : {kind: action.value}; dirtyChanged(); ctx.render(); }); field(inspector, 'Action', action);
     if (draft.command.kind === 'Application') {
       const app = ctx.button(draft.command.name || 'Choisir une application…', async () => { const result = await operation('spaces.selectApp'); if (result && !result.canceled) { draft.command.bundle = result.bundleId; draft.command.name = result.name; dirtyChanged(); ctx.render(); } }, 'app-picker'); app.disabled = !data.canWrite; field(inspector, 'Application', app);
       check(inspector, 'Maximiser après activation', draft.command.maximize, value => { draft.command.maximize = value; dirtyChanged(); }, 'shortcut-maximize').disabled = !data.canWrite;
+    }
+    if (draft.command.kind === 'ApplyProfile') {
+      const profiles = ctx.el('select'); profiles.id = 'shortcut-profile';
+      const placeholder = ctx.el('option', '', 'Choisir un espace…'); placeholder.value = '0'; profiles.append(placeholder);
+      for (const profile of ctx.data().spaces.profiles) { const item = ctx.el('option', '', profile.name); item.value = String(profile.id); profiles.append(item); }
+      if (draft.command.profile_id && !ctx.data().spaces.profiles.some(p => p.id === draft.command.profile_id)) { const missing = ctx.el('option', '', `Espace supprimé #${draft.command.profile_id}`); missing.value = String(draft.command.profile_id); profiles.append(missing); }
+      profiles.value = String(draft.command.profile_id); profiles.disabled = !data.canWrite;
+      profiles.addEventListener('change', () => { draft.command.profile_id = Number(profiles.value); dirtyChanged(); }); field(inspector, 'Espace enregistré', profiles);
+      inspector.append(ctx.el('p', '', 'Applique la version enregistrée de cet espace. Ouvrez ses applications avant de déclencher le raccourci.'));
     }
     const actions = ctx.el('div', 'system-actions'); const persist = ctx.button('Enregistrer', save, 'primary'); persist.id = 'save-shortcut'; actions.append(persist);
     if (selected != null) { const remove = ctx.button('Supprimer', async () => { if (!(await ctx.guard())) return; if (await ctx.choose('Supprimer le raccourci ?', 'Cette combinaison ne déclenchera plus son action.', [['delete', 'Supprimer', 'danger'], ['cancel', 'Annuler']]) !== 'delete') return; const result = await operation('shortcuts.delete', {expectedRevision: settings().revision, index: selected, confirmed: true}, 'Raccourci supprimé'); if (result) { selected = Math.max(0, selected - 1); reset(); ctx.render(); } }, 'danger'); remove.disabled = !data.canWrite; actions.append(remove); }

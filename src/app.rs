@@ -20,8 +20,8 @@ use objc2::{
 };
 use objc2_app_kit::*;
 use objc2_foundation::{
-    ns_string, MainThreadMarker, NSArray, NSBundle, NSNotification, NSObject, NSObjectProtocol,
-    NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSUserDefaults,
+    ns_string, MainThreadMarker, NSArray, NSBundle, NSDefaultRunLoopMode, NSNotification, NSObject,
+    NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSUserDefaults,
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -107,9 +107,11 @@ struct State {
     studio_store: RefCell<studio::store::Store>,
     studio_quit_confirmed: Cell<bool>,
     studio_editor_polls: Cell<u8>,
+    studio_render_polls: Cell<u8>,
     studio_shortcuts: RefCell<studio::shortcut_store::ShortcutStore>,
     studio_recorder: RefCell<Option<Retained<crate::shortcut_recorder::Recorder>>>,
     studio_capture_result: RefCell<Option<Option<(u32, u32, String)>>>,
+    capture_check_count: Cell<u32>,
     catalog: RefCell<config::Catalog>,
     profiles_menu: OnceCell<Retained<NSMenu>>,
     tap: RefCell<Option<Tap>>,
@@ -143,7 +145,7 @@ define_class!(
             let started=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.recorder.start());
             if started {
                 self.status("Appuyez sur une combinaison avec ⌘, ⌥ ou ⌃. Échap annule. Les raccourcis Kigi sont suspendus pendant la saisie.");
-                unsafe {let _:()=msg_send![self,performSelector:sel!(shortcutCaptureTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:15.0f64];}
+                self.schedule_capture(sel!(shortcutCaptureTimeout:),15.0);
             } else {self.register_hotkeys();}
         }
         #[unsafe(method(shortcutCaptureDone:))]
@@ -161,6 +163,19 @@ define_class!(
             } else {self.restore_shortcut_caption();}
             self.register_hotkeys();
             self.status(if captured {"Combinaison choisie. Cliquez sur Enregistrer pour l’appliquer."}else{"Saisie annulée. Vos raccourcis précédents restent actifs."});
+        }
+        // CI-only event delivered directly to our focused Recorder, never posted to macOS.
+        #[unsafe(method(studioCaptureFixture:))]
+        fn studio_capture_fixture(&self,_:Option<&AnyObject>){
+            if !std::env::args().any(|a|a=="--studio-system-check") { return; }
+            let recorder=self.ivars().studio_recorder.borrow().clone();
+            if let Some(recorder)=recorder {
+                if let Some(window)=recorder.window() {
+                    let event=NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                        NSEventType::KeyDown, NSPoint::new(0.,0.), NSEventModifierFlags::Option, 0., window.windowNumber(), None, ns_string!("n"), ns_string!("n"), false, 45);
+                    if let Some(event)=event {unsafe{let _:()=msg_send![&*recorder,keyDown:&*event];}}
+                }
+            }
         }
         #[unsafe(method(cancelStudioCapture:))]
         fn cancel_studio_capture(&self,_:Option<&AnyObject>){self.cancel_shortcut_capture();}
@@ -334,9 +349,16 @@ define_class!(
         fn native_fallback(&self,_:Option<&AnyObject>){self.ivars().studio_selected.set(false);self.open_profiles();}
         #[unsafe(method(studioRenderCheck:))]
         fn studio_render_check(&self,_:Option<&AnyObject>){
+            if !std::env::args().any(|a|a=="--studio-check") {return;}
+            let count=self.ivars().studio_render_polls.get()+1;
+            self.ivars().studio_render_polls.set(count);
+            if count > 80 {println!("KIGI_STUDIO_RENDER_TIMEOUT");return;}
+            if let Some(studio)=self.ivars().studio.borrow().as_ref(){studio.check_render();}
+        }
+        #[unsafe(method(studioCheckReady:))]
+        fn studio_check_ready(&self,_:Option<&AnyObject>){
             if std::env::args().any(|a|a=="--studio-check") {
                 if let Some(studio)=self.ivars().studio.borrow().as_ref(){
-                    studio.check_render();
                     let registered=self.ivars().hotkeys.borrow().is_some();
                     studio.window.close();
                     studio.show(self.mtm());
@@ -761,12 +783,23 @@ impl Controller {
     }
     fn populate_shortcuts(&self, index: usize) {
         if let Some(p) = self.ivars().preferences.borrow().as_ref() {
-            p.populate_shortcuts(&self.ivars().shortcuts.borrow(), index);
+            p.populate_shortcuts(
+                &self.ivars().shortcuts.borrow(),
+                index,
+                &self.ivars().catalog.borrow(),
+            );
         }
     }
     fn restore_shortcut_caption(&self) {
         if let Some(p) = self.ivars().preferences.borrow().as_ref() {
             p.restore_shortcut_caption();
+        }
+    }
+    fn schedule_capture(&self, selector: Sel, delay: f64) {
+        // Both the classic editor and Studio modal must deliver completion/timeout.
+        unsafe {
+            let modes = NSArray::from_slice(&[NSDefaultRunLoopMode, NSModalPanelRunLoopMode]);
+            let _: () = msg_send![self,performSelector:selector,withObject:std::ptr::null::<AnyObject>(),afterDelay:delay,inModes:&*modes];
         }
     }
     fn cancel_capture_timer(&self) {
@@ -822,6 +855,12 @@ impl Controller {
             Command::PairLeft => self.execute(Action::PairLeft),
             Command::PairRight => self.execute(Action::PairRight),
             Command::Test => self.test_window(sel!(testWindow:), None),
+            Command::Work => self.workspace_work(sel!(workspaceWork:), None),
+            Command::Meeting => self.workspace_meeting(sel!(workspaceMeeting:), None),
+            Command::Restore => self.workspace_restore(sel!(workspaceRestore:), None),
+            Command::ApplyProfile { profile_id } => {
+                self.personal_layout(false, Some(profile_id), None)
+            }
         }
     }
     fn open_application(
@@ -2122,6 +2161,17 @@ pub fn studio_loaded() {
         if let Some(c)=slot.borrow().as_ref(){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioRenderCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.5f64];}}
     });
 }
+pub fn studio_render_result(ready: bool) {
+    if !std::env::args().any(|a| a == "--studio-check") {
+        return;
+    }
+    CONTROLLER.with(|slot| {
+        if let Some(c)=slot.borrow().as_ref(){unsafe{
+            let selector=if ready {sel!(studioCheckReady:)}else{sel!(studioRenderCheck:)};
+            let _:()=msg_send![&**c,performSelector:selector,withObject:std::ptr::null::<AnyObject>(),afterDelay:0.1f64];
+        }}
+    });
+}
 pub fn studio_failed() {
     diagnostics::record("studio.load_failed", "native_fallback=true");
     let _ = studio_command(&studio::bridge::Command::Fallback);
@@ -2173,9 +2223,9 @@ pub fn schedule_shortcut(index: usize) {
 }
 pub fn shortcut_captured(value: Option<(u32, u32, String)>) {
     CONTROLLER.with(|slot| {
-        if let Some(controller)=slot.borrow().as_ref(){
+        if let Some(controller) = slot.borrow().as_ref() {
             controller.ivars().captured.replace(Some(value));
-            unsafe{let _:()=msg_send![&**controller,performSelector:sel!(shortcutCaptureDone:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}
+            controller.schedule_capture(sel!(shortcutCaptureDone:), 0.0);
         }
     });
 }

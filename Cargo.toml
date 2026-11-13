@@ -1,6 +1,6 @@
 [package]
 name = "kigi-windows"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2021"
 rust-version = "1.85"
 publish = false
@@ -13,8 +13,8 @@ serde_json = "1"
 libc = "0.2"
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSString", "NSArray", "NSSet", "NSGeometry", "NSThread", "NSEnumerator", "NSProcessInfo", "NSUserDefaults", "NSError", "NSAppleScript", "NSAppleEventDescriptor", "NSDictionary", "NSValue", "NSNotification", "NSBundle", "NSURL", "NSURLRequest"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSGraphics", "block2", "NSPopUpButton", "libc", "objc2-core-foundation", "NSApplication", "NSResponder", "NSView", "NSWindow", "NSTabView", "NSTabViewItem", "NSOpenPanel", "NSFont", "NSColor", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSCell", "NSScreen", "NSWorkspace", "NSRunningApplication", "NSEvent", "NSTouch", "NSAlert", "NSPasteboard", "NSSavePanel", "NSPanel", "NSTextField", "objc2-core-graphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSRunLoop", "NSString", "NSArray", "NSSet", "NSGeometry", "NSThread", "NSEnumerator", "NSProcessInfo", "NSUserDefaults", "NSError", "NSAppleScript", "NSAppleEventDescriptor", "NSDictionary", "NSValue", "NSNotification", "NSBundle", "NSURL", "NSURLRequest"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSGraphics", "NSGraphicsContext", "block2", "NSPopUpButton", "libc", "objc2-core-foundation", "NSApplication", "NSResponder", "NSView", "NSWindow", "NSTabView", "NSTabViewItem", "NSOpenPanel", "NSFont", "NSColor", "NSMenu", "NSMenuItem", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSCell", "NSScreen", "NSWorkspace", "NSRunningApplication", "NSEvent", "NSTouch", "NSAlert", "NSPasteboard", "NSSavePanel", "NSPanel", "NSTextField", "objc2-core-graphics"] }
 
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGEvent", "CGEventTypes", "CGEventSource"] }
 
