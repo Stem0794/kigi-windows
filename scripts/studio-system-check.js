@@ -25,6 +25,16 @@
     await Kigi.request('shortcuts.cancelCapture');
     const captured = await pending; assert(captured.canceled && captured.registrationRestored, 'Capture cancellation did not restore bindings');
     listing = await Kigi.request('shortcuts.list'); assert(!listing.capturing && listing.registered, 'Capture still active');
+    // This second capture receives a fixed NSEvent directly in our Recorder on the native side.
+    const captureStarted = performance.now();
+    q('#capture-shortcut').click();
+    await wait(() => q('#status').textContent.includes('capturée. Cliquez sur Enregistrer'));
+    assert(performance.now() - captureStarted < 2500 && q('#capture-shortcut').textContent === '⌥N' && !q('#save-shortcut').disabled, 'Successful capture did not close its modal or update the draft promptly');
+    listing = await Kigi.request('shortcuts.list'); assert(!listing.capturing && listing.registered && JSON.stringify(listing.settings) === original, 'Capture persisted without Save or left globals disabled');
+    q('#refresh').click(); await wait(() => !q('#modal').hidden);
+    [...q('#modal-actions').querySelectorAll('button')].find(b => b.textContent === 'Ignorer').click();
+    await wait(() => !q('#refresh').disabled && q('#save-shortcut').disabled);
+    for (const kind of ['Work', 'Meeting', 'Restore', 'ApplyProfile']) assert([...q('#shortcut-command').options].some(o => o.value === kind), `Missing action ${kind}`);
     const disabled = await Kigi.request('shortcuts.setGlobalEnabled', {enabled: false}); assert(!disabled.globalEnabled, 'Global disable failed');
     const enabled = await Kigi.request('shortcuts.setGlobalEnabled', {enabled: true}); assert(enabled.globalEnabled && enabled.registered, 'Global reenable failed');
     const count = enabled.settings.entries.length;
@@ -41,6 +51,6 @@
     const permissions = await Kigi.request('permissions.get'); assert(permissions.chromeAutomation === 'unknown', 'Chrome permission invented');
     const copy = await Kigi.request('diagnostics.copy'); assert(copy.copied, 'Backend report not copied');
     let invalid = false; try { await Kigi.request('permissions.openSettings', {section: 'https://example.org'}); } catch (_) { invalid = true; } assert(invalid, 'Arbitrary settings URL accepted');
-    window.__kigiEditorCheck = {success: true, captureCanceled: true, carbonRollback: true, systemPages: true};
+    window.__kigiEditorCheck = {success: true, captureCanceled: true, captureCompleted: true, carbonRollback: true, systemPages: true};
   } catch (error) { window.__kigiEditorCheck = {success: false, message: String(error.message)}; }
 })();

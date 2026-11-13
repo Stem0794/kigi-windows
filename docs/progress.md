@@ -793,3 +793,13 @@ CRC/plist/architectures et cinq ressources UI comparés au source. [PR#4](https:
 empilée sur PR#3 ; main conservée. Capture physique, timeout/perte de focus,
 sélecteur d’app, prompts TCC, trackpad et souris restent à essayer sur le Mac pilote.
 Ouverture AppKit par défaut maintenue jusqu’au cutover dédié.
+
+## 2026-11-13 — Retour pilote0.6.3, correctifs0.6.4
+
+Capture restait ouverte après combinaison, callback différé seulement en default
+pendant runModal. Completion/timeout maintenant planifiés dans les deux modes ;
+message UI explicite, sauvegarde toujours volontaire. Actions Work/Meeting/Restore/
+ApplyProfile ajoutées aux deux interfaces, profil par ID stable résolu au lancement.
+Trackpad : délai artificiel1s retiré, une action par contact/lever conservée et testée.
+27 tests hôte, typage ARM et syntaxeJS passent. Validation native étendue pour
+la capture réussie via événement local au Recorder, sans frappe système. En attente CI.

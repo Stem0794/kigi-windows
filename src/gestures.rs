@@ -91,7 +91,6 @@ pub enum Edge {
 pub struct EdgeProbe {
     start: Option<(Contact, Edge)>,
     blocked: bool,
-    cooldown_until: u64,
 }
 impl EdgeProbe {
     pub fn cancel(&mut self) {
@@ -109,7 +108,6 @@ impl EdgeProbe {
         }
         if self.start.is_some()
             || fingers != 1
-            || c.ms < self.cooldown_until
             || !c.x.is_finite()
             || !c.y.is_finite()
             || !(0.0..=1.0).contains(&c.y)
@@ -157,7 +155,6 @@ impl EdgeProbe {
         let horizontal = inward + 1e-9 >= (c.y - start.y).abs() * 1.5;
         if inward + 1e-9 >= 0.10 && horizontal {
             self.cancel();
-            self.cooldown_until = c.ms.saturating_add(1000);
             Some(edge)
         } else {
             None
@@ -221,7 +218,7 @@ mod tests {
         assert!(!p.moved(contact(0.1, 0.6, 1501), 1));
     }
     #[test]
-    fn edges_short_inward_swipe_fires_once_and_shares_cooldown() {
+    fn edges_short_inward_swipe_fires_once_until_lift() {
         let mut p = EdgeProbe::default();
         p.begin(contact(0.10, 0.5, 0), 1);
         assert_eq!(p.moved(contact(0.19, 0.55, 100), 1), None);
@@ -231,7 +228,7 @@ mod tests {
         assert_eq!(p.moved(contact(0.5, 0.5, 240), 1), None);
         p.release();
         p.begin(contact(0.90, 0.6, 400), 1);
-        assert_eq!(p.moved(contact(0.5, 0.6, 500), 1), None);
+        assert_eq!(p.moved(contact(0.5, 0.6, 500), 1), Some(Edge::Right));
         p.release();
         p.begin(contact(0.90, 0.4, 1200), 1);
         assert_eq!(p.moved(contact(0.80, 0.42, 1300), 1), Some(Edge::Right));
