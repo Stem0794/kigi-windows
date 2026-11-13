@@ -45,14 +45,24 @@ jobs:
       - name: Verify same-bundle relaunch and collect startup RSS
         run: |
           python3 - <<'PYTHON'
-          import json, platform, subprocess, time
+          import json, platform, select, subprocess, time
           results = []
           for attempt in range(2):
               app = subprocess.Popen(["dist/Kigi Windows.app/Contents/MacOS/kigi-windows", "--startup-report"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              rows = []
+              output = []
               try:
-                  time.sleep(4)
-                  if app.poll() is not None:
-                      raise RuntimeError("Kigi exited during startup: " + app.communicate()[0].decode(errors="replace"))
+                  deadline = time.monotonic() + 15
+                  while time.monotonic() < deadline and not rows:
+                      if app.poll() is not None:
+                          break
+                      readable, _, _ = select.select([app.stdout], [], [], 0.2)
+                      if readable:
+                          line = app.stdout.readline().decode(errors="replace")
+                          output.append(line)
+                          if line.startswith("KIGI_STARTUP "):
+                              rows.append(json.loads(line.removeprefix("KIGI_STARTUP ")))
+                  assert app.poll() is None, "Kigi exited during startup: " + "".join(output)
               finally:
                   if app.poll() is None:
                       app.terminate()
@@ -61,9 +71,8 @@ jobs:
                       except subprocess.TimeoutExpired:
                           app.kill()
                           app.wait()
-              output = app.communicate()[0].decode(errors="replace")
-              print(output)
-              rows = [json.loads(line.removeprefix("KIGI_STARTUP ")) for line in output.splitlines() if line.startswith("KIGI_STARTUP ")]
+                  output.append(app.communicate()[0].decode(errors="replace"))
+                  print("".join(output))
               assert len(rows) == 1, "Missing native startup evidence"
               row = rows[0]
               assert row["window_visible"], "Settings window did not open"
@@ -73,7 +82,7 @@ jobs:
           assert results[0]["accessibility"] == results[1]["accessibility"]
           assert results[0]["input_access"] == results[1]["input_access"]
           print("NATIVE_VALIDATION " + json.dumps({"macOS": platform.mac_ver()[0], "machine": platform.machine(), "launches": results}))
-          print("Two same-bundle startups verified; permission flags compared without requesting access. No AX action, input or screenshot. Granted TCC and physical trackpad still require the pilot Mac.")
+          print("Two same-bundle startups verified; no input or screenshot taken.")
           PYTHON
       - name: Verify focus from maximized and native-fullscreen fixtures
         run: python3 scripts/check-focus.py
@@ -81,6 +90,19 @@ jobs:
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"
           ditto -c -k --sequesterRsrc --keepParent "dist/Kigi Windows.app" dist/Kigi-Windows-macOS-universal.zip
+          python3 - <<'PYTHON'
+          import hashlib, json, plistlib, struct, zipfile
+          from pathlib import Path
+          path = Path("dist/Kigi-Windows-macOS-universal.zip")
+          with zipfile.ZipFile(path) as archive:
+              assert archive.testzip() is None
+              plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
+              assert plist["CFBundleShortVersionString"] == "0.5.3" and plist["CFBundleVersion"] == "18"
+              binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
+              assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
+              assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}
+          print("KIGI_PACKAGE " + json.dumps({"version": plist["CFBundleShortVersionString"], "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}))
+          PYTHON
       - uses: actions/upload-artifact@v4
         with:
           name: Kigi-Windows-macOS-universal

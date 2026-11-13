@@ -1129,7 +1129,7 @@ impl Controller {
             "KIGI_FOCUS_CHECK {}",
             serde_json::json!({"success":success,"frontmost_pid":NSWorkspace::sharedWorkspace().frontmostApplication().map(|a|a.processIdentifier()),"accessibility":windows::trusted(),"report":self.log_report()})
         );
-        NSApplication::sharedApplication(self.mtm()).stop(None);
+        NSApplication::sharedApplication(self.mtm()).terminate(None);
     }
     fn remember_launch(&self) {
         let defaults = NSUserDefaults::standardUserDefaults();
@@ -2110,6 +2110,7 @@ pub fn run() {
             }
         }
         if std::env::args().any(|a| a == "--startup-report") {
+            println!("KIGI_STARTUP_PENDING");
             unsafe {
                 let _: () = msg_send![&*controller,performSelector:sel!(startupReport:),withObject:std::ptr::null::<AnyObject>(),afterDelay:2.0f64];
             }
