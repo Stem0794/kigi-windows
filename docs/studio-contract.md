@@ -112,3 +112,19 @@ Contrôles natifs ciblés : config temporaire isolée uniquement sous le mode in
 du pilote modifié. Tests purs de géométrie, CRUD, conflit, backup, conservation libre.
 Le contrôle de focus précède maintenant l’ouverture des processus WebKit : fixtures
 indépendantes, mêmes assertions et limite AX250ms, aucune régression masquée.
+
+### Validation phase2
+
+Run43423531866, sourceff974dbee, macOS15.7.9 Intel :27 tests, quatre cas de focus,
+chargement/DOM Studio, parcours éditeur isolé et relecture après relance passent.
+Le parcours couvre conversion explicite schema1 libre→split35/65/schema2, sauvegarde,
+annulation49→35, incrément clavier, brouillon à la navigation/fermeture, duplication,
+suppression confirmée et conflit sans écrasement. Les assertions ont également
+repéré puis protégé la réactivation des contrôles après Actualiser.
+
+Glissement physique, vrai NSOpenPanel et VoiceOver restent des essais Mac pilote ;
+les événements clavier du test sont des événements DOM locaux, pas une injection
+système ou un essai de geste global. Le test de fermeture appelle le même point
+JS fixe que le delegate natif ; le bouton de titre macOS reste à essayer physiquement.
+Application/restauration depuis Studio et parité système non incluses dans cette
+phase. Le package0.6.1/build21 n’est pas fusionné sur main.
