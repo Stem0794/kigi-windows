@@ -621,3 +621,29 @@ activation d’une cible sans puis avec maximisation ; vérifier PID actif et
 ordre CGWindowList des fenêtres visibles (PID/layer, sans titre ni screenshot).
 Une fixture Swift CI, aucun runtime ajouté au produit Rust. Résultats à
 consigner après exécution. Le geste physique reste à essayer sur le Mac pilote.
+
+Validation finale 0.5.3 : [run macOS 43403783033](https://github.com/Stem0794/kigi-windows/actions/runs/43403783033)
+réussi sur 8d6203c1ef0e0cf64031b62fe8205f0c97f9ca07. Format vérifié sur
+les sources finales, 23 tests macOS, Release Intel/ARM et signature/plist/lipo.
+Deux démarrages avec fenêtre visible et précontrôles AX/surveillance à true.
+
+La régression native a passé les deux scénarios : source maximisée à 100 %,
+cible relevée sans redimensionnement ; source en plein écran natif, cible
+activée puis maximisée. Le PID cible actif ET son ordre devant la fenêtre
+source ont été vérifiés via métadonnées CGWindowList, sans screenshot, titre
+lu ou frappe synthétique. Il s’agit des fenêtres de fixture sous macOS 15.7.9
+Intel, pas d’un essai physique sur le Mac utilisateur ou de ses apps Teams/
+Chrome. Le geste physique reste à confirmer.
+
+Archive validée sur le runner : CRC ZIP, version 0.5.3/build18, Mach-O Intel/
+ARM ; 803670 octets, SHA256
+ae4df0cffb659770593b9aac0d98184ab5693a211fa7f8deb9dcc71618035da9.
+Artefact GitHub 14026975889, disponible depuis le run cité. L’environnement
+local de fichiers est resté indisponible ; pas de nouveau ZIP copié dans la
+conversation ni de remplacement de l’ancienne pièce jointe 0.5.2.
+
+Le premier contrôle à attente fixe de 4 s n’avait pas reçu de rapport avant
+arrêt du processus. Il attend désormais le rapport réel (limite15 s) et
+vérifie toujours la fenêtre visible ; les deux lancements ont passé. Les
+sources ont été formatées à partir de la sortie rustfmt du runner après
+reprise GitHub. Aucun résultat d’essai matériel n’est extrapolé de ces tests.
