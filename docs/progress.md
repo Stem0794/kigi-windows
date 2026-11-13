@@ -834,3 +834,17 @@ multitouch/clic/changement de contact reste annulée jusqu’au lever. Départ r
 comptabilisé dans le bilan global. Classificateur partagé local/global, pas de
 nouvelle API de transport. Tests purs ciblés : répétition/alternance sans lever,
 pause, centre/jitter et changement de contact. Validation native en attente.
+
+Validation finale : [run43455247183](https://github.com/Stem0794/kigi-windows/actions/runs/43455247183)
+réussi au commitebbb6deb64e9c8b06c1cd42df40867e1b007b5cd, macOS15.7.9 Intel.
+32 tests natifs, relances, focus, UI/éditeur, placement/restauration et capture native
+passent. Le premier run43452385204 est resté bloqué en compilation/tests sans logs
+disponibles ; second passage déclenché par clarification d’un commentaire, sans
+changement fonctionnel ni assouplissement de tests.
+
+Package0.6.5/build25 :1066120 octets, SHA256
+f1ccbec40ec04f9015847a9e05fb9e8805aec20c59c850503fd8c7705c83abf9.
+CRC/plist/architectures Intel+ARM et cinq assets UI vérifiés. [PR#6](https://github.com/Stem0794/kigi-windows/pull/6)
+empilée sur PR#5 ; main conservée. Réarmement continu validé par classificateur
+pur partagé, pas encore physiquement sur trackpad. Les interruptions réelles de
+contact/clic/multitouch restent sécurisées par annulation jusqu’au lever.
