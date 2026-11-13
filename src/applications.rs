@@ -32,8 +32,26 @@ pub fn teams_bundle() -> Result<&'static str, String> {
         })
         .ok_or_else(|| "Microsoft Teams n'est pas installé (bundle principal introuvable).".into())
 }
+/// Request acceptance is not proof of focus. Background AppKit requests can
+/// return false while the authorized AX route can still activate the window.
 #[allow(deprecated)]
-pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
+pub fn request_activation(app: &NSRunningApplication) -> Result<bool, String> {
+    if app.isTerminated() {
+        return Err("L'application vient de quitter.".into());
+    }
+    // Fixed native fixture only; unavailable in normal operation.
+    if std::env::args().any(|a| a == "--activation-check")
+        && std::env::var_os("KIGI_TEST_DENY_APPKIT_ACTIVATION").is_some()
+    {
+        crate::diagnostics::record(
+            "application.activation.request",
+            format!(
+                "pid={} accepted=false fixture=true",
+                app.processIdentifier()
+            ),
+        );
+        return Ok(false);
+    }
     app.unhide();
     if let Some(mtm) = objc2::MainThreadMarker::new() {
         let own = NSApplication::sharedApplication(mtm);
@@ -52,7 +70,11 @@ pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
             app.processIdentifier()
         ),
     );
-    if accepted {
+    Ok(accepted)
+}
+
+pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
+    if request_activation(app)? {
         Ok(())
     } else {
         Err("L'application ne peut pas être activée ou vient de quitter.".into())
@@ -64,7 +86,9 @@ pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
 pub fn open(bundle: &str) -> Result<Receiver<Result<i32, isize>>, String> {
     let (sender, receiver) = mpsc::channel();
     if let Some(app) = running(bundle) {
-        activate(&app)?;
+        // poll_open confirms focus and raises through Accessibility even if
+        // AppKit rejects this initial request. Never reopen an existing app.
+        let _ = request_activation(&app)?;
         let _ = sender.send(Ok(app.processIdentifier()));
         return Ok(receiver);
     }

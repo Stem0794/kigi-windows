@@ -476,6 +476,22 @@ pub fn raise_application_window(app: &NSRunningApplication) -> Result<(), String
     require_permission()?;
     let window = preferred_window(app)?;
     window.unminimize()?;
+    // A background AppKit request may be refused on recent macOS. Use the
+    // public, permission-gated app attribute before raising its existing window.
+    let root = Element::app(app.processIdentifier());
+    let name = NSString::from_str("AXFrontmost");
+    let mut writable = 0u8;
+    let code = unsafe { AXUIElementIsAttributeSettable(root.0, name_ref(&name), &mut writable) };
+    if code == 0 && writable != 0 {
+        let result =
+            unsafe { AXUIElementSetAttributeValue(root.0, name_ref(&name), kCFBooleanTrue) };
+        diagnostics::record(
+            "application.activation.ax",
+            format!("pid={} code={result}", app.processIdentifier()),
+        );
+        // Still attempt AXMain/AXRaise when this optional attribute is rejected.
+        // Only the subsequent frontmost-PID check confirms activation.
+    }
     let name = NSString::from_str("AXMain");
     let mut writable = 0u8;
     let code = unsafe { AXUIElementIsAttributeSettable(window.0, name_ref(&name), &mut writable) };

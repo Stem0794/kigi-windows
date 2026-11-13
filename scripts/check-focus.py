@@ -1,5 +1,6 @@
-"""One native regression flow, two controlled source-window modes."""
+"""One native regression flow, background AppKit refusals and two source-window modes."""
 import json
+import os
 from pathlib import Path
 import plistlib
 import select
@@ -49,11 +50,15 @@ with tempfile.TemporaryDirectory(prefix="kigi-focus-") as directory:
     target = subprocess.Popen([str(paths["target"])], stdout=subprocess.PIPE)
     try:
         ready(target)
-        for fullscreen in [False, True]:
+        for fullscreen, deny_appkit in [(False, False), (True, False), (False, True), (True, True)]:
             source = subprocess.Popen([str(paths["source"]), "--source"] + (["--fullscreen"] if fullscreen else []), stdout=subprocess.PIPE)
             try:
                 ready(source)
-                check = subprocess.run([str(binary), "--activation-check"] + (["--check-maximize"] if fullscreen else []), capture_output=True, text=True, timeout=15)
+                environment = os.environ.copy()
+                environment.pop("KIGI_TEST_DENY_APPKIT_ACTIVATION", None)
+                if deny_appkit:
+                    environment["KIGI_TEST_DENY_APPKIT_ACTIVATION"] = "1"
+                check = subprocess.run([str(binary), "--activation-check"] + (["--check-maximize"] if fullscreen else []), capture_output=True, text=True, timeout=15, env=environment)
                 rows = [json.loads(line.removeprefix("KIGI_FOCUS_CHECK ")) for line in check.stdout.splitlines() if line.startswith("KIGI_FOCUS_CHECK ")]
                 assert check.returncode == 0 and len(rows) == 1 and rows[0]["success"], check.stdout + check.stderr
                 assert rows[0]["frontmost_pid"] == target.pid, rows
@@ -66,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix="kigi-focus-") as directory:
                         break
                     time.sleep(0.1)
                 assert visible, {"target": target.pid, "source": source.pid, "owners": owners}
-                print("FOCUS_VERIFIED " + json.dumps({"source_native_fullscreen": fullscreen, "target_maximized": fullscreen, "target_active": True, "target_window_in_front": visible}))
+                print("FOCUS_VERIFIED " + json.dumps({"appkit_request_denied": deny_appkit, "source_native_fullscreen": fullscreen, "target_maximized": fullscreen, "target_active": True, "target_window_in_front": visible}))
             finally:
                 stop(source)
                 time.sleep(0.4)

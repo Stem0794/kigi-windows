@@ -1334,7 +1334,7 @@ impl Controller {
                     {
                         pending.raise_attempted = true;
                         if let Err(e) = windows::raise_application_window(&app)
-                            .and_then(|_| applications::activate(&app))
+                            .and_then(|_| applications::request_activation(&app).map(|_| ()))
                         {
                             pending.raise_error = Some(e);
                         }

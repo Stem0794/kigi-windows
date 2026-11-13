@@ -97,7 +97,7 @@ jobs:
           with zipfile.ZipFile(path) as archive:
               assert archive.testzip() is None
               plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
-              assert plist["CFBundleShortVersionString"] == "0.5.3" and plist["CFBundleVersion"] == "18"
+              assert plist["CFBundleShortVersionString"] == "0.5.4" and plist["CFBundleVersion"] == "19"
               binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
               assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
               assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}

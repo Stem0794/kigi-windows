@@ -647,3 +647,19 @@ arrêt du processus. Il attend désormais le rapport réel (limite15 s) et
 vérifie toujours la fenêtre visible ; les deux lancements ont passé. Les
 sources ont été formatées à partir de la sortie rustfmt du runner après
 reprise GitHub. Aucun résultat d’essai matériel n’est extrapolé de ces tests.
+
+## 2026-11-13 — 0.5.4 : refus AppKit depuis l’arrière-plan
+
+Les logs 0.5.3 du Mac pilote (macOS 26.7.2 ARM64) contiennent 1 856 événements
+et 15 gestes reconnus. Les échecs commencent quand AppKit renvoie false depuis
+une app tierce : le code quittait avant AXRaise. Même refus pour les raccourcis.
+Le tap continue à recevoir et reconnaître les gestes ; aucun changement de seuil
+ni de réarmement dans cette correction.
+
+Séparation demande/confirmation : un refus AppKit laisse maintenant poursuivre
+la levée AX autorisée. AXFrontmost est tenté si modifiable, puis AXMain/AXRaise ;
+le PID réellement au premier plan confirme toujours le succès. Aucune réouverture
+d’app ni fenêtre supplémentaire. Permissions et annulation utilisateur conservées.
+Deux cas natifs supplémentaires refusent volontairement AppKit dans le seul mode
+fixture pour vérifier le chemin AX depuis une fenêtre maximisée et un plein écran.
+Validation native et package : en attente du workflow de cette version.

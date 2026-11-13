@@ -1,4 +1,4 @@
-# Kigi Windows — raccourcis configurables 0.5.3
+# Kigi Windows — raccourcis configurables 0.5.4
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -50,7 +50,13 @@ En cas de conflit, quitter temporairement Hammerspoon puis **Réenregistrer**.
 Son fichier n’est jamais modifié. Les gestes restent liés à Teams/Chrome,
 indépendamment des raccourcis personnalisés.
 
-## Passage au premier plan — 0.5.3
+## Passage au premier plan — 0.5.4
+
+Correction du refus AppKit depuis l’arrière-plan observé sur le Mac pilote :
+un retour false laisse poursuivre l’activation Accessibility autorisée, avec
+AXFrontmost si disponible puis AXMain/AXRaise et confirmation du premier plan.
+Les logs 0.5.3 montrent que les gestes continuaient à être reçus et reconnus ;
+les seuils et le réarmement du trackpad restent inchangés.
 
 Les raccourcis d’apps et les gestes relèvent la fenêtre principale/focalisée
 existante via AX, puis confirment le premier plan. Une demande d’activation
