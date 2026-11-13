@@ -731,3 +731,16 @@ c2f2b65245aff0bbd9d6d1afd0ee16dbd308608347e1deb0b0f96effb89ba6c3.
 CRC/plist/architectures et ressources embarquées vérifiés. [PR#2](https://github.com/Stem0794/kigi-windows/pull/2)
 empilée sur PR#1 ; main et branche0.6.0 conservées. Choix d’app natif, drag physique,
 VoiceOver et coûts WebKit auxiliaires restent à essayer/mesurer sur le Mac pilote.
+
+## 2026-11-13 — Studio0.6.2, phase3 Apply/Restore
+
+Suite demandée pendant l’essai0.6.1. Branche ui/studio-apply basée sur badfb77,
+sans modifier les branches d’essai précédentes. Appliquer/Restaurer Studio reliés
+au moteur partagé : préflights, sélection des fenêtres, snapshot unique, ratios
+normalisés et comparaison AX réelle. Séparation placement/activation, retour typé
+applied/partial/restored/canceled et géométrie inconnue nullable. Les retours partiels
+restent restaurables ; déplacement manuel ignoré suivant la politique existante.
+Révision du profil recontrôlée après le sélecteur. Aucune réécriture des proportions
+constatées dans le catalogue. Pas de parité système ni de test brouillon previewApply.
+24 tests hôte, typage ARM, syntaxeJS passent ; Clippy ne signale que les5 anciens
+needless_borrow dans mouse_scroll.rs. Validation native/package en attente.

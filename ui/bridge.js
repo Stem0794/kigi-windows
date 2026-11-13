@@ -8,7 +8,7 @@ window.Kigi = {
     try {
       const response = await Promise.race([
         window.webkit.messageHandlers.kigi.postMessage(JSON.stringify({protocolVersion: 1, id, method, params})),
-        new Promise((_, reject) => { if (method !== 'spaces.selectApp') timer = setTimeout(() => reject(new Error('Le moteur ne répond pas. Vérifiez les données avec Actualiser avant de réessayer.')), 8000); })
+        new Promise((_, reject) => { if (!['spaces.selectApp', 'spaces.apply', 'spaces.restore'].includes(method)) timer = setTimeout(() => reject(new Error('Le moteur ne répond pas. Vérifiez les données avec Actualiser avant de réessayer.')), 8000); })
       ]);
       const envelope = typeof response === 'string' ? JSON.parse(response) : response;
       if (envelope.protocolVersion !== 1 || envelope.id !== id) throw new Error('Réponse incompatible du moteur local.');

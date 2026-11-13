@@ -91,6 +91,8 @@ jobs:
         run: python3 scripts/check-studio.py
       - name: Verify isolated Studio editor and persisted relaunch
         run: python3 scripts/check-studio-editor.py
+      - name: Verify Studio AX placement, minimum size and restore
+        run: python3 scripts/check-studio-layout.py
       - name: Archive application
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"
@@ -102,7 +104,7 @@ jobs:
           with zipfile.ZipFile(path) as archive:
               assert archive.testzip() is None
               plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
-              assert plist["CFBundleShortVersionString"] == "0.6.1" and plist["CFBundleVersion"] == "21"
+              assert plist["CFBundleShortVersionString"] == "0.6.2" and plist["CFBundleVersion"] == "22"
               binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
               assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
               assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}

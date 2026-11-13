@@ -125,3 +125,11 @@ ui/studio-editor basée sur ui/studio-shell, PR distincte, pas de merge main.
 Éditeur de proportions1–99 %, brouillon, sélection d’apps native et CRUD contrôlé
 avec révision/exact bytes. Préserver les profils libres, schémas et snapshots.
 Phase3 Apply/Restore et parité système restent pour la tranche suivante.
+
+## Studio phase3 — suite autorisée
+
+Pendant l’essai0.6.1, poursuivre Apply/Restore sur ui/studio-apply, basée sur
+ui/studio-editor. PR séparée, pas de merge main. Réutiliser sélection native,
+préflights AX et snapshot unique ; résultats structurés avec readback réel,
+partiels honnêtes, aucune réécriture du ratio demandé. Pas de previewApply ni de
+parité raccourcis/souris/gestes dans cette tranche. Essais AX avec fixtures réelles.

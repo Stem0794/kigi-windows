@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}};
+  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}, layoutResult: null};
   const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
   const button = (label, action, className = '') => { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', action); return node; };
@@ -86,6 +86,7 @@
     }
     const indicator = $('draft-indicator'); if (indicator) indicator.hidden = !dirty;
     const save = $('save-space'); if (save) save.disabled = state.busy || !dirty || !state.data?.spaces.canWrite || state.invalid.size > 0;
+    const apply = $('apply-space'); if (apply) apply.disabled = state.busy || !state.data?.spaces.canWrite || !!state.data?.diagnostics.restoreAvailable || state.invalid.size > 0 || !state.draft?.name.trim() || state.draft?.windows.some(w => !w.bundle_id);
     if (dirty) $('status').textContent = 'Modifications non enregistrées';
   }
   function resetDraft() {
@@ -102,7 +103,7 @@
   }
   function setEditorBusy(busy) {
     state.busy = busy;
-    $('refresh').disabled = busy;
+    $('refresh').disabled = busy; $('restore-layout').disabled = busy || !state.data?.diagnostics.restoreAvailable;
     $('content').setAttribute('aria-busy', String(busy));
     if (busy) document.querySelectorAll('#content button, #inspector button, #inspector input, #navigation button, #spaces-list button').forEach(n => { n.disabled = true; });
   }
@@ -162,17 +163,47 @@
     if ($('left-percent')) { $('left-percent').value = percent; $('left-percent').setAttribute('aria-invalid', 'false'); }
     if ($('right-percent')) { $('right-percent').value = 100 - percent; $('right-percent').setAttribute('aria-invalid', 'false'); }
   }
+  async function layoutAction(restore = false) {
+    if (state.busy || modalResolve) return;
+    if (!restore && state.dirty) {
+      const choice = await choose('Enregistrer et appliquer ?', 'Le brouillon sera enregistré, puis ses fenêtres seront placées. La sauvegarde et le placement restent deux opérations distinctes.', [['save', 'Enregistrer et appliquer', 'primary'], ['cancel', 'Annuler']]);
+      if (choice !== 'save' || !(await saveDraft())) return;
+    }
+    const profile = current(); if (!restore && !profile) return;
+    setEditorBusy(true); state.layoutResult = null; $('layout-result')?.remove();
+    $('status').textContent = restore ? 'Restauration en cours…' : 'Placement en cours…';
+    try {
+      const result = await Kigi.request(restore ? 'spaces.restore' : 'spaces.apply', restore ? {} : {profileId: profile.id, expectedRevision: state.data.spaces.revision});
+      state.layoutResult = result;
+      state.data.diagnostics.restoreAvailable = result.result.restoreAvailable;
+      $('error').hidden = true; $('status').textContent = result.result.message;
+    } catch (error) {
+      failure(error);
+      try { state.data.diagnostics = await Kigi.request('diagnostics.summary'); } catch (_) { /* Keep the last measured state; backend guards remain authoritative. */ }
+    } finally { setEditorBusy(false); render(); }
+  }
+  function renderLayoutResult(content) {
+    const last = state.layoutResult; if (!last) return;
+    const result = last.result, card = el('div', `card layout-result ${result.status}`); card.id = 'layout-result'; card.dataset.status = result.status; card.dataset.operation = last.operation; card.setAttribute('role', 'status');
+    card.append(el('h2', '', last.operation === 'restore' ? 'Dernière restauration' : `Dernier placement · ${last.profileName}`), el('p', '', result.message));
+    if (last.operation === 'apply' && result.status !== 'canceled') {
+      const widths = values => values.map(r => r == null ? 'Non mesuré' : `${+(r.width * 100).toFixed(1)} %`).join(' / ');
+      field(card, 'Largeurs demandées · fenêtres 1 / 2', widths(result.requested));
+      field(card, 'Largeurs constatées · fenêtres 1 / 2', widths(result.actual));
+    }
+    content.append(card);
+  }
   function renderEditor(content, inspector) {
     if (!state.draft && current()) { state.draft = clone(current()); state.original = clone(current()); state.draftRevision = state.data.spaces.revision; state.splitEdited = false; state.invalid.clear(); }
     const draft = state.draft, writable = state.data.spaces.canWrite;
     const toolbar = el('div', 'editor-toolbar'); toolbar.append(button('Nouvel espace', newSpace, 'subtle'));
     if (draft) {
-      const save = button('Enregistrer', saveDraft, 'primary'); save.id = 'save-space'; toolbar.append(save);
+      const save = button('Enregistrer', saveDraft, 'primary'); save.id = 'save-space'; toolbar.append(save); const apply = button('Appliquer', () => layoutAction(false)); apply.id = 'apply-space'; toolbar.append(apply);
       toolbar.append(button('Annuler les modifications', async () => { await discardDraft(); if (!current()) state.selected = profiles()[0]?.id ?? null; render(); $('status').textContent = 'Modifications ignorées'; }, 'subtle'));
     }
     toolbar.querySelectorAll('button').forEach(b => { b.disabled = !writable || state.busy; }); content.append(toolbar);
     heading(content, draft?.name || 'Vos espaces', 'L’aperçu et la sauvegarde ne déplacent aucune fenêtre.');
-    const indicator = el('span', 'tag', 'Modifié'); indicator.id = 'draft-indicator'; indicator.hidden = !state.dirty; content.append(indicator);
+    const indicator = el('span', 'tag', 'Modifié'); indicator.id = 'draft-indicator'; indicator.hidden = !state.dirty; content.append(indicator); renderLayoutResult(content);
     if (!draft) { content.append(el('div', 'empty', 'Créez votre premier espace pour choisir ses applications et ses proportions.')); inspector.append(el('p', '', 'Aucun espace sélectionné.')); return; }
     const percent = splitPercent(draft), canvas = preview(draft); canvas.id = 'editor-preview'; content.append(canvas);
     canvas.querySelectorAll('.preview-window').forEach((window, i) => { if (!draft.windows[i].bundle_id) { window.querySelector('.window-bar').textContent = `Application ${i + 1}`; window.querySelector('.window-body strong').textContent = 'Choisir une app'; } });
@@ -205,12 +236,13 @@
       } inspector.append(ratios);
     }
     if (draft.id != null) { const actions = el('div', 'inspector-actions'); const duplicate = button('Dupliquer', () => mutateSpace('spaces.duplicate')); const remove = button('Supprimer', () => mutateSpace('spaces.delete'), 'danger'); duplicate.disabled = remove.disabled = !writable; actions.append(duplicate, remove); inspector.append(actions); }
-    inspector.append(el('div', 'rule'), el('p', '', 'Appliquer et restaurer restent disponibles dans les réglages classiques.'), button('Réglages classiques', native, 'subtle'));
+    inspector.append(el('div', 'rule'), el('p', '', state.data.diagnostics.restoreAvailable ? 'Une disposition temporaire est active. Restaurez-la avant un nouveau placement.' : 'Appliquer déplace les fenêtres ouvertes et crée un retour de restauration.'), button('Réglages classiques', native, 'subtle'));
     dirtyChanged();
   }
   window.KigiEditor = {async requestClose(quit) { try { if (await guardDraft()) { await state.dirtySync; await Kigi.request(quit ? 'app.quit' : 'app.closeStudio'); } } catch (error) { failure(error); } }};
   function render() {
     if (!state.data) return;
+    $('restore-layout').hidden = !state.data.diagnostics.restoreAvailable; $('restore-layout').disabled = state.busy || !state.data.diagnostics.restoreAvailable;
     const data = state.data, content = $('content'), inspector = $('inspector');
     content.replaceChildren(); inspector.replaceChildren(); $('navigation').replaceChildren(); $('spaces-list').replaceChildren();
     for (const [route, label, icon] of routes) {
@@ -249,6 +281,7 @@
   function properties(open) { $('inspector').classList.toggle('open', open); $('properties').setAttribute('aria-expanded', String(open)); }
   $('properties').addEventListener('click', () => properties(!$('inspector').classList.contains('open')));
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('inspector').classList.contains('open')) { properties(false); $('properties').focus(); } });
+  $('restore-layout').addEventListener('click', () => layoutAction(true));
   $('refresh').addEventListener('click', refresh); $('native').addEventListener('click', native);
   refresh();
 })();

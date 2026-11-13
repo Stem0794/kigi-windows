@@ -24,6 +24,8 @@ pub enum Command {
     Diagnostics,
     Fallback,
     SelectApp,
+    Apply(IdParams),
+    Restore,
     Create(EditParams),
     Update(EditParams),
     Duplicate(IdParams),
@@ -116,6 +118,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
         | "diagnostics.summary"
         | "app.openNativeFallback"
         | "spaces.selectApp"
+        | "spaces.restore"
         | "app.closeStudio"
         | "app.quit" => {
             let _: EmptyParams = parameters(p, id)?;
@@ -126,6 +129,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
                 "diagnostics.summary" => Command::Diagnostics,
                 "app.openNativeFallback" => Command::Fallback,
                 "spaces.selectApp" => Command::SelectApp,
+                "spaces.restore" => Command::Restore,
                 "app.closeStudio" => Command::Close,
                 _ => Command::Quit,
             }
@@ -148,6 +152,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
                 Command::Update(input)
             }
         }
+        "spaces.apply" => Command::Apply(parameters(p, id)?),
         "spaces.duplicate" => Command::Duplicate(parameters(p, id)?),
         "spaces.delete" => {
             let input: DeleteParams = parameters(p, id)?;

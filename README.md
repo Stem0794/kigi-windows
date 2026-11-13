@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.6.1 (aperçu)
+# Kigi Windows — Studio 0.6.2 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -13,8 +13,15 @@ flèches pour ajuster au clavier. L’aperçu et la sauvegarde ne déplacent pas
 Les dispositions libres restent intactes avant conversion explicite en deux colonnes.
 Duplication/suppression et dialogues de brouillon sont pris en charge. Un fichier
 modifié ailleurs bloque l’écriture : conserver le brouillon ou Actualiser.
-Les réglages classiques restent le défaut et donnent accès aux raccourcis, gestes,
-applications/restaurations existants. Leurs actions seront portées à l’étape suivante.
+**Appliquer** place les deux fenêtres ouvertes, avec sélection native en cas d’ambiguïté.
+Un brouillon modifié doit être enregistré explicitement avant placement. Les largeurs
+réellement constatées s’affichent ; si une app impose une taille, le placement reste
+partiel et la proportion demandée est conservée. **Restaurer** revient aux positions
+précédentes, en préservant les fenêtres déplacées manuellement ; un retour incertain
+reste disponible. Un seul retour est conservé, partagé avec les dispositions classiques.
+Ouvrez les deux fenêtres avant d’appliquer ; aucune fenêtre de remplacement n’est créée.
+Les réglages classiques restent le défaut et donnent accès aux raccourcis et gestes.
+Leur parité dans Studio vient à l’étape suivante.
 
 Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
 fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.

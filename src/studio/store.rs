@@ -69,6 +69,27 @@ impl Store {
             }
         }
     }
+    pub fn checked_profile(
+        &self,
+        path: &Path,
+        revision: &str,
+        id: u32,
+    ) -> Result<config::Profile, Failure> {
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .filter(|s| s.revision == revision)
+            .ok_or_else(|| Failure::new("CONFIG_CONFLICT", config::CONFLICT))?;
+        let (catalog, bytes) =
+            config::read_primary(path).map_err(|e| Failure::new("CONFIG_INVALID", e))?;
+        if bytes != snapshot.bytes {
+            return Err(Failure::new("CONFIG_CONFLICT", config::CONFLICT));
+        }
+        catalog
+            .profile(id)
+            .cloned()
+            .map_err(|e| Failure::new("PROFILE_NOT_FOUND", e))
+    }
     pub fn mutate(
         &mut self,
         path: &Path,
@@ -203,6 +224,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(listing.profiles[0].windows[0].geometry.width, 0.35);
+        let saved_bytes = std::fs::read(&path).unwrap();
+        let applied = store
+            .checked_profile(&path, listing.revision.as_deref().unwrap(), id.unwrap())
+            .unwrap();
+        assert_eq!(applied.windows, listing.profiles[0].windows);
+        assert_eq!(std::fs::read(&path).unwrap(), saved_bytes);
         let mut restarted = Store::default();
         let loaded = restarted.list(&path).unwrap();
         assert_eq!(loaded.profiles, listing.profiles);
@@ -225,6 +252,14 @@ mod tests {
         assert_eq!(listing.profiles[0].windows, edit.windows);
         let before = std::fs::read(&path).unwrap();
         std::fs::write(&path, [before.clone(), b"\n".to_vec()].concat()).unwrap();
+        assert_eq!(
+            restarted
+                .checked_profile(&path, listing.revision.as_deref().unwrap(), id.unwrap())
+                .err()
+                .unwrap()
+                .code,
+            "CONFIG_CONFLICT"
+        );
         assert_eq!(
             restarted
                 .mutate(

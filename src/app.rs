@@ -1496,6 +1496,169 @@ impl Controller {
             self.schedule_open_poll();
         }
     }
+    fn select_saved_windows(
+        &self,
+        layout: &config::SavedLayout,
+        mut choices: Vec<windows::Choice>,
+        partial: bool,
+    ) -> Result<Option<[windows::Choice; 2]>, String> {
+        let mut selected = Vec::new();
+        for (i, window) in layout.windows.iter().enumerate() {
+            let matching: Vec<usize> = choices
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.bundle_id == window.bundle_id)
+                .map(|(i, _)| i)
+                .collect();
+            let index = match matching.as_slice() {
+                [] => {
+                    return Err(format!(
+                    "Fenêtre absente pour {}. Ouvrez-la puis réessayez ; aucun placement effectué.",
+                    window.bundle_id
+                ))
+                }
+                [index] if !partial => *index,
+                _ => {
+                    let mut options = Vec::new();
+                    for index in matching.into_iter().rev() {
+                        options.push(choices.remove(index));
+                    }
+                    options.reverse();
+                    let title = format!("Fenêtre {} à appliquer", i + 1);
+                    let Some(index) = choose_window(self.mtm(), &title, &options, partial) else {
+                        return Ok(None);
+                    };
+                    let choice = options.remove(index);
+                    choices.extend(options);
+                    selected.push(choice);
+                    continue;
+                }
+            };
+            selected.push(choices.remove(index));
+        }
+        let second = selected.pop().unwrap();
+        let first = selected.pop().unwrap();
+        Ok(Some([first, second]))
+    }
+    fn studio_apply(
+        &self,
+        input: &studio::bridge::IdParams,
+    ) -> Result<serde_json::Value, studio::bridge::Failure> {
+        use studio::bridge::Failure;
+        if !windows::trusted() {
+            return Err(Failure::new(
+                "PERMISSION_REQUIRED",
+                "Autorisez Accessibilité pour placer les fenêtres.",
+            ));
+        }
+        if self.ivars().picking.get() {
+            return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
+        }
+        if self
+            .ivars()
+            .studio
+            .borrow()
+            .as_ref()
+            .is_some_and(|s| s.dirty())
+        {
+            return Err(Failure::new(
+                "UNSAVED_CHANGES",
+                "Enregistrez cet espace avant de l’appliquer.",
+            ));
+        }
+        if self.ivars().layout_snapshot.borrow().is_some() {
+            return Err(Failure::new(
+                "SNAPSHOT_ACTIVE",
+                "Restaurez la disposition précédente avant d’appliquer un autre espace.",
+            ));
+        }
+        let path = studio_path().map_err(Failure::invalid)?;
+        let profile = self.ivars().studio_store.borrow().checked_profile(
+            &path,
+            &input.expected_revision,
+            input.profile_id,
+        )?;
+        self.cancel_open();
+        self.cancel_gesture_dispatch();
+        let prior_pid = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier())
+            .filter(|pid| *pid != std::process::id() as i32)
+            .or(self.ivars().preferences_anchor.get());
+        self.ivars().picking.set(true);
+        let result = (|| {
+            let (display, choices, partial) =
+                windows::pair_candidates_for_app(self.mtm(), prior_pid)
+                    .map_err(|e| Failure::new("WINDOWS_UNAVAILABLE", e))?;
+            let layout = profile.layout();
+            let Some(selected) = self
+                .select_saved_windows(&layout, choices, partial)
+                .map_err(|e| Failure::new("WINDOWS_UNAVAILABLE", e))?
+            else {
+                return Ok(
+                    serde_json::json!({"operation":"apply","profileId":profile.id,"profileName":profile.name,"result":windows::LayoutOutcome::canceled(&layout)}),
+                );
+            };
+            // A native chooser may stay open while another editor changes the file.
+            self.ivars().studio_store.borrow().checked_profile(
+                &path,
+                &input.expected_revision,
+                input.profile_id,
+            )?;
+            let outcome = windows::apply_saved_layout_detailed(
+                &layout,
+                display,
+                selected,
+                &mut self.ivars().layout_snapshot.borrow_mut(),
+                prior_pid,
+            )
+            .map_err(|e| Failure::new("PLACEMENT_FAILED", e))?;
+            Ok(
+                serde_json::json!({"operation":"apply","profileId":profile.id,"profileName":profile.name,"result":outcome}),
+            )
+        })();
+        self.ivars().picking.set(false);
+        diagnostics::record(
+            "studio.layout.apply",
+            format!(
+                "completed={} snapshot={}",
+                result.is_ok(),
+                self.ivars().layout_snapshot.borrow().is_some()
+            ),
+        );
+        result
+    }
+    fn studio_restore(&self) -> Result<serde_json::Value, studio::bridge::Failure> {
+        use studio::bridge::Failure;
+        if !windows::trusted() {
+            return Err(Failure::new(
+                "PERMISSION_REQUIRED",
+                "Autorisez Accessibilité pour restaurer les fenêtres.",
+            ));
+        }
+        if self.ivars().picking.get() {
+            return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
+        }
+        self.cancel_open();
+        self.cancel_gesture_dispatch();
+        self.ivars().picking.set(true);
+        let result = (|| {
+            let mut snapshot = self.ivars().layout_snapshot.borrow_mut();
+            let outcome = snapshot
+                .as_mut()
+                .ok_or_else(|| {
+                    Failure::new("NO_SNAPSHOT", "Aucune disposition temporaire à restaurer.")
+                })?
+                .restore_detailed()
+                .map_err(|e| Failure::new("RESTORE_FAILED", e))?;
+            if !outcome.restore_available {
+                snapshot.take();
+            }
+            Ok(serde_json::json!({"operation":"restore","result":outcome}))
+        })();
+        self.ivars().picking.set(false);
+        result
+    }
     fn personal_layout(&self, save: bool, profile_id: Option<u32>, profile_name: Option<String>) {
         if self.ivars().picking.get() || !self.window_permission() {
             return;
@@ -1544,33 +1707,11 @@ impl Controller {
             NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
             let result = (|| {
                 let selected = if let Some((layout, _)) = saved.as_ref() {
-                    let mut selected = Vec::new();
-                    for (i, window) in layout.windows.iter().enumerate() {
-                        let matching: Vec<usize> = choices
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, c)| c.bundle_id == window.bundle_id)
-                            .map(|(i, _)| i)
-                            .collect();
-                        let index = match matching.as_slice() {
-                            [] => return Err(format!("Fenêtre absente pour {}. Ouvrez-la puis réessayez ; aucun placement effectué.", window.bundle_id)),
-                            [index] if !partial => *index,
-                            _ => {
-                                // Reuse the same native chooser, scoped to one bundle.
-                                let mut options = Vec::new();
-                                for index in matching.into_iter().rev() { options.push(choices.remove(index)); }
-                                options.reverse();
-                                let title = format!("{} à réappliquer (plusieurs fenêtres de cette application)", i + 1);
-                                let Some(index) = choose_window(self.mtm(), &title, &options, partial) else { return Ok("Disposition annulée ; aucune fenêtre déplacée.".into()); };
-                                let choice = options.remove(index);
-                                choices.extend(options); selected.push(choice); continue;
-                            }
-                        };
-                        selected.push(choices.remove(index));
-                    }
-                    let second = selected.pop().unwrap();
-                    let first = selected.pop().unwrap();
-                    [first, second]
+                    let Some(selected) = self.select_saved_windows(layout, choices, partial)?
+                    else {
+                        return Ok("Disposition annulée ; aucune fenêtre déplacée.".into());
+                    };
+                    selected
                 } else {
                     let Some(first) =
                         choose_window(self.mtm(), "1/2 à enregistrer", &choices, partial)
@@ -1961,8 +2102,9 @@ pub fn studio_command(
         };
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some()});
         match command {
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
+            C::Apply(input)=>c.studio_apply(input), C::Restore=>c.studio_restore(),
             C::Create(_) | C::Update(_) | C::Duplicate(_) | C::Delete(_)=>{
                 if c.ivars().picking.get(){return Err(Failure::new("BUSY","Terminez le dialogue en cours."));}
                 let (revision,mutation)=match command {

@@ -13,6 +13,17 @@ if CommandLine.arguments.contains("--window-order") {
     print(String(data: data, encoding: .utf8)!)
     exit(0)
 }
+if CommandLine.arguments.contains("--window-frames") {
+    let pids = Set(CommandLine.arguments.compactMap { Int($0) })
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    let frames = windows.compactMap { w -> [String: Any]? in
+        guard (w[kCGWindowLayer as String] as? Int) == 0, let pid = w[kCGWindowOwnerPID as String] as? Int, pids.contains(pid), let frame = w[kCGWindowBounds as String] as? [String: Any] else { return nil }
+        return ["pid": pid, "frame": frame]
+    }
+    let data = try JSONSerialization.data(withJSONObject: frames)
+    print(String(data: data, encoding: .utf8)!)
+    exit(0)
+}
 class Fixture: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var attempts = 0
@@ -23,6 +34,7 @@ class Fixture: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: NSRect(x: 160, y: 180, width: 620, height: 420), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = source ? "Kigi focus source fixture" : "Kigi focus target fixture"
         window.collectionBehavior = [.fullScreenPrimary]
+        if CommandLine.arguments.contains("--minimum") { window.contentMinSize = NSSize(width: screen.width * 0.55, height: 200) }
         if source { window.setFrame(screen, display: true) }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
