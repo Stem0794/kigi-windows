@@ -63,3 +63,17 @@ bootstrap + DOM rendu + fermeture/réouverture sans retirer les hotkeys et sans
 changer config.json. Les quatre scénarios de focus 0.5.4 restent conservés.
 Le navigateur Chromium du conteneur refuse son socket de démarrage : aucun
 résultat visuel Chromium n’est revendiqué ; validation native sur runner prévue.
+
+Validation finale : run43416541318, tentative2 réussie sur le même commit
+`1b479adb9db99dbf1b442063c3d9d58ba6adcd90` : 25 tests macOS, deux relances,
+WKWebView/bridge/DOM natifs et cycle fermer/réouvrir, configuration inchangée,
+quatre cas de focus. RSS Rust : classique37 343 232 octets, Studio42 467 328.
+Ce relevé de processus n’inclut pas les auxiliaires WebKit. La première tentative
+avait passé Studio mais rencontré un timeout AX250ms pendant une maximisation
+plein écran ; la seconde a passé sans changement de source ni assouplissement.
+Ce risque temporel reste visible dans l’historique du run et à surveiller sur Mac.
+
+Package0.6.0/build20 : 868101 octets, SHA256
+`e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74`.
+Intel/ARM et ressources locales validés. Revue visuelle/VoiceOver et essais M5
+physiques restent à réaliser ; aucun résultat Chromium ou terrain inventé.
