@@ -471,6 +471,18 @@ fn preferred_window(app: &NSRunningApplication) -> Result<Element, String> {
         )
     }
 }
+/// Raise the existing main/focused window; never open a replacement.
+pub fn raise_application_window(app:&NSRunningApplication)->Result<(),String> {
+    require_permission()?;
+    let window=preferred_window(app)?;
+    window.unminimize()?;
+    let name=NSString::from_str("AXMain");let mut writable=0u8;
+    let code=unsafe{AXUIElementIsAttributeSettable(window.0,name_ref(&name),&mut writable)};
+    if code==0 && writable!=0 {check(unsafe{AXUIElementSetAttributeValue(window.0,name_ref(&name),kCFBooleanTrue)})?;}
+    window.raise()?;
+    diagnostics::record("window.activation.raised",format!("pid={}",app.processIdentifier()));
+    Ok(())
+}
 pub fn application_window_ready(app: &NSRunningApplication) -> bool {
     preferred_window(app).is_ok()
 }

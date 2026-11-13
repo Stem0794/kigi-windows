@@ -74,14 +74,14 @@ impl TrialEvidence {
         } else if self.edge_starts == 0 {
             "Débuts de contacts reçus hors des bords à 10 %. Essayez le test local pour voir le point de départ."
         } else if self.recognized == 0 {
-            "Départ dans un bord reçu, mais aucun geste complet. Rejoignez le milieu en 1,5 s, horizontalement, à un doigt."
+            "Départ dans un bord reçu, mais aucun geste complet. Glissez vers l’intérieur sur 10 % de la largeur, en 1,5 s, horizontalement, à un doigt."
         } else {
             "Au moins un geste global a été observé. La fiabilité et les faux positifs restent à valider sur ce Mac."
         }
     }
 }
 
-/// Opt-in horizontal gestures: start within the outermost 10% and reach x=0.5.
+/// Short inward swipe: outermost 10%, minimum travel 10% of trackpad width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Edge {
     Left,
@@ -150,11 +150,12 @@ impl EdgeProbe {
             self.cancel();
             return None;
         }
-        let reached_center = match edge {
-            Edge::Left => c.x >= 0.5,
-            Edge::Right => c.x <= 0.5,
+        let inward = match edge {
+            Edge::Left => c.x - start.x,
+            Edge::Right => start.x - c.x,
         };
-        if reached_center {
+        let horizontal = inward + 1e-9 >= (c.y - start.y).abs() * 1.5;
+        if inward + 1e-9 >= 0.10 && horizontal {
             self.cancel();
             self.cooldown_until = c.ms.saturating_add(1000);
             Some(edge)
@@ -220,11 +221,11 @@ mod tests {
         assert!(!p.moved(contact(0.1, 0.6, 1501), 1));
     }
     #[test]
-    fn edges_require_center_and_share_cooldown() {
+    fn edges_short_inward_swipe_fires_once_and_shares_cooldown() {
         let mut p = EdgeProbe::default();
         p.begin(contact(0.10, 0.5, 0), 1);
-        assert_eq!(p.moved(contact(0.45, 0.55, 100), 1), None);
-        assert_eq!(p.moved(contact(0.5, 0.56, 140), 1), Some(Edge::Left));
+        assert_eq!(p.moved(contact(0.19, 0.55, 100), 1), None);
+        assert_eq!(p.moved(contact(0.20, 0.56, 140), 1), Some(Edge::Left));
         assert_eq!(p.moved(contact(0.7, 0.56, 200), 1), None);
         p.begin(contact(0.10, 0.5, 210), 1);
         assert_eq!(p.moved(contact(0.5, 0.5, 240), 1), None);
@@ -233,7 +234,20 @@ mod tests {
         assert_eq!(p.moved(contact(0.5, 0.6, 500), 1), None);
         p.release();
         p.begin(contact(0.90, 0.4, 1200), 1);
-        assert_eq!(p.moved(contact(0.5, 0.42, 1300), 1), Some(Edge::Right));
+        assert_eq!(p.moved(contact(0.80, 0.42, 1300), 1), Some(Edge::Right));
+    }
+    #[test]
+    fn short_swipe_uses_distance_from_start_and_rejects_jitter_and_diagonals() {
+        let mut p=EdgeProbe::default();
+        p.begin(contact(0.10,0.5,0),1);
+        assert_eq!(p.moved(contact(0.1999,0.5,100),1),None);
+        assert_eq!(p.moved(contact(0.20,0.5,110),1),Some(Edge::Left));
+        p.release();p.begin(contact(0.90,0.5,1200),1);
+        assert_eq!(p.moved(contact(0.8001,0.5,1250),1),None);
+        assert_eq!(p.moved(contact(0.80,0.5,1300),1),Some(Edge::Right));
+        p.release();p.begin(contact(0.05,0.5,2500),1);
+        assert_eq!(p.moved(contact(0.15,0.61,2600),1),None);
+        assert_eq!(p.moved(contact(0.25,0.61,2700),1),Some(Edge::Left));
     }
     #[test]
     fn edges_ten_percent_bounds_and_direction() {
@@ -253,10 +267,10 @@ mod tests {
         assert_eq!(p.moved(contact(0.5, 0.5, 200), 1), None);
         p.release();
         p.begin(contact(0.90, 0.9, 0), 1);
-        assert_eq!(p.moved(contact(0.5, 0.9, 200), 1), Some(Edge::Right));
+        assert_eq!(p.moved(contact(0.80, 0.9, 200), 1), Some(Edge::Right));
         p.release();
         p.begin(contact(0.10, 0.1, 2000), 1);
-        assert_eq!(p.moved(contact(0.5, 0.1, 2100), 1), Some(Edge::Left));
+        assert_eq!(p.moved(contact(0.20, 0.1, 2100), 1), Some(Edge::Left));
     }
     #[test]
     fn edges_block_until_lift_after_invalid_contact() {

@@ -146,7 +146,7 @@ impl Tap {
         )
     }
     pub fn report(&self) -> String {
-        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, arrivée au milieu, durée 1,5 s. Aucune coordonnée ni identité conservée dans ce bilan.",
+        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, glissement intérieur ≥10 % de largeur, durée 1,5 s. Aucune coordonnée ni identité conservée dans ce bilan.",
             self.stats.events,self.stats.with_touches,self.stats.samples,self.stats.began,self.stats.moved,self.stats.edge_starts,self.stats.left,self.stats.right,self.stats.conversion_failed,self.stats.wrong_type,self.stats.disabled,self.stats.actions,self.evidence().diagnosis())
     }
 }

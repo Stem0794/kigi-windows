@@ -24,7 +24,13 @@ jobs:
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - name: Check format and targeted tests
         run: |
-          cargo fmt --check
+          if ! cargo fmt --check; then
+            cargo fmt
+            echo KIGI_FORMAT_PATCH_BEGIN
+            git diff --no-color -- src
+            echo KIGI_FORMAT_PATCH_END
+            exit 1
+          fi
           cargo check --locked
           cargo test --locked
       - name: Compile fixed Chrome script when Chrome is installed
@@ -69,6 +75,8 @@ jobs:
           print("NATIVE_VALIDATION " + json.dumps({"macOS": platform.mac_ver()[0], "machine": platform.machine(), "launches": results}))
           print("Two same-bundle startups verified; permission flags compared without requesting access. No AX action, input or screenshot. Granted TCC and physical trackpad still require the pilot Mac.")
           PYTHON
+      - name: Verify focus from maximized and native-fullscreen fixtures
+        run: python3 scripts/check-focus.py
       - name: Archive application
         run: |
           lipo -info "dist/Kigi Windows.app/Contents/MacOS/kigi-windows"

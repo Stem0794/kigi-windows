@@ -591,3 +591,33 @@ P0/P1 ne sont pas déclarés intégralement clos : sur le Mac pilote, tester la
 maximisation depuis un plein écran natif, deux relances sans remplacer le
 bundle après autorisation, puis l’essai trackpad 10 % et le rapport. Les p95
 d’actions restent non mesurés tant qu’aucune action réelle n’a été exécutée.
+
+## 0.5.3 — Premier plan depuis 100 % et geste court
+
+Retour utilisateur : ⌥T/Chrome échouent depuis une fenêtre à 100 %, ainsi que
+les gestes ; l’arrivée au centre n’est pas souhaitée. Le code traitait la
+demande d’activation Teams comme une preuve de succès et pouvait abandonner
+Chrome avant la fin du passage au premier plan. Cause exacte sur le Mac encore
+à confirmer, correctifs ciblés sur ces points observés dans le code.
+
+Activation publique avec toutes les fenêtres et handoff coopératif lorsque
+Kigi est actif (macOS 14+, garde de disponibilité pour les anciens OS).
+Relevé AX de la fenêtre existante, déminimisation, AXMain si modifiable et
+AXRaise. Un seul relevé par demande, attente bornée à 4 s et confirmation du
+PID actif ; annulation si une tierce app est choisie. Aucune fenêtre recréée.
+Logs structurels de la source plein écran, demande acceptée, relevé et résultat.
+
+Geste : bande 10 % inchangée ; déplacement intérieur ≥0,10 depuis le départ,
+plus horizontal que vertical (ratio 1,5), dérive≤0,12 et durée≤1,5 s.
+Plus d’arrivée x=0,50 obligatoire. Tests des micro-mouvements, bornes décimales,
+diagonales, déclenchement avant le centre et cooldown. Messages et test local
+alignés. Deux tests purs ajoutés ; les 20 tests hôte et le typage Mac ont passé
+avant interruption de l’environnement local.
+
+Reprise du travail via le connecteur GitHub après indisponibilité de
+l’environnement local. Le build Mac vérifiera le format et le contenu final.
+Validation native ciblée : fenêtre source à 100 % puis plein écran natif,
+activation d’une cible sans puis avec maximisation ; vérifier PID actif et
+ordre CGWindowList des fenêtres visibles (PID/layer, sans titre ni screenshot).
+Une fixture Swift CI, aucun runtime ajouté au produit Rust. Résultats à
+consigner après exécution. Le geste physique reste à essayer sur le Mac pilote.

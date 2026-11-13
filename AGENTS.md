@@ -95,3 +95,15 @@ physiques, permissions accordées et performances du Mac pilote restent à
 relever. Le run 43327603804 a conservé les précontrôles AX/surveillance à true
 sur deux lancements ; cela ne prouve pas le contrôle d’apps tierces ou la
 stabilité TCC sur le Mac pilote.
+
+## Correction activation et geste court — 0.5.3
+
+L’utilisateur signale un défaut de premier plan depuis une fenêtre à 100 % et
+demande de supprimer l’arrivée au centre du trackpad. Conserver les bords 10 %,
+exiger seulement un déplacement intérieur de 10 % de la largeur, horizontal,
+à un doigt ; conserver les protections contre micro-mouvements et répétition.
+Confirmer le focus et relever les fenêtres existantes sans en recréer.
+Vérifier le cas maximisé et le cas plein écran natif sur fenêtres de test
+contrôlées, sans screenshots ni événements clavier synthétiques. La fixture
+Swift est uniquement un outil de validation CI, pas une couche livrée dans
+l’app Rust. Le mode de vérification cible uniquement la fixture dédiée.

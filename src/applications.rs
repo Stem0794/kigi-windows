@@ -1,10 +1,10 @@
 //! NSWorkspace launch/open, never shell commands or a second app instance.
 use block2::RcBlock;
-use objc2::{msg_send, rc::Retained, runtime::AnyObject, AnyThread};
+use objc2::{msg_send, rc::Retained, runtime::AnyObject, sel, AnyThread};
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
+    NSApplication, NSApplicationActivationOptions, NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSAppleEventDescriptor, NSAppleScript, NSDictionary, NSError, NSString};
+use objc2_foundation::{NSAppleEventDescriptor, NSAppleScript, NSDictionary, NSError, NSObjectProtocol, NSString};
 use std::sync::mpsc::{self, Receiver};
 
 pub const CHROME: &str = "com.google.Chrome";
@@ -32,7 +32,15 @@ pub fn teams_bundle() -> Result<&'static str, String> {
 #[allow(deprecated)]
 pub fn activate(app: &NSRunningApplication) -> Result<(), String> {
     app.unhide();
-    if app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps) {
+    if let Some(mtm)=objc2::MainThreadMarker::new() {
+        let own=NSApplication::sharedApplication(mtm);
+        if own.isActive() && own.respondsToSelector(sel!(yieldActivationToApplication:)) {
+            own.yieldActivationToApplication(app);
+        }
+    }
+    let accepted=app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps | NSApplicationActivationOptions::ActivateAllWindows);
+    crate::diagnostics::record("application.activation.request",format!("pid={} accepted={accepted} all_windows=true",app.processIdentifier()));
+    if accepted {
         Ok(())
     } else {
         Err("L'application ne peut pas être activée ou vient de quitter.".into())

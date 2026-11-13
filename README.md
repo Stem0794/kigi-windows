@@ -1,4 +1,4 @@
-# Kigi Windows — raccourcis configurables 0.5.2
+# Kigi Windows — raccourcis configurables 0.5.3
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -49,6 +49,22 @@ avant Kigi : les essayer après enregistrement.
 En cas de conflit, quitter temporairement Hammerspoon puis **Réenregistrer**.
 Son fichier n’est jamais modifié. Les gestes restent liés à Teams/Chrome,
 indépendamment des raccourcis personnalisés.
+
+## Passage au premier plan — 0.5.3
+
+Les raccourcis d’apps et les gestes relèvent la fenêtre principale/focalisée
+existante via AX, puis confirment le premier plan. Une demande d’activation
+acceptée n’est plus annoncée comme un succès avant cette confirmation.
+L’attente tolère une transition depuis une fenêtre maximisée ou un Space
+plein écran, pendant 4 s maximum, et abandonne si une tierce app est choisie.
+Aucune fenêtre de secours n’est créée. Sans Accessibilité, l’activation simple
+reste possible, mais le relevé AX n’est pas déclaré vérifié.
+
+Le geste garde sa bande de départ de 10 % et nécessite seulement un déplacement
+vers l’intérieur d’au moins 10 % de la largeur depuis le point de départ, sans
+arrivée au centre imposée. Le déplacement doit être principalement horizontal.
+Les micro-mouvements et les déplacements surtout verticaux ne déclenchent pas
+d’action. Une action par contact et cooldown conservés.
 
 ## Fiabilité P0/P1 — 0.5.2
 
@@ -144,8 +160,8 @@ demande, Surveillance de l'entrée.
 
 | Départ et mouvement, un seul doigt | Action |
 | --- | --- |
-| 10 % les plus à gauche, glissement horizontal vers le milieu | Teams au premier plan |
-| 10 % les plus à droite, glissement horizontal vers le milieu | Chrome au premier plan à 100 % |
+| 10 % les plus à gauche, court glissement horizontal vers l’intérieur | Teams au premier plan |
+| 10 % les plus à droite, court glissement horizontal vers l’intérieur | Chrome au premier plan à 100 % |
 
 Le retour utilisateur 0.4.1 signale une absence de détection dans les logs.
 La réception globale n’est donc pas considérée corrigée. Cette version affiche
@@ -156,7 +172,8 @@ et globaux n’utilisent plus l’ancien geste vertical de coin. Une création d
 tap réussie n’est jamais présentée comme une preuve de réception de contacts.
 
 Le départ peut se faire sur **toute la hauteur** : x≤0,10 à gauche ou x≥0,90
-à droite. Le doigt doit atteindre la ligne centrale x=0,50 en ≤1,5 s avec
+à droite. Le doigt doit avancer d’au moins 10 % de la largeur depuis son point de départ
+vers l’intérieur en ≤1,5 s, sans devoir atteindre le milieu, avec
 une dérive verticale ≤0,12 ; tolérance de recul vers l'extérieur de 0,03.
 Une action par contact, cooldown global 1 s. Deux doigts, clic/drag observé,
 identité/device différent, mauvaise direction, délai ou début manquant annulent.
@@ -276,7 +293,7 @@ continuent de proposer uniquement des fenêtres ordinaires.
 Les apps peuvent imposer leurs dimensions : AX relit la géométrie et signale un
 résultat partiel. Position/taille/position reprend le correctif 0.0.6 validé par
 l'utilisateur. Le snapshot de ⌃⌥T reste en mémoire : restaurer avant de quitter.
-Les lancements NSWorkspace sont asynchrones, avec contrôle temporaire ≤3 s ;
+Les lancements NSWorkspace sont asynchrones, avec contrôle temporaire ≤4 s ;
 une nouvelle commande annule le traitement en attente, pas le lancement OS.
 
 ## Logs et essai court
@@ -290,7 +307,7 @@ réseau, aucun journal persistant automatique.
 
 Sur le Mac pilote : ⌥C deux fois avec ChatGPT déjà ouvert (nombre d'onglets
 inchangé), avec ChatGPT absent (un seul nouvel onglet), puis un geste horizontal volontaire
-de chaque bord jusqu'au milieu. Essayer aussi un départ central, deux doigts, un
+de chaque bord vers l’intérieur. Essayer aussi un départ central, deux doigts, un
 glissement vertical depuis un bord et l'usage ordinaire
 pour relever les faux positifs ; désactiver si nécessaire. Après veille,
 confirmer l'arrêt puis réactiver volontairement. Les nouveaux comportements
