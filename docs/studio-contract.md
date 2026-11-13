@@ -258,3 +258,19 @@ précédente : recul6 % depuis son point de reconnaissance pour filtrer les rebo
 Un contact commencé au centre peut rejoindre un bord avant son premier geste.
 Coordonnées/identité restent transitoires. Interruption multitouch/clic/device ou
 contact invalide exige encore un lever ; aucun réarmement depuis le centre.
+
+##0.7.0 — bascule de l’interface
+
+Studio par défaut au lancement, Dock et Ouvrir Kigi. --studio-ui reste compatible ;
+--native-ui force le secours. Menus sans doublons, secours dans Diagnostics ou erreur
+de chargement. Les anciens services restent natifs ; ancien écran gardé une version.
+
+spaces.capture{expectedRevision} : choix natif de deux fenêtres existantes, capture
+AX en lecture seule, catalogue recontrôlé avant/après choix. Retour vers brouillon ;
+aucun déplacement, snapshot ou fichier créé avant Enregistrer. Profils libres gardés.
+spaces.recoverBackup{expectedRevision,confirmed} : token dédié lecture seule et octets
+primaire/backup liés. Récupération refuse toute modification depuis l’affichage ou
+tout primaire redevenu valide. Ancien invalide copié et synchronisé dans un fichier
+config.invalid-<temps>.json, backup original conservé, primaire remplacé atomiquement.
+Contrôles exacts juste avant écriture ; même fenêtre de concurrence résiduelle entre
+comparaison finale et rename que le writer existant, pas de verrou universel.

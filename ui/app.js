@@ -19,12 +19,12 @@
       state.data = data; KigiSystem.reset(); state.draft = null; state.original = null; state.invalid.clear();
       if (!profiles().some(p => p.id === state.selected)) state.selected = profiles()[0]?.id ?? null;
       $('error').hidden = true;
-      if (data.spaces.usingBackup) failure(new Error('Le catalogue principal est illisible. Les espaces de sauvegarde sont affichés ; ouvrez les réglages classiques pour les vérifier.'));
+      if (data.spaces.usingBackup) failure(new Error('Le catalogue principal est absent ou illisible. La sauvegarde est affichée en lecture seule. Vous pouvez la récupérer après confirmation.'));
       render();
       $('status').textContent = data.spaces.usingBackup ? 'Catalogue de sauvegarde · lecture seule' : 'Lecture du moteur terminée';
       $('version').textContent = `Kigi ${data.version} · Studio`;
-    } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou ouvrez les réglages classiques.')); }
-    finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); if (state.data) render(); }
+    } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou ouvrez l’interface de secours.'), button('Interface de secours', native)); }
+    finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); if (state.data) render(); $('recover-backup').hidden = !state.data?.spaces.usingBackup; }
   }
   async function navigate(route, id = state.selected) { if (!(await guardDraft())) return; KigiSystem.stopPolling(); KigiSystem.reset(); state.route = route; state.selected = id; state.draft = null; state.original = null; state.invalid.clear(); render(); $('page-title')?.focus(); }
   function field(parent, label, value, className = '') { const dl = el('dl', 'field'); dl.append(el('dt', '', label), el('dd', className, value)); parent.append(dl); }
@@ -105,7 +105,7 @@
   }
   function setEditorBusy(busy) {
     state.busy = busy;
-    $('refresh').disabled = busy; $('restore-layout').disabled = busy || !state.data?.diagnostics.restoreAvailable;
+    $('refresh').disabled = busy; $('recover-backup').disabled = busy; $('restore-layout').disabled = busy || !state.data?.diagnostics.restoreAvailable;
     $('content').setAttribute('aria-busy', String(busy));
     if (busy) document.querySelectorAll('#content button, #content input, #content select, #inspector button, #inspector input, #inspector select, #navigation button, #spaces-list button').forEach(n => { n.disabled = true; });
   }
@@ -117,6 +117,33 @@
     state.route = 'spaces'; state.selected = null; state.original = null; state.draftRevision = state.data.spaces.revision; state.splitEdited = true; state.invalid.clear();
     state.draft = {id: null, name, windows: splitWindows(50, [{bundle_id: ''}, {bundle_id: ''}])};
     render(); dirtyChanged(); $('space-name')?.focus();
+  }
+  async function recoverBackup() {
+    if (!(await guardDraft())) return;
+    if (await choose('Récupérer les espaces sauvegardés ?', 'La sauvegarde affichée deviendra le catalogue principal. Un éventuel fichier invalide sera conservé à côté et la sauvegarde restera intacte.', [['recover', 'Récupérer', 'primary'], ['cancel', 'Annuler']]) !== 'recover') return;
+    setEditorBusy(true);
+    try { await Kigi.request('spaces.recoverBackup', {expectedRevision: state.data.spaces.revision, confirmed: true}); state.data = await Kigi.request('app.bootstrap'); resetDraft(); $('error').hidden = true; $('recover-backup').hidden = true; $('status').textContent = 'Espaces récupérés · sauvegarde conservée'; }
+    catch (error) { failure(error); }
+    finally { setEditorBusy(false); render(); }
+  }
+  async function captureSpace() {
+    if (state.busy || !state.data?.spaces.canWrite) return;
+    if (state.dirty && await choose('Remplacer les positions du brouillon ?', 'La capture remplacera les deux fenêtres et leurs positions. Le nom et le brouillon restent non enregistrés.', [['capture', 'Capturer'], ['cancel', 'Annuler']]) !== 'capture') return;
+    const previous = clone(state.draft), original = clone(state.original);
+    const revision = previous ? state.draftRevision : state.data.spaces.revision;
+    setEditorBusy(true);
+    try {
+      const result = await Kigi.request('spaces.capture', {expectedRevision: revision});
+      if (result.canceled) { $('status').textContent = 'Capture annulée · aucune modification'; return; }
+      const profile = previous || current();
+      let name = 'Disposition capturée'; const existing = new Set(profiles().map(p => p.name.toLowerCase()));
+      for (let n = 2; existing.has(name.toLowerCase()); n++) name = `Disposition capturée ${n}`;
+      state.route = 'spaces'; state.original = previous ? original : clone(profile); state.selected = profile?.id ?? null;
+      state.draft = {id: profile?.id ?? null, name: profile?.name || name, windows: result.windows};
+      state.draftRevision = revision; state.splitEdited = false; state.invalid.clear();
+      dirtyChanged(); $('error').hidden = true; $('status').textContent = 'Disposition capturée · cliquez sur Enregistrer';
+    } catch (error) { failure(error); }
+    finally { setEditorBusy(false); render(); }
   }
   async function saveDraft() {
     if (state.busy || !state.draft) return false;
@@ -198,7 +225,7 @@
   function renderEditor(content, inspector) {
     if (!state.draft && current()) { state.draft = clone(current()); state.original = clone(current()); state.draftRevision = state.data.spaces.revision; state.splitEdited = false; state.invalid.clear(); }
     const draft = state.draft, writable = state.data.spaces.canWrite;
-    const toolbar = el('div', 'editor-toolbar'); toolbar.append(button('Nouvel espace', newSpace, 'subtle'));
+    const toolbar = el('div', 'editor-toolbar'); toolbar.append(button('Nouvel espace', newSpace, 'subtle')); const capture = button('Capturer deux fenêtres…', captureSpace, 'subtle'); capture.id = 'capture-space'; toolbar.append(capture);
     if (draft) {
       const save = button('Enregistrer', saveDraft, 'primary'); save.id = 'save-space'; toolbar.append(save); const apply = button('Appliquer', () => layoutAction(false)); apply.id = 'apply-space'; toolbar.append(apply);
       toolbar.append(button('Annuler les modifications', async () => { await discardDraft(); if (!current()) state.selected = profiles()[0]?.id ?? null; render(); $('status').textContent = 'Modifications ignorées'; }, 'subtle'));
@@ -238,7 +265,7 @@
       } inspector.append(ratios);
     }
     if (draft.id != null) { const actions = el('div', 'inspector-actions'); const duplicate = button('Dupliquer', () => mutateSpace('spaces.duplicate')); const remove = button('Supprimer', () => mutateSpace('spaces.delete'), 'danger'); duplicate.disabled = remove.disabled = !writable; actions.append(duplicate, remove); inspector.append(actions); }
-    inspector.append(el('div', 'rule'), el('p', '', state.data.diagnostics.restoreAvailable ? 'Une disposition temporaire est active. Restaurez-la avant un nouveau placement.' : 'Appliquer déplace les fenêtres ouvertes et crée un retour de restauration.'), button('Réglages classiques', native, 'subtle'));
+    inspector.append(el('div', 'rule'), el('p', '', state.data.diagnostics.restoreAvailable ? 'Une disposition temporaire est active. Restaurez-la avant un nouveau placement.' : 'Appliquer déplace les fenêtres ouvertes et crée un retour de restauration.'));
     dirtyChanged();
   }
   window.KigiEditor = {async requestClose(quit) { try { if (await guardDraft()) { await state.dirtySync; KigiSystem.stopPolling(); await Kigi.request(quit ? 'app.quit' : 'app.closeStudio'); } } catch (error) { failure(error); } }};
@@ -275,6 +302,6 @@
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('inspector').classList.contains('open')) { properties(false); $('properties').focus(); } });
   KigiSystem.setup({el, button, field, heading, choose, fail: failure, guard: guardDraft, syncDirty: syncNativeDirty, busy: () => state.busy, setBusy: setEditorBusy, data: () => state.data, route: () => state.route, replace: data => { state.data = data; }, render, status: text => { $('status').textContent = text; }, clearError: () => { if (!state.data?.spaces.usingBackup) $('error').hidden = true; }});
   $('restore-layout').addEventListener('click', () => layoutAction(true));
-  $('refresh').addEventListener('click', refresh); $('native').addEventListener('click', native);
+  $('refresh').addEventListener('click', refresh); $('recover-backup').addEventListener('click', recoverBackup);
   refresh();
 })();

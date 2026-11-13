@@ -26,6 +26,7 @@ struct Snapshot {
 pub struct Store {
     serial: u64,
     snapshot: Option<Snapshot>,
+    recovery: Option<(String, Option<Vec<u8>>, Vec<u8>)>,
 }
 pub enum Mutation<'a> {
     Save(&'a EditParams),
@@ -35,7 +36,9 @@ pub enum Mutation<'a> {
 impl Store {
     pub fn list(&mut self, path: &Path) -> Result<Listing, Failure> {
         match config::read_primary(path) {
+            Ok((_, None)) if path.with_extension("json.bak").exists() => self.list_backup(path),
             Ok((catalog, bytes)) => {
+                self.recovery = None;
                 if !self.snapshot.as_ref().is_some_and(|s| s.bytes == bytes) {
                     self.serial += 1;
                     let now = SystemTime::now()
@@ -54,20 +57,63 @@ impl Store {
                     revision: self.snapshot.as_ref().map(|s| s.revision.clone()),
                 })
             }
-            Err(message) => {
-                self.snapshot = None;
-                if let Ok(Some((catalog, true))) = config::load(path) {
-                    Ok(Listing {
-                        profiles: catalog.profiles,
-                        using_backup: true,
-                        can_write: false,
-                        revision: None,
-                    })
-                } else {
-                    Err(Failure::new("CONFIG_INVALID", message))
-                }
-            }
+            Err(_) => self.list_backup(path),
         }
+    }
+    fn list_backup(&mut self, path: &Path) -> Result<Listing, Failure> {
+        self.snapshot = None;
+        let primary = config::read(path).map_err(|e| Failure::new("CONFIG_INVALID", e))?;
+        let backup = config::read(&path.with_extension("json.bak"))
+            .map_err(|e| Failure::new("CONFIG_INVALID", e))?
+            .ok_or_else(|| {
+                Failure::new("CONFIG_INVALID", "Aucune sauvegarde valide disponible.")
+            })?;
+        let catalog = config::decode(&backup).map_err(|e| Failure::new("CONFIG_INVALID", e))?;
+        if !self
+            .recovery
+            .as_ref()
+            .is_some_and(|(_, p, b)| p == &primary && b == &backup)
+        {
+            self.serial += 1;
+            self.recovery = Some((format!("recovery-{}", self.serial), primary, backup));
+        }
+        Ok(Listing {
+            profiles: catalog.profiles,
+            using_backup: true,
+            can_write: false,
+            revision: self.recovery.as_ref().map(|r| r.0.clone()),
+        })
+    }
+    pub fn recover(&mut self, path: &Path, revision: &str) -> Result<(Listing, Catalog), Failure> {
+        let (_, primary, backup) = self
+            .recovery
+            .as_ref()
+            .filter(|r| r.0 == revision)
+            .ok_or_else(|| Failure::new("CONFIG_CONFLICT", config::CONFLICT))?;
+        let catalog = config::recover_backup(path, primary, backup).map_err(|e| {
+            Failure::new(
+                if e == config::CONFLICT {
+                    "CONFIG_CONFLICT"
+                } else {
+                    "CONFIG_WRITE_FAILED"
+                },
+                e,
+            )
+        })?;
+        Ok((self.list(path)?, catalog))
+    }
+    pub fn check_revision(&self, path: &Path, revision: &str) -> Result<(), Failure> {
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .filter(|s| s.revision == revision)
+            .ok_or_else(|| Failure::new("CONFIG_CONFLICT", config::CONFLICT))?;
+        let (_, bytes) =
+            config::read_primary(path).map_err(|e| Failure::new("CONFIG_INVALID", e))?;
+        if bytes != snapshot.bytes {
+            return Err(Failure::new("CONFIG_CONFLICT", config::CONFLICT));
+        }
+        Ok(())
     }
     pub fn checked_profile(
         &self,
@@ -298,11 +344,50 @@ mod tests {
         std::fs::write(path.with_extension("json.bak"), &valid).unwrap();
         std::fs::write(&path, b"invalid").unwrap();
         let backup = restarted.list(&path).unwrap();
-        assert!(backup.using_backup && !backup.can_write && backup.revision.is_none());
+        assert!(backup.using_backup && !backup.can_write && backup.revision.is_some());
         assert!(restarted
             .mutate(&path, "stale", Mutation::Save(&edit))
             .is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"invalid");
+        let revision = backup.revision.unwrap();
+        assert!(restarted
+            .mutate(&path, &revision, Mutation::Save(&edit))
+            .is_err());
+        std::fs::write(&path, b"changed-invalid").unwrap();
+        assert!(restarted.recover(&path, &revision).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"changed-invalid");
+        let fresh = restarted.list(&path).unwrap();
+        std::fs::write(path.with_extension("json.bak"), b"changed-backup").unwrap();
+        assert!(restarted
+            .recover(&path, fresh.revision.as_deref().unwrap())
+            .is_err());
+        std::fs::write(path.with_extension("json.bak"), &valid).unwrap();
+        let fresh = restarted.list(&path).unwrap();
+        let (restored, catalog) = restarted
+            .recover(&path, fresh.revision.as_deref().unwrap())
+            .unwrap();
+        assert!(restored.can_write && !restored.using_backup);
+        assert_eq!(catalog.profiles, deleted.profiles);
+        assert_eq!(
+            std::fs::read(path.with_extension("json.bak")).unwrap(),
+            valid
+        );
+        let retained: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|p| p.file_name().to_string_lossy().contains("invalid-"))
+            .collect();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(
+            std::fs::read(retained[0].path()).unwrap(),
+            b"changed-invalid"
+        );
+        std::fs::remove_file(&path).unwrap();
+        let missing = restarted.list(&path).unwrap();
+        assert!(missing.using_backup && !missing.can_write);
+        restarted
+            .recover(&path, missing.revision.as_deref().unwrap())
+            .unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

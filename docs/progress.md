@@ -848,3 +848,16 @@ CRC/plist/architectures Intel+ARM et cinq assets UI vérifiés. [PR#6](https://g
 empilée sur PR#5 ; main conservée. Réarmement continu validé par classificateur
 pur partagé, pas encore physiquement sur trackpad. Les interruptions réelles de
 contact/clic/multitouch restent sécurisées par annulation jusqu’au lever.
+
+## 2026-11-13 — Studio0.7.0 par défaut
+
+Suite de la bascule autorisée. Lancement/Dock/menus ouvrent Studio, doublons de menus
+retirés ; ancien écran limité au secours Diagnostics/échec WebKit/--native-ui.
+Capture native de deux fenêtres vers brouillon, géométrie libre conservée, révision
+contrôlée avant/après sélecteurs ; Enregistrer reste explicite. Récupération de
+sauvegarde affichée en lecture seule après confirmation, comparaison exacte des
+octets du primaire et de la sauvegarde, copie durable du primaire invalide avant
+remplacement atomique ; sauvegarde intacte. Fichier primaire absent également traité.
+29 tests hôte et typage ARM passent ; protocole/récupération/conflits étendus. Parcours
+natif supplémentaire pour confirmation/annulation/recovery/conservation, et assertion
+Studio ouvert par défaut. Capture physique/choix des fenêtres restent à essayer.

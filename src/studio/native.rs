@@ -275,7 +275,9 @@ impl Studio {
         }
     }
     pub fn check_editor(&self) {
-        let source = if std::env::var_os("KIGI_TEST_STUDIO_SYSTEM").is_some() {
+        let source = if std::env::var_os("KIGI_TEST_STUDIO_RECOVERY").is_some() {
+            include_str!("../../scripts/studio-recovery-check.js")
+        } else if std::env::var_os("KIGI_TEST_STUDIO_SYSTEM").is_some() {
             if std::env::var_os("KIGI_TEST_STUDIO_READBACK").is_some() {
                 "Kigi.request('shortcuts.list').then(s=>{window.__kigiEditorCheck={success:s.settings.entries[0].command.kind==='Maximize'&&s.settings.entries.length===7,readback:true}}).catch(e=>{window.__kigiEditorCheck={success:false,message:e.message}});void 0;"
             } else {

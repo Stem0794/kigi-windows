@@ -4,6 +4,57 @@ use crate::studio::{bridge::Failure, system::SystemCommand as S};
 use serde_json::{json, Value};
 
 impl Controller {
+    pub(super) fn studio_capture_layout(&self, revision: &str) -> Result<Value, Failure> {
+        let path = studio_path().map_err(Failure::invalid)?;
+        self.ivars()
+            .studio_store
+            .borrow()
+            .check_revision(&path, revision)?;
+        if self.ivars().picking.get() {
+            return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
+        }
+        if !windows::trusted() {
+            return Err(Failure::new(
+                "PERMISSION_REQUIRED",
+                "Autorisez Accessibilité avant de capturer des fenêtres.",
+            ));
+        }
+        self.cancel_open();
+        self.cancel_gesture_dispatch();
+        self.cancel_shortcut_capture();
+        let prior = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier())
+            .filter(|p| *p != std::process::id() as i32)
+            .or(self.ivars().preferences_anchor.get());
+        let (_, mut choices, partial) = windows::pair_candidates_for_app(self.mtm(), prior)
+            .map_err(|e| Failure::new("CAPTURE_FAILED", e))?;
+        self.ivars().picking.set(true);
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+        let result = (|| {
+            let Some(first) = choose_window(self.mtm(), "1/2 à capturer", &choices, partial)
+            else {
+                return Ok(json!({"canceled":true}));
+            };
+            let first = choices.remove(first);
+            let Some(second) = choose_window(self.mtm(), "2/2 à capturer", &choices, partial)
+            else {
+                return Ok(json!({"canceled":true}));
+            };
+            let second = choices.remove(second);
+            let layout = windows::capture_layout(self.mtm(), [&first, &second])
+                .map_err(|e| Failure::new("CAPTURE_FAILED", e))?;
+            self.ivars()
+                .studio_store
+                .borrow()
+                .check_revision(&path, revision)?;
+            Ok(json!({"canceled":false,"windows":layout.windows}))
+        })();
+        self.ivars().picking.set(false);
+        result
+    }
+
     pub(super) fn studio_shortcuts_data(&self) -> Value {
         let runtime = self.ivars().shortcuts.borrow();
         let mut value = match shortcuts_path() {

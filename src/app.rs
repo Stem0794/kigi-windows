@@ -103,7 +103,6 @@ struct State {
     preferences: RefCell<Option<Preferences>>,
     preferences_anchor: Cell<Option<i32>>,
     studio: RefCell<Option<studio::Studio>>,
-    studio_selected: Cell<bool>,
     studio_store: RefCell<studio::store::Store>,
     studio_quit_confirmed: Cell<bool>,
     studio_editor_polls: Cell<u8>,
@@ -264,7 +263,7 @@ define_class!(
         #[unsafe(method(startupReport:))]
         fn startup_report(&self,_:Option<&AnyObject>){
             let visible=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.window.isVisible()) || self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible());
-            println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
+            println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"studio_visible":self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible()),"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
         }
         #[unsafe(method(copyLogs:))]
         fn copy_logs(&self,_:Option<&AnyObject>){let result=self.copy_diagnostics();self.status(if result.is_ok(){"Rapport copié."}else{"Impossible de copier le rapport."});}
@@ -346,7 +345,7 @@ define_class!(
         #[unsafe(method(openStudio:))]
         fn open_studio_action(&self,_:Option<&AnyObject>){self.open_studio();}
         #[unsafe(method(nativeFallback:))]
-        fn native_fallback(&self,_:Option<&AnyObject>){self.ivars().studio_selected.set(false);self.open_profiles();}
+        fn native_fallback(&self,_:Option<&AnyObject>){self.open_profiles();}
         #[unsafe(method(studioRenderCheck:))]
         fn studio_render_check(&self,_:Option<&AnyObject>){
             if !std::env::args().any(|a|a=="--studio-check") {return;}
@@ -386,7 +385,7 @@ define_class!(
         fn studio_timeout(&self,_:Option<&AnyObject>){
             if self.ivars().studio.borrow().as_ref().is_some_and(|s|!s.ready()) {
                 diagnostics::record("studio.load_failed","bootstrap_timeout=true");
-                self.ivars().studio_selected.set(false);
+
                 self.open_profiles();
             }
         }
@@ -982,13 +981,10 @@ impl Controller {
         }
     }
     fn open_main_ui(&self) {
-        if !std::env::args().any(|a| a == "--native-ui")
-            && (self.ivars().studio_selected.get()
-                || std::env::args().any(|a| a == "--studio-ui" || a == "--studio-check"))
-        {
-            self.open_studio();
-        } else {
+        if std::env::args().any(|a| a == "--native-ui") {
             self.open_profiles();
+        } else {
+            self.open_studio();
         }
     }
     fn open_studio(&self) {
@@ -1008,7 +1004,6 @@ impl Controller {
                 }
             }
         }
-        self.ivars().studio_selected.set(true);
         if let Some(studio) = self.ivars().studio.borrow().as_ref() {
             studio.show(self.mtm());
         }
@@ -2106,8 +2101,15 @@ pub fn studio_command(
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some(),"lastResult":c.ivars().status.borrow().clone()});
         match command {
             C::System(op)=>c.studio_system(op),
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
+            C::Capture(input)=>c.studio_capture_layout(&input.expected_revision),
+            C::Recover(input)=>{
+                if !input.confirmed {return Err(Failure::new("CONFIRMATION_REQUIRED","Confirmez la récupération de la sauvegarde."));}
+                if c.ivars().picking.get(){return Err(Failure::new("BUSY","Terminez le dialogue en cours."));}
+                let (listing,catalog)=c.ivars().studio_store.borrow_mut().recover(&studio_path().map_err(Failure::invalid)?,&input.expected_revision)?;
+                c.set_catalog(catalog,None,false);Ok(json!({"spaces":listing}))
+            }
             C::Apply(input)=>c.studio_apply(input), C::Restore=>c.studio_restore(),
             C::Create(_) | C::Update(_) | C::Duplicate(_) | C::Delete(_)=>{
                 if c.ivars().picking.get(){return Err(Failure::new("BUSY","Terminez le dialogue en cours."));}
@@ -2297,13 +2299,6 @@ pub fn run() {
         }
         let menu = NSMenu::new(mtm);
         menu_action(&menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
-        menu_action(&menu, &controller, "Ouvrir Studio…", sel!(openStudio:));
-        menu_action(
-            &menu,
-            &controller,
-            "Réglages classiques…",
-            sel!(nativeFallback:),
-        );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         let profiles_menu = NSMenu::new(mtm);
         let profiles_parent = NSMenuItem::new(mtm);
@@ -2338,13 +2333,6 @@ pub fn run() {
         let app_menu = NSMenu::new(mtm);
         let open = menu_action(&app_menu, &controller, "Ouvrir Kigi…", sel!(openProfiles:));
         open.setKeyEquivalent(ns_string!(","));
-        menu_action(&app_menu, &controller, "Ouvrir Studio…", sel!(openStudio:));
-        menu_action(
-            &app_menu,
-            &controller,
-            "Réglages classiques…",
-            sel!(nativeFallback:),
-        );
         let quit = menu_action(&app_menu, &controller, "Quitter Kigi", sel!(quit:));
         quit.setKeyEquivalent(ns_string!("q"));
         let app_parent = NSMenuItem::new(mtm);
