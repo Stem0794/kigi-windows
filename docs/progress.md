@@ -662,4 +662,12 @@ le PID réellement au premier plan confirme toujours le succès. Aucune réouver
 d’app ni fenêtre supplémentaire. Permissions et annulation utilisateur conservées.
 Deux cas natifs supplémentaires refusent volontairement AppKit dans le seul mode
 fixture pour vérifier le chemin AX depuis une fenêtre maximisée et un plein écran.
-Validation native et package : en attente du workflow de cette version.
+Validation : format et compilation ARM locale, 20 tests purs ; workflow macOS
+[43407827932](https://github.com/Stem0794/kigi-windows/actions/runs/43407827932)
+réussi sur macOS 15.7.9 Intel : 23 tests, deux relances, quatre bascules natives
+avec fenêtre cible réellement devant la source, dont deux demandes AppKit
+volontairement refusées. Bundle 0.5.4/build 19 universel, CRC ZIP et architectures
+vérifiés ; 806 932 octets, SHA256
+`8d8f47c8cb706cf15c2a3444ab7ded8794e85d7da03dfa0ddceb2c06cb69f0f7`.
+Le retour sur macOS 26.7.2 ARM64 et le trackpad physique reste à confirmer.
+Ces essais utilisent des fenêtres contrôlées, pas Teams/Chrome sur le Mac pilote.
