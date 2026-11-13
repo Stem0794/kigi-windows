@@ -128,3 +128,58 @@ système ou un essai de geste global. Le test de fermeture appelle le même poin
 JS fixe que le delegate natif ; le bouton de titre macOS reste à essayer physiquement.
 Application/restauration depuis Studio et parité système non incluses dans cette
 phase. Le package0.6.1/build21 n’est pas fusionné sur main.
+
+## Phase3 — application/restauration, 0.6.2
+
+Branche ui/studio-apply basée sur la phase2 encore en revue. Nouveau spaces.apply
+avec profileId + expectedRevision, et spaces.restore sans paramètres. Le backend
+refuse les brouillons sales, permissions absentes, dialogue occupé et snapshot déjà
+actif. Le profil doit correspondre aux octets de la dernière lecture, contrôlés
+avant l’inventaire puis après l’éventuel sélecteur natif, avant tout placement.
+Apps absentes, choix annulé ou fenêtres ambiguës : pas de fenêtres de secours.
+Le sélecteur existant est partagé avec les réglages classiques. Il peut rester
+ouvert volontairement ; le client ne lui impose pas le timeout ordinaire de8s.
+
+Kernel partagé apply_saved_layout/Meeting et LayoutSnapshot : issue typée, normalisée
+sur la zone visible mémorisée, requested/actual nullable, restored/ignored/pending,
+restoreAvailable et activationConfirmed distinct de la réussite géométrique.
+Lecture AX après les deux écritures ; tolérance historique8pt, aucune supposition
+basée sur un booléen AppKit. La fenêtre choisie est relevée explicitement ; aucun
+choix implicite d’une autre fenêtre de la même app. L’activation non confirmée est
+mentionnée même lorsque les positions sont confirmées. Ratios demandés inchangés.
+
+Restauration : même politique existante restore_decision, aucune pile d’undo ;
+ignorer une fenêtre fermée ou déplacée manuellement. Les erreurs/incertitudes gardent
+le snapshot. Le snapshot n’est effacé qu’après résolution de toutes les entrées.
+Le bouton Restaurer est global et fonctionne même si le profil a été supprimé.
+Les modifications du brouillon ne sont pas effacées par une restauration de fenêtres.
+Actualiser relit l’état partagé après une action classique ; le backend reste l’autorité.
+
+UI : Appliquer propose Enregistrer et appliquer/Annuler sur un brouillon sale.
+Les boutons empêchent les opérations simultanées ; le backend refait les contrôles.
+Le retour montre le profil concerné, les largeurs demandées/constatées et un résultat
+partiel si nécessaire. Les données absentes restent Non mesuré, jamais0 ou un succès.
+Les appels AX restent ceux du moteur principal, synchrones et bornés par appel ;
+le dialogue volontaire est modal. Aucun nouveau thread de contrôle ou backend parallèle.
+
+Validation ciblée prévue : deux fixtures AppKit dédiées, cas normal35/65 et cas
+contentMinSize55 % pour une demande35 %. Appliquer, refuser un second snapshot,
+restaurer ; comparer les vrais CGWindowBounds après restauration aux positions
+initiales. Sauvegarde+application explicite et annulation préalable dans le cas normal,
+aucune écriture de config dans le cas contraint. Les autres contrôles natifs restent.
+
+### Validation phase3
+
+Source1b91c64, run43434129431 réussi :27 tests natifs et tous contrôles antérieurs.
+Deux vrais cas AppKit :35/65 ; et minimum55 % donnant55/65/partial pour la demande
+35/65. Les CGWindowBounds des deux fixtures ont été observés pendant le placement,
+comparés aux largeurs affichées, puis comparés à leur position initiale après Restore.
+Le catalogue conserve35/65, sans write dans le cas partial. Le second Apply est
+refusé tant que le retour est actif. Annuler puis Enregistrer et appliquer sont testés
+via la vraie WebView et le bridge. Aucune frappe système, capture ou titre exporté.
+
+Les cas ambigus, annulation du sélecteur natif, mouvement manuel de fenêtre et
+changement d’écran restent des vérifications Mac pilote ; pas d’extrapolation
+à Chrome/Teams ou macOS26.7.2 ARM depuis les fixtures macOS15.7.9 Intel.
+Le paquet0.6.2/build22 est Intel/ARM ; le temps total mémoire des auxiliaires WebKit
+reste non mesuré. Les gestes et leurs seuils n’ont pas été modifiés.

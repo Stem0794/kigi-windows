@@ -267,7 +267,9 @@ impl Studio {
         }
     }
     pub fn check_editor(&self) {
-        let source = if std::env::var_os("KIGI_TEST_STUDIO_READBACK").is_some() {
+        let source = if std::env::var_os("KIGI_TEST_STUDIO_LAYOUT").is_some() {
+            include_str!("../../scripts/studio-layout-check.js")
+        } else if std::env::var_os("KIGI_TEST_STUDIO_READBACK").is_some() {
             "Kigi.request('spaces.list').then(s=>{window.__kigiEditorCheck={success:s.profiles.length===1&&s.profiles[0].name==='Ratio35'&&s.profiles[0].windows[0].geometry.width===0.35,width:s.profiles[0]?.windows[0].geometry.width,schema:2}}).catch(e=>{window.__kigiEditorCheck={success:false,message:e.message}});void 0;"
         } else {
             include_str!("../../scripts/studio-editor-check.js")

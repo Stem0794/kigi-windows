@@ -731,3 +731,36 @@ c2f2b65245aff0bbd9d6d1afd0ee16dbd308608347e1deb0b0f96effb89ba6c3.
 CRC/plist/architectures et ressources embarquées vérifiés. [PR#2](https://github.com/Stem0794/kigi-windows/pull/2)
 empilée sur PR#1 ; main et branche0.6.0 conservées. Choix d’app natif, drag physique,
 VoiceOver et coûts WebKit auxiliaires restent à essayer/mesurer sur le Mac pilote.
+
+## 2026-11-13 — Studio0.6.2, phase3 Apply/Restore
+
+Suite demandée pendant l’essai0.6.1. Branche ui/studio-apply basée sur badfb77,
+sans modifier les branches d’essai précédentes. Appliquer/Restaurer Studio reliés
+au moteur partagé : préflights, sélection des fenêtres, snapshot unique, ratios
+normalisés et comparaison AX réelle. Séparation placement/activation, retour typé
+applied/partial/restored/canceled et géométrie inconnue nullable. Les retours partiels
+restent restaurables ; déplacement manuel ignoré suivant la politique existante.
+Révision du profil recontrôlée après le sélecteur. Aucune réécriture des proportions
+constatées dans le catalogue. Pas de parité système ni de test brouillon previewApply.
+24 tests hôte, typage ARM, syntaxeJS passent ; Clippy ne signale que les5 anciens
+needless_borrow dans mouse_scroll.rs. Validation native/package en attente.
+
+Validation finale : [run43434129431](https://github.com/Stem0794/kigi-windows/actions/runs/43434129431)
+réussi au commit1b91c64afeb579e3885c83201fd749b529f21a51, macOS15.7.9 Intel.
+27 tests natifs, deux relances, quatre cas de focus, chargement/cycle Studio et
+parcours éditeur/relecture passent. Nouveau parcours réel Apply/Restore :
+35/65 demandé et constaté, puis demande35/65 contrainte à55/65 signalée partial.
+Dans les deux cas, observation CGWindowBounds indépendante pendant le placement,
+valeurs affichées conformes à cette mesure, retour initial restauré/vérifié.
+Annuler l’application sale ne crée pas de retour ; Enregistrer et appliquer garde
+35/65 ; un second placement refuse d’écraser le snapshot. Cas contraint : octets
+config inchangés après apply/restore. Le premier run43433626306 avait déjà passé
+le même code moteur ; le second renforce l’observation indépendante des dimensions.
+Aucune limite AX ou assertion de résultat n’a été assouplie.
+
+Package0.6.2/build22 universel :939445 octets, SHA256
+99954359d32a62a3c3942734ccdf9ea4d97072d9d190ea8ed9d94e000d64a183.
+[PR#3](https://github.com/Stem0794/kigi-windows/pull/3) empilée sur PR#2 ; branches
+0.6.0/0.6.1 et main conservées. Chrome/Teams réels, choix ambigu/annulation du
+sélecteur, déplacements manuels et changements d’écran restent à essayer sur le
+Mac pilote ; politique de non-écrasement manuel couverte par les tests purs existants.
