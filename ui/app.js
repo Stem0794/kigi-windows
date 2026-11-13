@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve()};
+  const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}};
   const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
   const button = (label, action, className = '') => { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', action); return node; };
@@ -24,7 +24,7 @@
       $('status').textContent = data.spaces.usingBackup ? 'Catalogue de sauvegarde · lecture seule' : 'Lecture du moteur terminée';
       $('version').textContent = `Kigi ${data.version} · Studio`;
     } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou ouvrez les réglages classiques.')); }
-    finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); }
+    finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); if (state.data) render(); }
   }
   async function navigate(route, id = state.selected) { if (!(await guardDraft())) return; state.route = route; state.selected = id; state.draft = null; state.original = null; state.invalid.clear(); render(); $('page-title')?.focus(); }
   function field(parent, label, value, className = '') { const dl = el('dl', 'field'); dl.append(el('dt', '', label), el('dd', className, value)); parent.append(dl); }
@@ -61,7 +61,7 @@
   }
   document.addEventListener('keydown', event => {
     if (!modalResolve) return;
-    if (event.key === 'Escape') { event.preventDefault(); modalResolve('cancel'); }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); modalResolve('cancel'); }
     else if (event.key === 'Tab') {
       const buttons = [...$('modal-actions').querySelectorAll('button')];
       let index = buttons.indexOf(document.activeElement);
@@ -89,7 +89,7 @@
     if (dirty) $('status').textContent = 'Modifications non enregistrées';
   }
   function resetDraft() {
-    state.draft = null; state.original = null; state.invalid.clear(); state.splitEdited = false; dirtyChanged();
+    state.draft = null; state.original = null; state.invalid.clear(); state.rawRatio = {}; state.splitEdited = false; dirtyChanged();
   }
   async function discardDraft() { resetDraft(); await state.dirtySync; render(); $('status').textContent = 'Modifications ignorées'; }
   async function guardDraft() {
@@ -152,15 +152,15 @@
   }
   function setRatio(percent) {
     if (!Number.isInteger(percent) || percent < 1 || percent > 99 || state.busy) return;
-    state.invalid.delete('left'); state.invalid.delete('right'); state.splitEdited = true;
+    state.invalid.delete('left'); state.invalid.delete('right'); state.rawRatio = {}; state.splitEdited = true;
     state.draft.windows = splitWindows(percent, state.draft.windows); dirtyChanged();
     const canvas = $('editor-preview');
     if (canvas) {
       canvas.querySelectorAll('.preview-window').forEach((w, i) => { const g = state.draft.windows[i].geometry; w.style.left = `${g.x * 100}%`; w.style.width = `${g.width * 100}%`; w.querySelector('.window-body small').textContent = `${i ? 100 - percent : percent} % de largeur`; });
       const handle = canvas.querySelector('.split-handle'); if (handle) { handle.style.left = `${percent}%`; handle.setAttribute('aria-valuenow', percent); handle.setAttribute('aria-valuetext', `${percent} pour cent à gauche, ${100 - percent} pour cent à droite`); }
     }
-    if ($('left-percent')) $('left-percent').value = percent;
-    if ($('right-percent')) $('right-percent').value = 100 - percent;
+    if ($('left-percent')) { $('left-percent').value = percent; $('left-percent').setAttribute('aria-invalid', 'false'); }
+    if ($('right-percent')) { $('right-percent').value = 100 - percent; $('right-percent').setAttribute('aria-invalid', 'false'); }
   }
   function renderEditor(content, inspector) {
     if (!state.draft && current()) { state.draft = clone(current()); state.original = clone(current()); state.draftRevision = state.data.spaces.revision; state.splitEdited = false; state.invalid.clear(); }
@@ -200,8 +200,8 @@
     if (percent != null) {
       const ratios = el('div', 'ratio-fields');
       for (const [side, label, value] of [['left', 'Gauche (%)', percent], ['right', 'Droite (%)', 100 - percent]]) {
-        const group = el('div', 'field'), input = el('input'), text = el('label', '', label); input.id = `${side}-percent`; text.htmlFor = input.id; input.type = 'number'; input.min = '1'; input.max = '99'; input.step = '1'; input.value = value; input.disabled = !writable;
-        input.addEventListener('input', () => { const value = Number(input.value); if (input.value && input.validity.valid && Number.isInteger(value)) { state.invalid.delete(side); setRatio(side === 'left' ? value : 100 - value); } else { state.invalid.add(side); dirtyChanged(); } }); group.append(text, input); ratios.append(group);
+        const group = el('div', 'field'), input = el('input'), text = el('label', '', label); input.id = `${side}-percent`; text.htmlFor = input.id; input.type = 'number'; input.min = '1'; input.max = '99'; input.step = '1'; input.value = state.invalid.has(side) ? (state.rawRatio[side] ?? '') : value; input.setAttribute('aria-invalid', String(state.invalid.has(side))); input.disabled = !writable;
+        input.addEventListener('input', () => { const value = Number(input.value); if (input.value && input.validity.valid && Number.isInteger(value)) { state.invalid.delete(side); setRatio(side === 'left' ? value : 100 - value); } else { state.rawRatio[side] = input.value; state.invalid.add(side); input.setAttribute('aria-invalid', 'true'); dirtyChanged(); } }); group.append(text, input); ratios.append(group);
       } inspector.append(ratios);
     }
     if (draft.id != null) { const actions = el('div', 'inspector-actions'); const duplicate = button('Dupliquer', () => mutateSpace('spaces.duplicate')); const remove = button('Supprimer', () => mutateSpace('spaces.delete'), 'danger'); duplicate.disabled = remove.disabled = !writable; actions.append(duplicate, remove); inspector.append(actions); }

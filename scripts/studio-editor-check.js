@@ -2,7 +2,7 @@
 (async () => {
   const q = selector => document.querySelector(selector);
   const assert = (value, label) => { if (!value) throw new Error(label); };
-  const wait = async predicate => { await new Promise(resolve => setTimeout(resolve, 0)); for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 30)); } throw new Error('UI wait timed out'); };
+  const wait = async predicate => { await new Promise(resolve => setTimeout(resolve, 0)); for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 30)); } throw new Error(`UI wait timed out: ${String(predicate).slice(0,100)}; status=${q('#status')?.textContent}; error=${q('#error')?.textContent}; left=${q('#left-percent')?.value}; cancelDisabled=${[...document.querySelectorAll('button')].find(b=>b.textContent==='Annuler les modifications')?.disabled}`); };
   const clickText = text => { const node = [...document.querySelectorAll('button')].find(n => n.textContent === text); assert(node, `Missing ${text}`); node.click(); };
   const input = (id, value) => { const node = q(id); assert(node, `Missing ${id}`); node.value = value; node.dispatchEvent(new Event('input', {bubbles: true})); };
   try {
@@ -61,6 +61,7 @@
     assert(rejected, 'Backend accepted unconfirmed deletion');
     await Kigi.request('spaces.delete', {profileId: created.profileId, expectedRevision: created.spaces.revision, confirmed: true});
     q('#refresh').click(); await wait(() => !q('#refresh').disabled);
+    assert(![...document.querySelectorAll('button')].find(b => b.textContent === 'Annuler les modifications').disabled, 'Refresh left editor controls disabled');
     input('#left-percent', '49');
     window.KigiEditor.requestClose(false);
     await wait(() => !q('#modal').hidden); clickText('Annuler');
