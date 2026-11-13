@@ -823,3 +823,14 @@ CRC/plist/architectures et cinq assets vérifiés. [PR#5](https://github.com/Ste
 empilée sur PR#4, main conservée. La capture physique, timeout/perte de focus et
 les nouveaux raccourcis d’espaces restent à essayer sur le Mac pilote. Le test pur
 valide deux gestes rapprochés après lever, pas la constance du transport matériel.
+
+## 2026-11-13 — Geste continu0.6.5
+
+Demande explicite de ne pas imposer le lever. Après un geste reconnu, le même
+contact peut rejoindre un bord et déclencher à nouveau sur10 % vers l’intérieur.
+Au même bord : recul6 % minimum pour éviter les rebonds ; aucun réarmement dans
+le centre. Contact initial au centre autorisé à rejoindre un bord. Interruption
+multitouch/clic/changement de contact reste annulée jusqu’au lever. Départ réarmé
+comptabilisé dans le bilan global. Classificateur partagé local/global, pas de
+nouvelle API de transport. Tests purs ciblés : répétition/alternance sans lever,
+pause, centre/jitter et changement de contact. Validation native en attente.

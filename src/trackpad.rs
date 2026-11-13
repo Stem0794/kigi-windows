@@ -152,7 +152,7 @@ impl Tap {
         )
     }
     pub fn report(&self) -> String {
-        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, glissement intérieur ≥10 % de largeur, durée 1,5 s. Aucune coordonnée ni identité conservée dans ce bilan.",
+        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, glissement intérieur ≥10 % de largeur, durée 1,5 s. Retour au bord pour réarmer sans lever le doigt (recul ≥6 % au même bord). Aucune coordonnée ni identité conservée dans ce bilan.",
             self.stats.events,self.stats.with_touches,self.stats.samples,self.stats.began,self.stats.moved,self.stats.edge_starts,self.stats.left,self.stats.right,self.stats.conversion_failed,self.stats.wrong_type,self.stats.disabled,self.stats.actions,self.evidence().diagnosis())
     }
 }
@@ -252,7 +252,12 @@ unsafe extern "C" fn callback(
             stats.edges.begin(sample, fingers);
         } else if phase == NSTouchPhase::Moved {
             stats.moved += 1;
-            if let Some(edge) = stats.edges.moved(sample, fingers) {
+            let was_armed = stats.edges.armed();
+            let recognized = stats.edges.moved(sample, fingers);
+            if !was_armed && stats.edges.armed() {
+                stats.edge_starts += 1;
+            }
+            if let Some(edge) = recognized {
                 stats.recognized += 1;
                 match edge {
                     Edge::Left => stats.left += 1,
