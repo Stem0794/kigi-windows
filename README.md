@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.6.4 (aperçu)
+# Kigi Windows — Studio 0.6.5 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -105,7 +105,7 @@ Le geste garde sa bande de départ de 10 % et nécessite seulement un déplaceme
 vers l’intérieur d’au moins 10 % de la largeur depuis le point de départ, sans
 arrivée au centre imposée. Le déplacement doit être principalement horizontal.
 Les micro-mouvements et les déplacements surtout verticaux ne déclenchent pas
-d’action. Une action par contact ; lever le doigt réarme le geste.
+d’action. Retour sur un bord puis nouveau glissement intérieur pour réarmer, sans lever le doigt.
 
 ## Fiabilité P0/P1 — 0.5.2
 
@@ -216,7 +216,7 @@ Le départ peut se faire sur **toute la hauteur** : x≤0,10 à gauche ou x≥0,
 à droite. Le doigt doit avancer d’au moins 10 % de la largeur depuis son point de départ
 vers l’intérieur en ≤1,5 s, sans devoir atteindre le milieu, avec
 une dérive verticale ≤0,12 ; tolérance de recul vers l'extérieur de 0,03.
-Une action par contact ; aucun délai imposé après avoir levé le doigt. Deux doigts, clic/drag observé,
+Sans lever : retour sur un bord puis nouveau glissement intérieur. Un retour au même bord exige un recul d’au moins 6 % ; aucun réarmement au centre. Deux doigts, clic/drag observé,
 identité/device différent, mauvaise direction, délai ou début manquant annulent.
 Une séquence annulée doit se terminer par retrait de tous les doigts avant de
 réarmer. Une commande manuelle annule le geste encore en attente. Aucune action

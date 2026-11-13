@@ -248,3 +248,13 @@ aucune substitution. Sélecteurs Studio et AppKit affichent les espaces enregist
 Gestes : supprimer cooldown1s qui annulait entièrement un contact commencé trop
 tôt. Le doigt doit toujours être levé entre deux actions. Seuils, direction, durée,
 multitouch et politique du tap inchangés. Ne corrige pas des contacts non livrés.
+
+##0.6.5 — réarmement sans lever
+
+Après reconnaissance, attente d’un nouveau passage dans une bande de bord10 %.
+Le même contact/device réarme ce bord sans déclenchement immédiat, puis le trajet
+intérieur10 % est mesuré depuis ce nouveau départ. Retour au bord de l’action
+précédente : recul6 % depuis son point de reconnaissance pour filtrer les rebonds.
+Un contact commencé au centre peut rejoindre un bord avant son premier geste.
+Coordonnées/identité restent transitoires. Interruption multitouch/clic/device ou
+contact invalide exige encore un lever ; aucun réarmement depuis le centre.

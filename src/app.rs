@@ -2006,7 +2006,7 @@ impl TouchView {
             self.ivars().last_ui.set(Instant::now());
             if let Some(label) = self.ivars().label.get() {
                 label.setStringValue(&NSString::from_str(&format!(
-                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 10 % vers intérieur : {}.\nLevez les doigts pour recommencer. Aucune action globale.",
+                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 10 % vers intérieur : {}.\nRevenez sur un bord puis glissez vers l’intérieur pour recommencer, sans lever le doigt. Aucune action globale.",
                     point.x, point.y, touch.phase(), self.ivars().count.get()
                 )));
             }

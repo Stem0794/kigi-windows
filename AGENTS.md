@@ -152,3 +152,13 @@ Utilisateur signale gestes irréguliers : retirer le délai artificiel après r�
 conserver bande10 %, déplacement10 %, un doigt et lever pour réarmer. Ne pas
 annoncer réparer le transport ou confirmer le matériel sans essai. Branche
 ui/studio-actions, PR distincte, main et aperçus précédents conservés.
+
+## Geste continu0.6.5 — demande explicite
+
+Lever le doigt ne doit pas être systématique. Autoriser l’enchaînement à un doigt
+par retour à un bord puis déplacement intérieur ; aucun réarmement au centre.
+Retour au même bord : recul6 % minimum pour éviter le jitter si le déclenchement
+a lieu tout près de la limite. Un contact peut commencer au centre puis rejoindre
+un bord. Les interruptions multitouch/clic/périphérique restent bloquantes jusqu’au
+lever. Mêmes seuils10 % et délai1,5s par geste, sans nouvelle API de transport.
+Branche ui/trackpad-rearm, PR séparée, aucune fusion main.

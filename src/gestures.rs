@@ -91,16 +91,23 @@ pub enum Edge {
 pub struct EdgeProbe {
     start: Option<(Contact, Edge)>,
     blocked: bool,
+    // None edge: initial center contact; Some edge: last successful swipe's side.
+    returning: Option<(Contact, Option<Edge>)>,
 }
 impl EdgeProbe {
     pub fn cancel(&mut self) {
         self.start = None;
+        self.returning = None;
         self.blocked = true;
     }
-    /// A cancelled or fired gesture requires all fingers lifted to rearm.
+    /// Lift always resets; a successful swipe can also rearm by returning to an edge.
     pub fn release(&mut self) {
         self.start = None;
+        self.returning = None;
         self.blocked = false;
+    }
+    pub fn armed(&self) -> bool {
+        self.start.is_some()
     }
     pub fn begin(&mut self, c: Contact, fingers: usize) {
         if self.blocked {
@@ -110,6 +117,7 @@ impl EdgeProbe {
             || fingers != 1
             || !c.x.is_finite()
             || !c.y.is_finite()
+            || !(0.0..=1.0).contains(&c.x)
             || !(0.0..=1.0).contains(&c.y)
         {
             self.cancel();
@@ -125,10 +133,45 @@ impl EdgeProbe {
         if let Some(edge) = edge {
             self.start = Some((c, edge));
         } else {
-            self.cancel();
+            // A finger may land in the center, then move to a real edge before swiping.
+            self.returning = Some((c, None));
         }
     }
     pub fn moved(&mut self, c: Contact, fingers: usize) -> Option<Edge> {
+        if let Some((last, fired_edge)) = self.returning {
+            if fingers != 1
+                || c.identity != last.identity
+                || c.device != last.device
+                || !c.x.is_finite()
+                || !c.y.is_finite()
+                || !(0.0..=1.0).contains(&c.x)
+                || !(0.0..=1.0).contains(&c.y)
+                || c.ms < last.ms
+            {
+                self.cancel();
+                return None;
+            }
+            let edge = if c.x <= 0.10 {
+                Some(Edge::Left)
+            } else if c.x >= 0.90 {
+                Some(Edge::Right)
+            } else {
+                None
+            };
+            if let Some(edge) = edge {
+                // Returning to the same edge needs real reversal, not boundary jitter.
+                let reversed = match edge {
+                    Edge::Left => last.x - c.x,
+                    Edge::Right => c.x - last.x,
+                };
+                if Some(edge) != fired_edge || reversed + 1e-9 >= 0.06 {
+                    self.returning = None;
+                    self.blocked = false;
+                    self.start = Some((c, edge));
+                }
+            }
+            return None;
+        }
         let (start, edge) = self.start?;
         if fingers != 1
             || c.identity != start.identity
@@ -155,6 +198,7 @@ impl EdgeProbe {
         let horizontal = inward + 1e-9 >= (c.y - start.y).abs() * 1.5;
         if inward + 1e-9 >= 0.10 && horizontal {
             self.cancel();
+            self.returning = Some((c, Some(edge)));
             Some(edge)
         } else {
             None
@@ -218,7 +262,7 @@ mod tests {
         assert!(!p.moved(contact(0.1, 0.6, 1501), 1));
     }
     #[test]
-    fn edges_short_inward_swipe_fires_once_until_lift() {
+    fn edges_short_inward_swipe_fires_once_until_rearmed() {
         let mut p = EdgeProbe::default();
         p.begin(contact(0.10, 0.5, 0), 1);
         assert_eq!(p.moved(contact(0.19, 0.55, 100), 1), None);
@@ -232,6 +276,52 @@ mod tests {
         p.release();
         p.begin(contact(0.90, 0.4, 1200), 1);
         assert_eq!(p.moved(contact(0.80, 0.42, 1300), 1), Some(Edge::Right));
+    }
+    #[test]
+    fn continuous_contact_rearms_at_edges_but_never_in_the_center() {
+        let mut p = EdgeProbe::default();
+        p.begin(contact(0.5, 0.5, 0), 1);
+        assert!(!p.armed());
+        assert_eq!(p.moved(contact(0.05, 0.5, 50), 1), None);
+        assert!(p.armed());
+        assert_eq!(p.moved(contact(0.15, 0.5, 100), 1), Some(Edge::Left));
+        for x in [0.4, 0.3, 0.6, 0.2] {
+            assert_eq!(p.moved(contact(x, 0.5, 200), 1), None);
+        }
+        // Same finger can rest, return to its edge, then perform another short swipe.
+        assert_eq!(p.moved(contact(0.08, 0.8, 5000), 1), None);
+        assert_eq!(p.moved(contact(0.18, 0.8, 5100), 1), Some(Edge::Left));
+        // Going to the opposite edge arms that side without lifting, at any height.
+        assert_eq!(p.moved(contact(0.93, 0.2, 5200), 1), None);
+        assert_eq!(p.moved(contact(0.83, 0.2, 5300), 1), Some(Edge::Right));
+        assert_eq!(p.moved(contact(0.92, 0.2, 5400), 1), None);
+        assert_eq!(p.moved(contact(0.82, 0.2, 5500), 1), Some(Edge::Right));
+    }
+    #[test]
+    fn continuous_rearm_rejects_boundary_jitter_and_contact_changes() {
+        let mut p = EdgeProbe::default();
+        p.begin(contact(0.0, 0.5, 0), 1);
+        assert_eq!(p.moved(contact(0.10, 0.5, 100), 1), Some(Edge::Left));
+        assert_eq!(p.moved(contact(0.09, 0.5, 120), 1), None);
+        assert_eq!(p.moved(contact(0.20, 0.5, 140), 1), None);
+        assert_eq!(p.moved(contact(0.04, 0.5, 160), 1), None);
+        assert_eq!(p.moved(contact(0.14, 0.5, 180), 1), Some(Edge::Left));
+        assert_eq!(p.moved(contact(0.04, 0.5, 200), 2), None);
+        assert_eq!(p.moved(contact(0.14, 0.5, 220), 1), None);
+        p.release();
+        p.begin(contact(0.05, 0.5, 300), 1);
+        assert_eq!(p.moved(contact(0.15, 0.5, 400), 1), Some(Edge::Left));
+        assert_eq!(
+            p.moved(
+                Contact {
+                    identity: 2,
+                    ..contact(0.05, 0.5, 500)
+                },
+                1
+            ),
+            None
+        );
+        assert_eq!(p.moved(contact(0.15, 0.5, 600), 1), None);
     }
     #[test]
     fn short_swipe_uses_distance_from_start_and_rejects_jitter_and_diagonals() {

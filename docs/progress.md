@@ -823,3 +823,28 @@ CRC/plist/architectures et cinq assets vérifiés. [PR#5](https://github.com/Ste
 empilée sur PR#4, main conservée. La capture physique, timeout/perte de focus et
 les nouveaux raccourcis d’espaces restent à essayer sur le Mac pilote. Le test pur
 valide deux gestes rapprochés après lever, pas la constance du transport matériel.
+
+## 2026-11-13 — Geste continu0.6.5
+
+Demande explicite de ne pas imposer le lever. Après un geste reconnu, le même
+contact peut rejoindre un bord et déclencher à nouveau sur10 % vers l’intérieur.
+Au même bord : recul6 % minimum pour éviter les rebonds ; aucun réarmement dans
+le centre. Contact initial au centre autorisé à rejoindre un bord. Interruption
+multitouch/clic/changement de contact reste annulée jusqu’au lever. Départ réarmé
+comptabilisé dans le bilan global. Classificateur partagé local/global, pas de
+nouvelle API de transport. Tests purs ciblés : répétition/alternance sans lever,
+pause, centre/jitter et changement de contact. Validation native en attente.
+
+Validation finale : [run43455247183](https://github.com/Stem0794/kigi-windows/actions/runs/43455247183)
+réussi au commitebbb6deb64e9c8b06c1cd42df40867e1b007b5cd, macOS15.7.9 Intel.
+32 tests natifs, relances, focus, UI/éditeur, placement/restauration et capture native
+passent. Le premier run43452385204 est resté bloqué en compilation/tests sans logs
+disponibles ; second passage déclenché par clarification d’un commentaire, sans
+changement fonctionnel ni assouplissement de tests.
+
+Package0.6.5/build25 :1066120 octets, SHA256
+f1ccbec40ec04f9015847a9e05fb9e8805aec20c59c850503fd8c7705c83abf9.
+CRC/plist/architectures Intel+ARM et cinq assets UI vérifiés. [PR#6](https://github.com/Stem0794/kigi-windows/pull/6)
+empilée sur PR#5 ; main conservée. Réarmement continu validé par classificateur
+pur partagé, pas encore physiquement sur trackpad. Les interruptions réelles de
+contact/clic/multitouch restent sécurisées par annulation jusqu’au lever.
