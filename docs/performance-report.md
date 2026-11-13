@@ -27,3 +27,22 @@ Sources des unités et APIs :
 https://github.com/apple/darwin-xnu/blob/main/bsd/man/man2/getrusage.2
 https://developer.apple.com/documentation/appkit/nsapplication/currentsystempresentationoptions
 https://developer.apple.com/documentation/applicationservices/kaxfullscreenbuttonattribute
+
+## Relevé du runner 0.5.2
+
+[Run 43327603804](https://github.com/Stem0794/kigi-windows/actions/runs/43327603804),
+source ddde02d4fcbc81b4c77295b2cf12e91764cf538f, Release x86_64 sous macOS
+15.7.9. Deux relevés environ deux secondes après lancement :
+
+| Relevé | RSS actuelle | Pic RSS | Fenêtre visible | AX / surveillance |
+| --- | ---: | ---: | --- | --- |
+| Premier lancement | 38 178 816 octets | 38 178 816 octets | Oui | true / true |
+| Deuxième lancement | 38 084 608 octets | 38 084 608 octets | Oui | true / true |
+
+La deuxième session reconnaît la précédente. Aucune collision de raccourcis
+signalée. Les drapeaux de précontrôle restent autorisés, sans nouvelle demande
+de permission. Cela ne remplace pas un essai de contrôle AX d’app tierce.
+Aucune activation/maximisation de tiers n’ayant été demandée, leurs p95 restent
+**non mesurés**. Pas de conclusion de performance ARM ni de CPU au repos.
+La comparaison de permissions conserve le relevé au démarrage ; le champ AX
+général du rapport diagnostique indique séparément l’état courant.

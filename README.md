@@ -250,8 +250,8 @@ onglet n'est ouvert par les espaces.
 
 Les raccourcis personnels, gestes horizontaux à 10 % et filtre souris sont
 conservés. Les gestes gardent leurs actions Teams/Chrome. Cette première UI P4
-n'inclut pas encore le glisser-déposer des rectangles, les raccourcis configurables
-ou l'affectation des gestes aux espaces ; ces sous-étapes restent distinctes.
+n’inclut pas encore le glisser-déposer des rectangles, ni l’affectation de
+raccourcis ou de gestes aux espaces ; ces sous-étapes restent distinctes.
 La nouvelle fenêtre native et le cycle création/édition/application restent
 à essayer sur le Mac pilote.
 
@@ -270,7 +270,9 @@ hors fullscreen ; Hammerspoon et Kigi sont exclus. Un inventaire borné peut
 être partiel : c'est indiqué. Annuler ne déplace rien ; le second choix reçoit
 le focus. L'écran est celui de la fenêtre active avant le sélecteur.
 
-Chrome peut être déminimisé pour ⌥B. Le fullscreen natif est refusé explicitement.
+Chrome peut être déminimisé pour ⌥B. La maximisation peut demander la sortie du
+plein écran natif via son bouton AX, avec attente bornée ; les sélecteurs 50/50
+continuent de proposer uniquement des fenêtres ordinaires.
 Les apps peuvent imposer leurs dimensions : AX relit la géométrie et signale un
 résultat partiel. Position/taille/position reprend le correctif 0.0.6 validé par
 l'utilisateur. Le snapshot de ⌃⌥T reste en mémoire : restaurer avant de quitter.

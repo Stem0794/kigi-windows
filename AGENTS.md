@@ -92,5 +92,6 @@ réalisables : bilan des essais trackpad, permissions entre relances, mesures
 RSS/p95 réelles et maximisation après sortie du plein écran via bouton AX
 public. Ne pas ajouter P3/P4/P5 ni d’API multitouch privée. Les validations
 physiques, permissions accordées et performances du Mac pilote restent à
-relever ; deux lancements en CI avec permission refusée ne prouvent pas un
-maintien des autorisations accordées.
+relever. Le run 43327603804 a conservé les précontrôles AX/surveillance à true
+sur deux lancements ; cela ne prouve pas le contrôle d’apps tierces ou la
+stabilité TCC sur le Mac pilote.

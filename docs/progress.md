@@ -572,3 +572,22 @@ Pas de benchmark CPU ni résultat p95 inventé. Trois tests ciblés : p95/bornes
 
 P0 trackpad et P1 plein écran nécessitent encore le Mac pilote ; rien n’est
 déclaré clos à partir de la seule compilation. Validation finale à consigner.
+
+Validation finale 0.5.2 : [run macOS 43327603804](https://github.com/Stem0794/kigi-windows/actions/runs/43327603804)
+réussi sur ddde02d4fcbc81b4c77295b2cf12e91764cf538f : 21 tests macOS,
+Release Intel/ARM liées, signature/plist/lipo et archive validés. Deux
+lancements du même bundle sous macOS 15.7.9 x86_64 : fenêtre visible à chaque
+fois, aucune collision de raccourcis signalée, AX=true et surveillance=true
+aux deux relevés ; la seconde session voit la précédente. RSS actuelle et
+maximale : 38178816 puis 38084608 octets (36,4 et 36,3 Mio environ). Ces
+chiffres décrivent le runner au démarrage, pas le Mac utilisateur ou le repos
+prolongé. Aucun test d’action AX sur app tierce ni de geste physique.
+
+Artefact SHA256, CRC des deux ZIP, Info.plist 0.5.2/build17 et Mach-O universel
+vérifiés. ZIP applicatif 796552 octets, SHA256
+884328e87462cb38e9ab3b45e7b3af4191a687c4e40c035686d80d8a95416b26.
+
+P0/P1 ne sont pas déclarés intégralement clos : sur le Mac pilote, tester la
+maximisation depuis un plein écran natif, deux relances sans remplacer le
+bundle après autorisation, puis l’essai trackpad 10 % et le rapport. Les p95
+d’actions restent non mesurés tant qu’aucune action réelle n’a été exécutée.
