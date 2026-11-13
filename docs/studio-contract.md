@@ -167,3 +167,19 @@ contentMinSize55 % pour une demande35 %. Appliquer, refuser un second snapshot,
 restaurer ; comparer les vrais CGWindowBounds après restauration aux positions
 initiales. Sauvegarde+application explicite et annulation préalable dans le cas normal,
 aucune écriture de config dans le cas contraint. Les autres contrôles natifs restent.
+
+### Validation phase3
+
+Source1b91c64, run43434129431 réussi :27 tests natifs et tous contrôles antérieurs.
+Deux vrais cas AppKit :35/65 ; et minimum55 % donnant55/65/partial pour la demande
+35/65. Les CGWindowBounds des deux fixtures ont été observés pendant le placement,
+comparés aux largeurs affichées, puis comparés à leur position initiale après Restore.
+Le catalogue conserve35/65, sans write dans le cas partial. Le second Apply est
+refusé tant que le retour est actif. Annuler puis Enregistrer et appliquer sont testés
+via la vraie WebView et le bridge. Aucune frappe système, capture ou titre exporté.
+
+Les cas ambigus, annulation du sélecteur natif, mouvement manuel de fenêtre et
+changement d’écran restent des vérifications Mac pilote ; pas d’extrapolation
+à Chrome/Teams ou macOS26.7.2 ARM depuis les fixtures macOS15.7.9 Intel.
+Le paquet0.6.2/build22 est Intel/ARM ; le temps total mémoire des auxiliaires WebKit
+reste non mesuré. Les gestes et leurs seuils n’ont pas été modifiés.
