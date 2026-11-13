@@ -6,7 +6,8 @@ Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 ## Studio : éditeur d’espaces
 
 Depuis le menu Kigi, choisir **Ouvrir Studio…**. Interface redimensionnable :
-Accueil, Espaces, Autorisations et Diagnostics avec données réelles. Dans Espaces :
+Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations et Diagnostics avec
+données réelles. Dans Espaces :
 créer ou sélectionner un espace, choisir ses apps, glisser le séparateur ou saisir
 les proportions1–99 %, puis **Enregistrer**. Presets50/50,35/65,70/30,30/70 ;
 flèches pour ajuster au clavier. L’aperçu et la sauvegarde ne déplacent pas les fenêtres.

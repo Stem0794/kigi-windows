@@ -776,3 +776,20 @@ appel, bilans et copie/export backend. UI des essais bornée13s, pas de polling 
 Brouillons partagés avec la garde de fermeture ; moteur/gestes10 % inchangés.
 26 tests hôte, typage ARM et syntaxeJS passent ; Clippy : les5 avertissements préexistants
 du filtre souris seulement. Cas natif Carbon/capture/pages/relaunch en attente du run.
+
+Validation finale : [run43443497259](https://github.com/Stem0794/kigi-windows/actions/runs/43443497259)
+réussi au commite78b97991b0bad8552f4fd213860f04a9a15abf3, macOS15.7.9 Intel.
+29 tests natifs, relances, focus, Studio, éditeur et Apply/Restore passent.
+Nouveau parcours : édition/sauvegarde, doublon refusé, véritable conflit Carbon
+avec réservation exclusive et rollback, Recorder focalisé avec suspension observée,
+annulation native/restitution, global off/on, ajout/suppression confirmée, cinq pages,
+rapport réel dans le presse-papiers et relecture après relance. Espaces inchangés.
+Premier run43442571310 : réservation fixture non exclusive, donc aucun conflit
+garanti. Fixture corrigée sans assouplir les assertions ni changer le moteur.
+
+Package0.6.3/build23 universel :1048517 octets, SHA256
+d7b5aea7368597f432c7f62a1f2e12cab0b8a03f998334a1dfad8de7dc66402e.
+CRC/plist/architectures et cinq ressources UI comparés au source. [PR#4](https://github.com/Stem0794/kigi-windows/pull/4)
+empilée sur PR#3 ; main conservée. Capture physique, timeout/perte de focus,
+sélecteur d’app, prompts TCC, trackpad et souris restent à essayer sur le Mac pilote.
+Ouverture AppKit par défaut maintenue jusqu’au cutover dédié.
