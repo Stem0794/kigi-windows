@@ -1,15 +1,20 @@
-# Kigi Windows — Studio 0.6.0 (aperçu)
+# Kigi Windows — Studio 0.6.1 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
 
-## Studio : première tranche
+## Studio : éditeur d’espaces
 
 Depuis le menu Kigi, choisir **Ouvrir Studio…**. Interface redimensionnable :
-Accueil, Espaces enregistrés, Autorisations et Diagnostics, avec données réelles
-en lecture seule. Les réglages classiques restent le défaut et donnent accès
-aux modifications, raccourcis et actions existantes. **Actualiser** relit le moteur.
-Les proportions enregistrées sont préservées ; leur édition arrive à l’étape suivante.
+Accueil, Espaces, Autorisations et Diagnostics avec données réelles. Dans Espaces :
+créer ou sélectionner un espace, choisir ses apps, glisser le séparateur ou saisir
+les proportions1–99 %, puis **Enregistrer**. Presets50/50,35/65,70/30,30/70 ;
+flèches pour ajuster au clavier. L’aperçu et la sauvegarde ne déplacent pas les fenêtres.
+Les dispositions libres restent intactes avant conversion explicite en deux colonnes.
+Duplication/suppression et dialogues de brouillon sont pris en charge. Un fichier
+modifié ailleurs bloque l’écriture : conserver le brouillon ou Actualiser.
+Les réglages classiques restent le défaut et donnent accès aux raccourcis, gestes,
+applications/restaurations existants. Leurs actions seront portées à l’étape suivante.
 
 Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
 fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.

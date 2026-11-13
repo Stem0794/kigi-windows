@@ -235,16 +235,49 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         "Écriture de configuration impossible ; ancienne disposition conservée.".into()
     })
 }
+/// Exact bytes accompany the validated primary; never silently edit a backup.
+pub fn read_primary(path: &Path) -> Result<(Catalog, Option<Vec<u8>>), String> {
+    let bytes = read(path)?;
+    let catalog = bytes
+        .as_deref()
+        .map(decode)
+        .transpose()?
+        .unwrap_or_default();
+    Ok((catalog, bytes))
+}
+pub const CONFLICT: &str = "Le fichier des espaces a changé. Rechargez avant d’enregistrer.";
+pub fn save_checked(
+    path: &Path,
+    layout: &Catalog,
+    expected: &Option<Vec<u8>>,
+) -> Result<(), String> {
+    save_inner(path, layout, Some(expected))
+}
 pub fn save(path: &Path, layout: &Catalog) -> Result<(), String> {
+    save_inner(path, layout, None)
+}
+fn save_inner(
+    path: &Path,
+    layout: &Catalog,
+    expected: Option<&Option<Vec<u8>>>,
+) -> Result<(), String> {
     layout.validate()?;
     let bytes = serde_json::to_vec_pretty(layout)
         .map_err(|_| "Configuration non sérialisable.".to_owned())?;
-    if let Some(old) = read(path)? {
-        decode(&old)?; // refuse to overwrite an invalid/newer user file
-        atomic_write(&path.with_extension("json.bak"), &old)?;
+    let old = read(path)?;
+    if expected.is_some_and(|expected| expected != &old) {
+        return Err(CONFLICT.into());
+    }
+    if let Some(old) = old.as_ref() {
+        decode(old)?; // refuse to overwrite an invalid/newer user file
+        atomic_write(&path.with_extension("json.bak"), old)?;
     }
     fs::create_dir_all(path.parent().ok_or("Dossier de configuration absent.")?)
         .map_err(|_| "Impossible de créer le dossier de configuration.".to_owned())?;
+    // Recheck immediately before the atomic replacement, after backup work.
+    if expected.is_some() && read(path)? != old {
+        return Err(CONFLICT.into());
+    }
     atomic_write(path, &bytes)
 }
 #[cfg(test)]

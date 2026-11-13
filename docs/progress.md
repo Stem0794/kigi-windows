@@ -701,3 +701,33 @@ Bundle0.6.0/build20 universel, assets locaux, CRC/plist/architectures vérifiés
 868101 octets, SHA256e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74.
 [PR#1](https://github.com/Stem0794/kigi-windows/pull/1), main conservée en0.5.4.
 Essais physiques Studio/VoiceOver encore requis ; phase2 non commencée.
+
+## 2026-11-13 — Studio0.6.1, phase2 éditeur (branche séparée)
+
+Suite demandée pendant l’essai0.6.0. Base ui/studio-shell66ab813, nouvelle branche
+ui/studio-editor. Édition1–99 %, presets, drag/clavier, champs liés, choix d’apps natif,
+CRUD et sauvegarde Rust. Brouillons non persistés, garde des changements à la navigation,
+fermeture et ⌘Q. Profils libres et snapshots conservés ; aucun Apply/Restore Studio.
+Révision opaque + comparaison des octets, backup/écriture atomique et refus d’un primaire
+invalide. Le détail de la fenêtre de concurrence résiduelle est dans studio-contract.
+Typage ARM, syntaxeJS et24 tests hôte passent. Essais natifs/package en attente.
+
+Validation finale : [run43423531866](https://github.com/Stem0794/kigi-windows/actions/runs/43423531866)
+réussi au commitff974dbee08e80619cbb4c4399d50e53b3a593d5 :27 tests macOS15.7.9
+Intel, deux relances, quatre cas de focus, bridge/DOM/cycle Studio. Le vrai parcours
+éditeur a converti explicitement un ancien profil libre schema1, sauvegardé35/65,
+vérifié Annuler, clavier, navigation avec brouillon, copie/suppression, conflit
+conservant le brouillon et annulation de fermeture. Seconde instance :35/65 relu
+sur schema2. Tout ce parcours écrit uniquement un catalogue temporaire isolé.
+
+Premier run43422385218 : moteur/Studio passent, parcours éditeur en timeout UI.
+Correction de la réactivation des boutons après Actualiser et conservation des
+valeurs numériques invalides lors d’un rerender ; contrôle de non-régression ajouté.
+Le nouveau run passe sans changement de limite AX ni assouplissement d’assertion.
+ClippyARM termine avec les seuls5 needless_borrow préexistants dans mouse_scroll.rs.
+
+Package0.6.1/build21 universel Intel/ARM :918563 octets, SHA256
+c2f2b65245aff0bbd9d6d1afd0ee16dbd308608347e1deb0b0f96effb89ba6c3.
+CRC/plist/architectures et ressources embarquées vérifiés. [PR#2](https://github.com/Stem0794/kigi-windows/pull/2)
+empilée sur PR#1 ; main et branche0.6.0 conservées. Choix d’app natif, drag physique,
+VoiceOver et coûts WebKit auxiliaires restent à essayer/mesurer sur le Mac pilote.

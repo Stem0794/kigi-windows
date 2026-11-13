@@ -103,6 +103,28 @@ impl NormalizedRect {
     }
 }
 
+/// Integer two-column editor, persisted using the existing normalized rectangles.
+pub fn normalized_split(left_percent: u8) -> Result<[NormalizedRect; 2], String> {
+    if !(1..=99).contains(&left_percent) {
+        return Err("Choisissez une proportion de 1 à 99 %.".into());
+    }
+    let left = f64::from(left_percent) / 100.;
+    Ok([
+        NormalizedRect {
+            x: 0.,
+            y: 0.,
+            width: left,
+            height: 1.,
+        },
+        NormalizedRect {
+            x: left,
+            y: 0.,
+            width: 1. - left,
+            height: 1.,
+        },
+    ])
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RestoreDecision {
     AlreadyRestored,
