@@ -8,7 +8,7 @@ if CommandLine.arguments.contains("--hotkey-reservation") {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     var reference: EventHotKeyRef?
-    let code = RegisterEventHotKey(18, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: 0x4b465453, id: 1), GetApplicationEventTarget(), 0, &reference)
+    let code = RegisterEventHotKey(18, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: 0x4b465453, id: 1), GetApplicationEventTarget(), UInt32(kEventHotKeyExclusive), &reference)
     print("HOTKEY_READY \(code)")
     fflush(stdout)
     if code != 0 { exit(1) }

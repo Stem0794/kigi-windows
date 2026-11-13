@@ -17,7 +17,7 @@
     refused = false;
     try { await Kigi.request('shortcuts.upsert', {expectedRevision: listing.revision, index: 0, binding: blocked}); } catch (error) { refused = error.code === 'SHORTCUT_CONFLICT'; }
     listing = await Kigi.request('shortcuts.list');
-    assert(refused && JSON.stringify(listing.settings) === original && listing.registered && !listing.registrationFailed, 'Carbon conflict rollback failed');
+    assert(refused && JSON.stringify(listing.settings) === original && listing.registered && !listing.registrationFailed, `Carbon conflict rollback failed: ${JSON.stringify({refused, unchanged: JSON.stringify(listing.settings) === original, registered: listing.registered, failed: listing.registrationFailed, report: listing.registrationReport})}`);
     // Native Recorder modal is opened, then its own cancel routine restores Carbon bindings.
     const pending = Kigi.request('shortcuts.startCapture');
     await new Promise(resolve => setTimeout(resolve, 250));
