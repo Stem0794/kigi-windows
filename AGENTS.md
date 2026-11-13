@@ -133,3 +133,12 @@ ui/studio-editor. PR séparée, pas de merge main. Réutiliser sélection native
 préflights AX et snapshot unique ; résultats structurés avec readback réel,
 partiels honnêtes, aucune réécriture du ratio demandé. Pas de previewApply ni de
 parité raccourcis/souris/gestes dans cette tranche. Essais AX avec fixtures réelles.
+
+## Studio phase4 — suite autorisée
+
+Après0.6.2, l’utilisateur demande l’étape suivante. Branche ui/studio-system,
+PR empilée séparée, pas de merge main. Porter Raccourcis, Trackpad, Souris,
+Autorisations et Diagnostics en réutilisant les services natifs. Capture dans
+le Recorder natif, timeout/annulation et restitution Carbon. Aucun keydown WebView
+pour capturer, aucune nouvelle règle de geste ou commande vers un espace.
+Garder le fallback et le défaut AppKit jusqu’au cutover dédié après essais.

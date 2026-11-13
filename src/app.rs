@@ -1,3 +1,5 @@
+#[path = "studio/controller.rs"]
+mod studio_controller;
 use crate::{
     actions::{Action, ActivationGuard, ActivationState},
     applications, config, diagnostics,
@@ -105,6 +107,9 @@ struct State {
     studio_store: RefCell<studio::store::Store>,
     studio_quit_confirmed: Cell<bool>,
     studio_editor_polls: Cell<u8>,
+    studio_shortcuts: RefCell<studio::shortcut_store::ShortcutStore>,
+    studio_recorder: RefCell<Option<Retained<crate::shortcut_recorder::Recorder>>>,
+    studio_capture_result: RefCell<Option<Option<(u32, u32, String)>>>,
     catalog: RefCell<config::Catalog>,
     profiles_menu: OnceCell<Retained<NSMenu>>,
     tap: RefCell<Option<Tap>>,
@@ -145,6 +150,11 @@ define_class!(
         fn capture_done(&self,_:Option<&AnyObject>) {
             let Some(result)=self.ivars().captured.borrow_mut().take() else{return;};
             self.cancel_capture_timer();
+            if self.ivars().studio_recorder.borrow().is_some(){
+                self.ivars().studio_capture_result.replace(Some(result));
+                NSApplication::sharedApplication(self.mtm()).stopModalWithCode(NSModalResponseOK);
+                return;
+            }
             let captured=result.is_some();
             if let Some((key,modifiers,name))=result {
                 if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.set_shortcut_key(key,modifiers,name);}
@@ -152,6 +162,8 @@ define_class!(
             self.register_hotkeys();
             self.status(if captured {"Combinaison choisie. Cliquez sur Enregistrer pour l’appliquer."}else{"Saisie annulée. Vos raccourcis précédents restent actifs."});
         }
+        #[unsafe(method(cancelStudioCapture:))]
+        fn cancel_studio_capture(&self,_:Option<&AnyObject>){self.cancel_shortcut_capture();}
         #[unsafe(method(shortcutCaptureTimeout:))]
         fn capture_timeout(&self,_:Option<&AnyObject>) {self.cancel_shortcut_capture();}
         #[unsafe(method(chooseShortcutApp:))]
@@ -240,34 +252,9 @@ define_class!(
             println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
         }
         #[unsafe(method(copyLogs:))]
-        fn copy_logs(&self, _: Option<&AnyObject>) {
-            self.record_state("diagnostic.copy");
-            let report = self.log_report();
-            let pasteboard = NSPasteboard::generalPasteboard();
-            pasteboard.clearContents();
-            let kind = unsafe { NSPasteboardTypeString };
-            if pasteboard.setString_forType(&NSString::from_str(&report), kind) {
-                self.status("Logs copiés. Collez-les dans votre message pour le débogage.");
-            } else { self.status("Impossible de copier les logs."); }
-        }
+        fn copy_logs(&self,_:Option<&AnyObject>){let result=self.copy_diagnostics();self.status(if result.is_ok(){"Rapport copié."}else{"Impossible de copier le rapport."});}
         #[unsafe(method(exportLogs:))]
-        fn export_logs(&self, _: Option<&AnyObject>) {
-            let panel = NSSavePanel::savePanel(self.mtm());
-            panel.setNameFieldStringValue(&NSString::from_str(&format!("Kigi-diagnostic-{}.txt", env!("CARGO_PKG_VERSION"))));
-            panel.setCanCreateDirectories(true);
-            if panel.runModal() != NSModalResponseOK { return; }
-            let Some(path) = panel.URL().and_then(|u| u.path()) else {
-                self.status("Destination des logs indisponible."); return;
-            };
-            self.record_state("diagnostic.export");
-            match std::fs::write(path.to_string(), self.log_report()) {
-                Ok(()) => self.status("Fichier de diagnostic enregistré. Vous pouvez le transmettre pour le débogage."),
-                Err(e) => {
-                    diagnostics::record("diagnostic.export_failed", format!("io_kind={:?}", e.kind()));
-                    self.status("Impossible d'enregistrer les logs. Utilisez Copier les logs ou choisissez un autre dossier.");
-                }
-            }
-        }
+        fn export_logs(&self,_:Option<&AnyObject>){match self.export_diagnostics(){Ok(true)=>self.status("Rapport exporté."),Ok(false)=>self.status("Export annulé."),Err(message)=>self.status(&message)}}
         #[unsafe(method(shortcutDiagnostics:))]
         fn shortcut_diagnostics(&self, _: Option<&AnyObject>) {
             let registration = self.ivars().hotkeys.borrow().as_ref().map(|h| h.report.clone()).unwrap_or_default();
@@ -792,6 +779,9 @@ impl Controller {
         if let Some(p) = self.ivars().preferences.borrow().as_ref() {
             p.recorder.cancel();
         }
+        if let Some(recorder) = self.ivars().studio_recorder.borrow().as_ref() {
+            recorder.cancel();
+        }
         // The responder queues cancellation. Finish synchronously before starting
         // another editor operation, so an old cancellation cannot discard new input.
         if self.ivars().captured.borrow().is_some() {
@@ -799,39 +789,13 @@ impl Controller {
         }
     }
     fn persist_shortcuts(&self, settings: Shortcuts, selected: usize) {
-        self.ivars().shortcut_queue.take();
-        self.cancel_open();
-        if let Err(e) = settings.validate() {
-            self.status(&e);
-            return;
-        }
-        self.ivars().hotkeys.borrow_mut().take();
-        let keys = Hotkeys::register(self.ivars().personal_enabled.get(), &settings);
-        if keys.failed {
-            diagnostics::record("shortcuts.save.rejected", "registration_conflict=true");
-            let report = keys.report.clone();
-            drop(keys);
-            self.register_hotkeys();
-            alert(self.mtm(),"Raccourci indisponible",&format!("macOS a refusé une combinaison. Vos anciens réglages sont conservés.\n\n{report}"));
-            self.status("Enregistrement annulé : conflit de raccourcis. Les anciens réglages sont conservés.");
-            return;
-        }
-        let result = shortcuts_path()
-            .and_then(|p| shortcuts::save(&p, &settings, &self.ivars().shortcuts.borrow()));
-        match result {
-            Ok(()) => {
-                self.ivars().shortcuts.replace(settings);
-                self.ivars().hotkeys.replace(Some(keys));
-                self.populate_shortcuts(selected);
-                self.sync_preferences();
-                self.status(
-                    "Raccourcis enregistrés. Les réglages seront conservés au prochain lancement.",
-                );
-            }
-            Err(e) => {
-                drop(keys);
-                self.register_hotkeys();
-                self.status(&e);
+        match self.persist_shortcuts_transaction(settings, selected, None) {
+            Ok(()) => self.status(
+                "Raccourcis enregistrés. Les réglages seront conservés au prochain lancement.",
+            ),
+            Err(message) => {
+                self.status(&message);
+                alert(self.mtm(), "Raccourcis non enregistrés", &message);
             }
         }
     }
@@ -2095,14 +2059,15 @@ pub fn studio_command(
     CONTROLLER.with(|slot| {
         let slot=slot.borrow();
         let c=slot.as_ref().ok_or_else(||Failure::new("BACKEND_UNAVAILABLE","Moteur indisponible."))?;
-        let permissions=json!({"accessibility":if windows::trusted(){"granted"}else{"denied"},"inputMonitoring":if Tap::input_trusted(){"granted"}else{"denied"},"chromeAutomation":"unknown"});
+        let permissions=json!({"accessibility":if windows::trusted(){"granted"}else{"denied"},"inputMonitoring":if Tap::input_trusted(){"granted"}else{"denied"},"chromeAutomation":applications::chrome_automation_state()});
         let spaces=|| -> Result<serde_json::Value,Failure> {
             let listing=c.ivars().studio_store.borrow_mut().list(&studio_path().map_err(Failure::invalid)?)?;
             serde_json::to_value(listing).map_err(|_|Failure::invalid("Catalogue indisponible."))
         };
-        let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some()});
+        let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some(),"lastResult":c.ivars().status.borrow().clone()});
         match command {
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback"]})),
+            C::System(op)=>c.studio_system(op),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
             C::Apply(input)=>c.studio_apply(input), C::Restore=>c.studio_restore(),
             C::Create(_) | C::Update(_) | C::Duplicate(_) | C::Delete(_)=>{
@@ -2215,7 +2180,12 @@ pub fn shortcut_captured(value: Option<(u32, u32, String)>) {
     });
 }
 fn shortcuts_path() -> Result<std::path::PathBuf, String> {
-    Ok(config::path()?.with_file_name("shortcuts.json"))
+    let path = if std::env::args().any(|a| a == "--studio-system-check") {
+        studio_path()?
+    } else {
+        config::path()?
+    };
+    Ok(path.with_file_name("shortcuts.json"))
 }
 fn other_instances() -> Vec<Retained<NSRunningApplication>> {
     NSRunningApplication::runningApplicationsWithBundleIdentifier(ns_string!("io.kigi.windows"))
@@ -2378,6 +2348,9 @@ pub fn run() {
                 .is_none()
                 || defaults.boolForKey(ns_string!("personalHotkeysEnabled")),
         );
+        if std::env::args().any(|a| a == "--studio-system-check") {
+            controller.ivars().personal_enabled.set(true);
+        }
         match shortcuts_path().and_then(|p| shortcuts::load(&p)) {
             Ok(settings) => {
                 controller.ivars().shortcuts.replace(settings);

@@ -764,3 +764,15 @@ Package0.6.2/build22 universel :939445 octets, SHA256
 0.6.0/0.6.1 et main conservées. Chrome/Teams réels, choix ambigu/annulation du
 sélecteur, déplacements manuels et changements d’écran restent à essayer sur le
 Mac pilote ; politique de non-écrasement manuel couverte par les tests purs existants.
+
+## 2026-11-13 — Studio0.6.3, phase4 réglages système
+
+Suite demandée après0.6.2, nouvelle branche ui/studio-system. Pages Raccourcis,
+Trackpad, Souris, Autorisations et Diagnostics reliées aux services natifs.
+CRUD des raccourcis + revision/octets exacts, rollback Carbon/writer, global/reload/
+reregister/reset, choix d’app et test explicite. Recorder natif modal avec suspension,
+timeout15s et annulation ; aucun captureur JS. Données réelles, Chrome mesuré au dernier
+appel, bilans et copie/export backend. UI des essais bornée13s, pas de polling au repos.
+Brouillons partagés avec la garde de fermeture ; moteur/gestes10 % inchangés.
+26 tests hôte, typage ARM et syntaxeJS passent ; Clippy : les5 avertissements préexistants
+du filtre souris seulement. Cas natif Carbon/capture/pages/relaunch en attente du run.

@@ -160,10 +160,10 @@ impl Shortcuts {
         Ok(())
     }
 }
-pub fn load(path: &Path) -> Result<Shortcuts, String> {
+pub fn read_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
     let mut f = match File::open(path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Shortcuts::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err("Impossible de lire les raccourcis.".into()),
     };
     let mut bytes = Vec::new();
@@ -174,14 +174,40 @@ pub fn load(path: &Path) -> Result<Shortcuts, String> {
     if bytes.len() > 65536 {
         return Err("Fichier de raccourcis trop volumineux ; conservé.".into());
     }
-    let settings: Shortcuts =
-        serde_json::from_slice(&bytes).map_err(|_| "Raccourcis illisibles ; fichier conservé.")?;
+    Ok(Some(bytes))
+}
+pub fn decode(bytes: Option<&[u8]>) -> Result<Shortcuts, String> {
+    let settings = match bytes {
+        Some(bytes) => serde_json::from_slice(bytes)
+            .map_err(|_| "Raccourcis illisibles ; fichier conservé.")?,
+        None => Shortcuts::default(),
+    };
     settings.validate()?;
     Ok(settings)
 }
+pub fn load(path: &Path) -> Result<Shortcuts, String> {
+    decode(read_bytes(path)?.as_deref())
+}
 pub fn save(path: &Path, settings: &Shortcuts, expected: &Shortcuts) -> Result<(), String> {
+    save_inner(path, settings, expected, None)
+}
+pub fn save_checked(
+    path: &Path,
+    settings: &Shortcuts,
+    expected: &Shortcuts,
+    source: &Option<Vec<u8>>,
+) -> Result<(), String> {
+    save_inner(path, settings, expected, Some(source))
+}
+fn save_inner(
+    path: &Path,
+    settings: &Shortcuts,
+    expected: &Shortcuts,
+    source: Option<&Option<Vec<u8>>>,
+) -> Result<(), String> {
     settings.validate()?;
-    if &load(path)? != expected {
+    let before = read_bytes(path)?;
+    if &decode(before.as_deref())? != expected || source.is_some_and(|s| s != &before) {
         return Err(
             "Les raccourcis ont changé sur disque. Rouvrez Kigi avant d’enregistrer.".into(),
         );
@@ -199,6 +225,11 @@ pub fn save(path: &Path, settings: &Shortcuts, expected: &Shortcuts) -> Result<(
         f.write_all(&bytes)
             .and_then(|_| f.sync_all())
             .map_err(|_| "Écriture des raccourcis impossible.")?;
+        if source.is_some()
+            && read_bytes(path).map_err(|_| "Lecture des raccourcis impossible.")? != before
+        {
+            return Err("Les raccourcis ont changé sur disque. Rechargez avant d’enregistrer.");
+        }
         fs::rename(&temp, path).map_err(|_| "Enregistrement des raccourcis impossible.")
     })();
     if result.is_err() {

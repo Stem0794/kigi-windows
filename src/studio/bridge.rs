@@ -18,6 +18,7 @@ pub struct Request {
 }
 #[derive(Debug)]
 pub enum Command {
+    System(super::system::SystemCommand),
     Bootstrap,
     List,
     Permissions,
@@ -109,6 +110,32 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
             "UNSUPPORTED_VERSION",
             "Version du protocole incompatible.",
         ));
+    }
+    if raw.method.starts_with("shortcuts.")
+        || raw.method.starts_with("gestures.")
+        || raw.method.starts_with("mouse.")
+        || matches!(
+            raw.method.as_str(),
+            "permissions.requestAccessibility"
+                | "permissions.requestInputMonitoring"
+                | "permissions.openSettings"
+                | "diagnostics.copy"
+                | "diagnostics.export"
+        )
+    {
+        let command = serde_json::from_value(json!({"method":raw.method,"params":raw.params}))
+            .map_err(|_| {
+                error(
+                    Some(id),
+                    "INVALID_PARAMS",
+                    "Commande système ou paramètres invalides.",
+                )
+            })?;
+        return Ok(Request {
+            id: raw.id,
+            method: raw.method,
+            command: Command::System(command),
+        });
     }
     let p = raw.params;
     let command = match raw.method.as_str() {
@@ -206,6 +233,34 @@ mod tests {
         );
         assert!(parse(&" ".repeat(65537)).is_err());
         assert!(parse("not json").is_err());
+    }
+    #[test]
+    fn system_protocol_only_accepts_typed_commands() {
+        for (method, params, valid) in [
+            ("gestures.setEnabled", r#"{"enabled":true}"#, true),
+            (
+                "gestures.setEnabled",
+                r#"{"enabled":true,"script":"bad"}"#,
+                false,
+            ),
+            (
+                "permissions.openSettings",
+                r#"{"section":"Accessibility"}"#,
+                true,
+            ),
+            (
+                "permissions.openSettings",
+                r#"{"section":"https://example.org"}"#,
+                false,
+            ),
+            ("shortcuts.startCapture", "{}", true),
+            ("shortcuts.exec", r#"{"shell":"bad"}"#, false),
+        ] {
+            let raw = format!(
+                r#"{{"protocolVersion":1,"id":"system-1","method":"{method}","params":{params}}}"#
+            );
+            assert_eq!(parse(&raw).is_ok(), valid);
+        }
     }
     #[test]
     fn authority_is_exact_local_main_document_only() {

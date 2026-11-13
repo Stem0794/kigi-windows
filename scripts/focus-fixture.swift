@@ -1,8 +1,21 @@
 // CI-only controlled windows. No screenshots, user content or synthetic input.
 import AppKit
+import Carbon
 import CoreGraphics
 import Darwin
 
+if CommandLine.arguments.contains("--hotkey-reservation") {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    var reference: EventHotKeyRef?
+    let code = RegisterEventHotKey(18, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: 0x4b465453, id: 1), GetApplicationEventTarget(), 0, &reference)
+    print("HOTKEY_READY \(code)")
+    fflush(stdout)
+    if code != 0 { exit(1) }
+    app.run()
+    if let reference = reference { UnregisterEventHotKey(reference) }
+    exit(0)
+}
 if CommandLine.arguments.contains("--window-order") {
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     let owners = windows.compactMap { w -> Int? in

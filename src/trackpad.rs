@@ -67,6 +67,12 @@ impl Tap {
     pub fn active_actions(&self) -> bool {
         self.stats.actions && !self.stats.disabled
     }
+    pub fn interrupted(&self) -> bool {
+        self.stats.disabled
+    }
+    pub fn request_input() -> bool {
+        unsafe { CGRequestListenEventAccess() }
+    }
     pub fn input_trusted() -> bool {
         unsafe { CGPreflightListenEventAccess() }
     }
