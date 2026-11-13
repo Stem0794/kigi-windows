@@ -60,20 +60,41 @@ impl Action {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ActivationState {Waiting, Active, Cancelled}
+pub enum ActivationState {
+    Waiting,
+    Active,
+    Cancelled,
+}
 #[derive(Default)]
-pub struct ActivationGuard {pub origin:Option<i32>, seen_target:bool}
+pub struct ActivationGuard {
+    pub origin: Option<i32>,
+    seen_target: bool,
+}
 impl ActivationGuard {
-    pub fn new(origin:Option<i32>)->Self {Self{origin,seen_target:false}}
-    pub fn observe(&mut self,frontmost:Option<i32>,target:i32,own:i32)->ActivationState {
-        if frontmost==Some(target) {self.seen_target=true;return ActivationState::Active;}
-        if frontmost.is_none(){return ActivationState::Waiting;}
-        if self.seen_target {return ActivationState::Cancelled;}
-        if self.origin.is_none(){self.origin=frontmost;}
+    pub fn new(origin: Option<i32>) -> Self {
+        Self {
+            origin,
+            seen_target: false,
+        }
+    }
+    pub fn observe(&mut self, frontmost: Option<i32>, target: i32, own: i32) -> ActivationState {
+        if frontmost == Some(target) {
+            self.seen_target = true;
+            return ActivationState::Active;
+        }
+        if frontmost.is_none() {
+            return ActivationState::Waiting;
+        }
+        if self.seen_target {
+            return ActivationState::Cancelled;
+        }
+        if self.origin.is_none() {
+            self.origin = frontmost;
+        }
         match frontmost {
-            None=>ActivationState::Waiting,
-            Some(pid) if Some(pid)==self.origin || pid==own=>ActivationState::Waiting,
-            _=>ActivationState::Cancelled,
+            None => ActivationState::Waiting,
+            Some(pid) if Some(pid) == self.origin || pid == own => ActivationState::Waiting,
+            _ => ActivationState::Cancelled,
         }
     }
 }
@@ -83,14 +104,14 @@ mod tests {
     use super::*;
     #[test]
     fn activation_waits_for_a_space_transition_but_never_fights_a_user_switch() {
-        let mut guard=ActivationGuard::new(Some(10));
-        assert_eq!(guard.observe(Some(10),20,30),ActivationState::Waiting);
-        assert_eq!(guard.observe(None,20,30),ActivationState::Waiting);
-        assert_eq!(guard.observe(Some(20),20,30),ActivationState::Active);
-        assert_eq!(guard.observe(None,20,30),ActivationState::Waiting);
-        assert_eq!(guard.observe(Some(10),20,30),ActivationState::Cancelled);
-        let mut guard=ActivationGuard::new(Some(10));
-        assert_eq!(guard.observe(Some(40),20,30),ActivationState::Cancelled);
+        let mut guard = ActivationGuard::new(Some(10));
+        assert_eq!(guard.observe(Some(10), 20, 30), ActivationState::Waiting);
+        assert_eq!(guard.observe(None, 20, 30), ActivationState::Waiting);
+        assert_eq!(guard.observe(Some(20), 20, 30), ActivationState::Active);
+        assert_eq!(guard.observe(None, 20, 30), ActivationState::Waiting);
+        assert_eq!(guard.observe(Some(10), 20, 30), ActivationState::Cancelled);
+        let mut guard = ActivationGuard::new(Some(10));
+        assert_eq!(guard.observe(Some(40), 20, 30), ActivationState::Cancelled);
     }
     #[test]
     fn bindings_are_unique_and_dispatch_to_distinct_actions() {

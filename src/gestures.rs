@@ -238,16 +238,18 @@ mod tests {
     }
     #[test]
     fn short_swipe_uses_distance_from_start_and_rejects_jitter_and_diagonals() {
-        let mut p=EdgeProbe::default();
-        p.begin(contact(0.10,0.5,0),1);
-        assert_eq!(p.moved(contact(0.1999,0.5,100),1),None);
-        assert_eq!(p.moved(contact(0.20,0.5,110),1),Some(Edge::Left));
-        p.release();p.begin(contact(0.90,0.5,1200),1);
-        assert_eq!(p.moved(contact(0.8001,0.5,1250),1),None);
-        assert_eq!(p.moved(contact(0.80,0.5,1300),1),Some(Edge::Right));
-        p.release();p.begin(contact(0.05,0.5,2500),1);
-        assert_eq!(p.moved(contact(0.15,0.61,2600),1),None);
-        assert_eq!(p.moved(contact(0.25,0.61,2700),1),Some(Edge::Left));
+        let mut p = EdgeProbe::default();
+        p.begin(contact(0.10, 0.5, 0), 1);
+        assert_eq!(p.moved(contact(0.1999, 0.5, 100), 1), None);
+        assert_eq!(p.moved(contact(0.20, 0.5, 110), 1), Some(Edge::Left));
+        p.release();
+        p.begin(contact(0.90, 0.5, 1200), 1);
+        assert_eq!(p.moved(contact(0.8001, 0.5, 1250), 1), None);
+        assert_eq!(p.moved(contact(0.80, 0.5, 1300), 1), Some(Edge::Right));
+        p.release();
+        p.begin(contact(0.05, 0.5, 2500), 1);
+        assert_eq!(p.moved(contact(0.15, 0.61, 2600), 1), None);
+        assert_eq!(p.moved(contact(0.25, 0.61, 2700), 1), Some(Edge::Left));
     }
     #[test]
     fn edges_ten_percent_bounds_and_direction() {

@@ -58,9 +58,9 @@ struct PendingMaximize {
     activation_started: Option<Instant>,
 }
 struct PendingOpen {
-    guard:ActivationGuard,
-    raise_attempted:bool,
-    raise_error:Option<String>,
+    guard: ActivationGuard,
+    raise_attempted: bool,
+    raise_error: Option<String>,
     maximize: bool,
     result: Receiver<Result<i32, isize>>,
     pid: Option<i32>,
@@ -82,8 +82,8 @@ struct State {
     pending: RefCell<Option<PendingOpen>>,
     pending_maximize: RefCell<Option<PendingMaximize>>,
     launch_validation: RefCell<String>,
-    activation_check:Cell<bool>,
-    activation_check_done:Cell<bool>,
+    activation_check: Cell<bool>,
+    activation_check_done: Cell<bool>,
     previous_launch_known: Cell<bool>,
     picking: Cell<bool>,
     menu_open: Cell<bool>,
@@ -815,12 +815,21 @@ impl Controller {
         maximize: bool,
         started: Instant,
     ) -> Result<String, String> {
-        let origin=NSWorkspace::sharedWorkspace().frontmostApplication().map(|a|a.processIdentifier());
-        let fullscreen=NSApplication::sharedApplication(self.mtm()).currentSystemPresentationOptions().contains(NSApplicationPresentationOptions::FullScreen);
-        diagnostics::record("application.activation.source",format!("pid={origin:?} native_fullscreen={fullscreen}"));
+        let origin = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|a| a.processIdentifier());
+        let fullscreen = NSApplication::sharedApplication(self.mtm())
+            .currentSystemPresentationOptions()
+            .contains(NSApplicationPresentationOptions::FullScreen);
+        diagnostics::record(
+            "application.activation.source",
+            format!("pid={origin:?} native_fullscreen={fullscreen}"),
+        );
         applications::open(bundle).map(|result| {
             self.ivars().pending.replace(Some(PendingOpen {
-                guard:ActivationGuard::new(origin),raise_attempted:false,raise_error:None,
+                guard: ActivationGuard::new(origin),
+                raise_attempted: false,
+                raise_error: None,
                 maximize,
                 result,
                 pid: None,
@@ -1111,9 +1120,15 @@ impl Controller {
             msg_send![objc2::class!(NSObject), cancelPreviousPerformRequestsWithTarget:self, selector:sel!(openPoll:), object:std::ptr::null::<AnyObject>()]
         };
     }
-    fn finish_activation_check(&self,success:bool) {
-        if !self.ivars().activation_check.get() || self.ivars().activation_check_done.replace(true){return;}
-        println!("KIGI_FOCUS_CHECK {}",serde_json::json!({"success":success,"frontmost_pid":NSWorkspace::sharedWorkspace().frontmostApplication().map(|a|a.processIdentifier()),"accessibility":windows::trusted(),"report":self.log_report()}));
+    fn finish_activation_check(&self, success: bool) {
+        if !self.ivars().activation_check.get() || self.ivars().activation_check_done.replace(true)
+        {
+            return;
+        }
+        println!(
+            "KIGI_FOCUS_CHECK {}",
+            serde_json::json!({"success":success,"frontmost_pid":NSWorkspace::sharedWorkspace().frontmostApplication().map(|a|a.processIdentifier()),"accessibility":windows::trusted(),"report":self.log_report()})
+        );
         NSApplication::sharedApplication(self.mtm()).stop(None);
     }
     fn remember_launch(&self) {
@@ -1200,8 +1215,11 @@ impl Controller {
                 pending.started.elapsed().as_millis()
             ),
         );
-        if pending.activation_started.is_some(){
-            diagnostics::record("window.maximize.result",result.as_ref().map(String::as_str).unwrap_or_else(|e|e));
+        if pending.activation_started.is_some() {
+            diagnostics::record(
+                "window.maximize.result",
+                result.as_ref().map(String::as_str).unwrap_or_else(|e| e),
+            );
             self.finish_activation_check(result.is_ok());
         }
         Some(result)
@@ -1294,36 +1312,73 @@ impl Controller {
                 Err(TryRecvError::Empty) => {}
             }
         }
-        let result = if let Some(pid)=pending.pid {
-            let front=NSWorkspace::sharedWorkspace().frontmostApplication().map(|a|a.processIdentifier());
-            let state=pending.guard.observe(front,pid,std::process::id() as i32);
-            if state==ActivationState::Cancelled {
-                Some(Err("Activation annulée : vous avez changé d’application.".into()))
-            } else if let Some(app)=NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
-                if app.isTerminated() {Some(Err("L’application a quitté pendant l’activation.".into()))}
-                else {
-                    let trusted=windows::trusted();
-                    if trusted && !pending.raise_attempted && windows::application_window_ready(&app) {
-                        pending.raise_attempted=true;
-                        if let Err(e)=windows::raise_application_window(&app).and_then(|_|applications::activate(&app)) {
-                            pending.raise_error=Some(e);
+        let result = if let Some(pid) = pending.pid {
+            let front = NSWorkspace::sharedWorkspace()
+                .frontmostApplication()
+                .map(|a| a.processIdentifier());
+            let state = pending.guard.observe(front, pid, std::process::id() as i32);
+            if state == ActivationState::Cancelled {
+                Some(Err(
+                    "Activation annulée : vous avez changé d’application.".into()
+                ))
+            } else if let Some(app) =
+                NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            {
+                if app.isTerminated() {
+                    Some(Err("L’application a quitté pendant l’activation.".into()))
+                } else {
+                    let trusted = windows::trusted();
+                    if trusted
+                        && !pending.raise_attempted
+                        && windows::application_window_ready(&app)
+                    {
+                        pending.raise_attempted = true;
+                        if let Err(e) = windows::raise_application_window(&app)
+                            .and_then(|_| applications::activate(&app))
+                        {
+                            pending.raise_error = Some(e);
                         }
                     }
-                    if state==ActivationState::Active && app.isActive() {
-                        if let Some(error)=pending.raise_error.take(){Some(Err(format!("Application active, mais fenêtre non relevée : {error}")))}
-                        else if trusted && !pending.raise_attempted {None}
-                        else if !pending.maximize {Some(Ok(if trusted {"Application au premier plan ; fenêtre existante relevée."}else{"Application au premier plan ; fenêtre non vérifiée sans Accessibilité."}.to_owned()))}
-                        else if self.window_permission() {
-                            let result=self.begin_maximize(Some(&app),Some(pending.started));
-                            if result.is_err(){self.finish_activation_check(false);}
-                            self.status(&result.unwrap_or_else(|e|e));return;
-                        } else {diagnostics::timing(diagnostics::Metric::Activation,pending.started.elapsed(),false);self.finish_activation_check(false);return;}
-                    } else {None}
+                    if state == ActivationState::Active && app.isActive() {
+                        if let Some(error) = pending.raise_error.take() {
+                            Some(Err(format!(
+                                "Application active, mais fenêtre non relevée : {error}"
+                            )))
+                        } else if trusted && !pending.raise_attempted {
+                            None
+                        } else if !pending.maximize {
+                            Some(Ok(if trusted {"Application au premier plan ; fenêtre existante relevée."}else{"Application au premier plan ; fenêtre non vérifiée sans Accessibilité."}.to_owned()))
+                        } else if self.window_permission() {
+                            let result = self.begin_maximize(Some(&app), Some(pending.started));
+                            if result.is_err() {
+                                self.finish_activation_check(false);
+                            }
+                            self.status(&result.unwrap_or_else(|e| e));
+                            return;
+                        } else {
+                            diagnostics::timing(
+                                diagnostics::Metric::Activation,
+                                pending.started.elapsed(),
+                                false,
+                            );
+                            self.finish_activation_check(false);
+                            return;
+                        }
+                    } else {
+                        None
+                    }
                 }
-            } else {Some(Err("Le processus cible n’est plus disponible.".into()))}
-        } else {None};
+            } else {
+                Some(Err("Le processus cible n’est plus disponible.".into()))
+            }
+        } else {
+            None
+        };
         if let Some(result) = result {
-            diagnostics::record("application.activation.result",result.as_ref().map(String::as_str).unwrap_or_else(|e|e));
+            diagnostics::record(
+                "application.activation.result",
+                result.as_ref().map(String::as_str).unwrap_or_else(|e| e),
+            );
             self.finish_activation_check(result.is_ok());
             diagnostics::timing(
                 diagnostics::Metric::Activation,
@@ -1880,7 +1935,7 @@ pub fn run() {
             alert(mtm, "Une autre copie de Kigi est déjà lancée", &format!("Quittez l'autre copie depuis son menu Kigi avant de lancer cette version. Cette nouvelle copie va se fermer sans modifier l'autre.\n\n{copies}"));
             return;
         }
-        let activation_check=std::env::args().any(|a|a=="--activation-check");
+        let activation_check = std::env::args().any(|a| a == "--activation-check");
         let controller = Controller::new(mtm);
         controller.ivars().activation_check.set(activation_check);
         controller
@@ -1889,7 +1944,11 @@ pub fn run() {
             .replace("Test global arrêté. Aucun geste global validé.".into());
         controller.remember_launch();
         controller.remember_context();
-        app.setActivationPolicy(if activation_check{NSApplicationActivationPolicy::Accessory}else{NSApplicationActivationPolicy::Regular});
+        app.setActivationPolicy(if activation_check {
+            NSApplicationActivationPolicy::Accessory
+        } else {
+            NSApplicationActivationPolicy::Regular
+        });
         let status_bar = NSStatusBar::systemStatusBar();
         let status_item = status_bar.statusItemWithLength(-1.0);
         if let Some(button) = status_item.button(mtm) {
@@ -1990,12 +2049,16 @@ pub fn run() {
             }
             Err(e) => controller.status(&e),
         }
-        if !activation_check {controller.register_hotkeys();}
+        if !activation_check {
+            controller.register_hotkeys();
+        }
         controller.ivars().mouse_scroll_requested.set(
             NSUserDefaults::standardUserDefaults()
                 .boolForKey(ns_string!("disableMouseHorizontalScroll")),
         );
-        if activation_check {controller.ivars().mouse_scroll_requested.set(false);}
+        if activation_check {
+            controller.ivars().mouse_scroll_requested.set(false);
+        }
         if controller.ivars().mouse_scroll_requested.get() {
             if let Err(e) = controller.start_mouse_scroll() {
                 controller.status(&e);
@@ -2040,8 +2103,8 @@ pub fn run() {
                 None,
             );
             if activation_check {
-                let _:()=msg_send![&*controller,performSelector:sel!(activationCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];
-                let _:()=msg_send![&*controller,performSelector:sel!(activationCheckTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:12.0f64];
+                let _: () = msg_send![&*controller,performSelector:sel!(activationCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];
+                let _: () = msg_send![&*controller,performSelector:sel!(activationCheckTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:12.0f64];
             } else {
                 let _: () = msg_send![&*controller, performSelector:sel!(openProfiles:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64];
             }
