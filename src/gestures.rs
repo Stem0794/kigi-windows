@@ -91,6 +91,7 @@ pub enum Edge {
 pub struct EdgeProbe {
     start: Option<(Contact, Edge)>,
     blocked: bool,
+    // None edge: initial center contact; Some edge: last successful swipe's side.
     returning: Option<(Contact, Option<Edge>)>,
 }
 impl EdgeProbe {
