@@ -172,3 +172,14 @@ de révision avant/après sélecteurs. Récupération backup explicite/confirmé
 primaire/backup vérifiés, ancien invalide conservé. Ancien écran disponible via
 Diagnostics, erreur WebKit ou --native-ui pendant cette version ; pas de suppression
 du code ni de fusion main avant retour pilote. Branche ui/studio-default, PR dédiée.
+
+## Étapes1–3 autorisées — Studio0.8.0
+
+L’utilisateur demande de poursuivre finalisation/revue-fusion, retrait de l’ancien
+écran et options Studio. Supprimer Preferences AppKit et ses branchements ; garder
+un dialogue natif de récupération de chargement, sans réintroduire une seconde UI.
+Ajouter previewApply sans écriture via le moteur/snapshot existants et accès aux
+raccourcis depuis un espace enregistré, sans combinaison fictive ni activation
+implicite. Vérifications ciblées et parcours Mac de capture/annulation, essai/restore,
+relecture et raccourci associé. Revue de l’ensemble puis fusion sur main autorisée
+après contrôles natifs réussis. Ne pas prétendre avoir testé physiquement le Mac M5.

@@ -1,15 +1,15 @@
 'use strict';
 // Configuration views only. All registration, permissions, reports and input stay native.
 window.KigiSystem = (() => {
-  let ctx, draft = null, original = null, selected = 0, revision = null, filter = '', scope = 'all', timer, until = 0, generation = 0;
+  let ctx, draft = null, original = null, selected = 0, revision = null, filter = '', scope = 'all', timer, until = 0, generation = 0, captureRequired = false;
   const copy = value => value == null ? null : JSON.parse(JSON.stringify(value));
   const isDirty = () => draft != null && (original == null || JSON.stringify(draft) !== JSON.stringify(original));
   const settings = () => ctx.data().shortcuts;
   const combo = binding => [[4096, '⌃'], [2048, '⌥'], [512, '⇧'], [256, '⌘']].filter(([flag]) => binding.modifiers & flag).map(([, glyph]) => glyph).join('') + binding.key_label;
   const actionName = command => ({Application: command.name || 'Application', ChatGpt: 'ChatGPT dans Chrome', Maximize: 'Maximiser', PairLeft: 'Gauche puis droite', PairRight: 'Droite puis gauche', Test: 'Test / restauration de fenêtre', Work: 'Travail — Chrome 100 %', Meeting: 'Réunion — Teams / Chrome', Restore: 'Restaurer la disposition', ApplyProfile: ctx?.data().spaces.profiles.find(p => p.id === command.profile_id)?.name ? `Espace : ${ctx.data().spaces.profiles.find(p => p.id === command.profile_id).name}` : `Espace supprimé #${command.profile_id}`})[command.kind];
   const rowState = binding => !binding.enabled ? 'Désactivé' : !settings().globalEnabled ? 'Globaux désactivés' : settings().capturing ? 'Capture en cours' : settings().registrationFailed || !settings().registered ? 'À vérifier' : 'Enregistré';
-  const dirtyChanged = () => { ctx.syncDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
-  function reset() { draft = null; original = null; revision = null; ctx?.syncDirty(); }
+  const dirtyChanged = () => { ctx.syncDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = captureRequired || !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
+  function reset() { captureRequired = false; draft = null; original = null; revision = null; ctx?.syncDirty(); }
   function stopPolling() { clearTimeout(timer); until = 0; generation++; }
   async function refreshData() { const data = await Kigi.request('app.bootstrap'); ctx.replace(data); }
   async function operation(method, params = {}, message = '') {
@@ -26,6 +26,7 @@ window.KigiSystem = (() => {
   }
   async function save() {
     if (!draft || ctx.busy()) return false;
+    if (captureRequired) { ctx.fail(new Error('Choisissez une combinaison avant d’enregistrer.')); return false; }
     if (draft.command.kind === 'ApplyProfile' && !draft.command.profile_id) { ctx.fail(new Error('Choisissez un espace enregistré.')); return false; }
     if (draft.command.kind === 'Application' && !draft.command.bundle) { ctx.fail(new Error('Choisissez une application.')); return false; }
     ctx.setBusy(true);
@@ -53,7 +54,7 @@ window.KigiSystem = (() => {
   }
   async function capture() {
     const result = await operation('shortcuts.startCapture', {}, 'Capture terminée');
-    if (result && !result.canceled) { draft.key = result.key; draft.modifiers = result.modifiers; draft.key_label = result.keyLabel; dirtyChanged(); ctx.render(); ctx.status(`Combinaison ${combo(draft)} capturée. Cliquez sur Enregistrer pour l’appliquer.`); }
+    if (result && !result.canceled) { captureRequired = false; draft.key = result.key; draft.modifiers = result.modifiers; draft.key_label = result.keyLabel; dirtyChanged(); ctx.render(); ctx.status(`Combinaison ${combo(draft)} capturée. Cliquez sur Enregistrer pour l’appliquer.`); }
     if (result && !result.registrationRestored) ctx.fail(new Error('La capture est terminée, mais macOS refuse le réenregistrement. Consultez les diagnostics.'));
   }
   function field(parent, label, input) { const group = ctx.el('div', 'field'); const text = ctx.el('label', '', label); if (input.id) text.htmlFor = input.id; group.append(text, input); parent.append(group); }
@@ -82,7 +83,7 @@ window.KigiSystem = (() => {
     inspector.replaceChildren(ctx.el('h2', '', 'RACCOURCI')); if (!draft) { inspector.append(ctx.el('p', '', 'Ajoutez ou sélectionnez un raccourci.')); return; }
     const mark = ctx.el('span', 'tag', 'Modifié'); mark.id = 'shortcut-dirty'; mark.hidden = !isDirty(); inspector.append(mark);
     check(inspector, 'Activer cette entrée', draft.enabled, enabled => { draft.enabled = enabled; dirtyChanged(); }, 'shortcut-enabled').disabled = !data.canWrite;
-    const record = ctx.button(combo(draft), capture, 'app-picker'); record.id = 'capture-shortcut'; record.disabled = !data.canWrite; field(inspector, 'Capturer la combinaison', record);
+    const record = ctx.button(captureRequired ? 'Choisir une combinaison…' : combo(draft), capture, 'app-picker'); record.id = 'capture-shortcut'; record.disabled = !data.canWrite; field(inspector, 'Capturer la combinaison', record);
     const action = ctx.el('select'); action.id = 'shortcut-command';
     for (const [value, label] of [['Application', 'Ouvrir / activer une application'], ['ChatGpt', 'Retrouver ChatGPT'], ['Maximize', 'Maximiser'], ['PairLeft', 'Partager : gauche puis droite'], ['PairRight', 'Partager : droite puis gauche'], ['Test', 'Test / restauration de fenêtre'], ['Work', 'Travail — Chrome 100 %'], ['Meeting', 'Réunion — Teams / Chrome'], ['Restore', 'Restaurer la disposition'], ['ApplyProfile', 'Appliquer un espace enregistré']]) { const option = ctx.el('option', '', label); option.value = value; action.append(option); }
     action.value = draft.command.kind; action.disabled = !data.canWrite; action.addEventListener('change', () => { draft.command = action.value === 'Application' ? {kind: 'Application', bundle: '', name: '', maximize: false} : action.value === 'ApplyProfile' ? {kind: 'ApplyProfile', profile_id: ctx.data().spaces.profiles[0]?.id || 0} : {kind: action.value}; dirtyChanged(); ctx.render(); }); field(inspector, 'Action', action);
@@ -141,9 +142,18 @@ window.KigiSystem = (() => {
   }
   function diagnostics(content, inspector) {
     const data = ctx.data().diagnostics; ctx.heading(content, 'Diagnostics', 'État et mesures de la session. Actualisez après un essai.');
-    tools(content, [['Copier le rapport', () => operation('diagnostics.copy', {}, 'Rapport backend copié')], ['Exporter .txt', async () => { const result = await operation('diagnostics.export'); if (result) ctx.status(result.saved ? 'Rapport backend exporté' : 'Export annulé'); }], ['Réenregistrer les raccourcis', () => operation('shortcuts.reregister', {}, 'État de l’enregistrement actualisé')], ['Interface de secours', () => operation('app.openNativeFallback')]]);
+    tools(content, [['Copier le rapport', () => operation('diagnostics.copy', {}, 'Rapport backend copié')], ['Exporter .txt', async () => { const result = await operation('diagnostics.export'); if (result) ctx.status(result.saved ? 'Rapport backend exporté' : 'Export annulé'); }], ['Réenregistrer les raccourcis', () => operation('shortcuts.reregister', {}, 'État de l’enregistrement actualisé')]]);
     content.append(ctx.el('pre', 'report', data.performance), ctx.el('h2', '', 'Dernier résultat'), ctx.el('p', '', data.lastResult || 'Aucune action mesurée.'));
     inspector.replaceChildren(ctx.el('h2', '', 'MESURES')); ctx.field(inspector, 'RSS du processus Rust', data.rustRssBytes == null ? 'Non mesuré' : `${(data.rustRssBytes / 1048576).toFixed(1)} Mio`); ctx.field(inspector, 'Mémoire auxiliaire WebKit', 'Non mesurée'); ctx.field(inspector, 'Raccourcis reçus', String(data.shortcutsReceived)); ctx.field(inspector, 'Retour de restauration', data.restoreAvailable ? 'Disponible' : 'Absent');
   }
-  return {setup(context) { ctx = context; }, dirty: isDirty, guard, reset, stopPolling, render(route, content, inspector) { ({shortcuts, gestures, mouse, permissions, diagnostics})[route](content, inspector); }};
+  function openForProfile(id) {
+    reset(); filter = ''; scope = 'all'; selected = settings().settings.entries.findIndex(b => b.command.kind === 'ApplyProfile' && b.command.profile_id === id);
+    if (selected < 0) {
+      if (!settings().canWrite || settings().settings.entries.length >= 32) { selected = 0; ctx.fail(new Error('Impossible d’ajouter un raccourci. Vérifiez le fichier et la limite de 32 entrées.')); ctx.render(); return; }
+      selected = null; revision = settings().revision; captureRequired = true;
+      draft = {enabled: false, key:45, modifiers:2048, key_label:'N', command:{kind:'ApplyProfile', profile_id:id}};
+    }
+    ctx.render(); dirtyChanged();
+  }
+  return {openForProfile, combination: combo, setup(context) { ctx = context; }, dirty: isDirty, guard, reset, stopPolling, render(route, content, inspector) { ({shortcuts, gestures, mouse, permissions, diagnostics})[route](content, inspector); }};
 })();

@@ -27,24 +27,6 @@ pub enum Command {
         profile_id: u32,
     },
 }
-impl Command {
-    pub fn label(&self) -> String {
-        match self {
-            Self::Application { name, maximize, .. } => {
-                format!("{}{}", name, if *maximize { " · maximiser" } else { "" })
-            }
-            Self::ChatGpt => "Retrouver ChatGPT dans Chrome".into(),
-            Self::Maximize => "Maximiser la fenêtre".into(),
-            Self::PairLeft => "Partager : gauche puis droite".into(),
-            Self::PairRight => "Partager : droite puis gauche".into(),
-            Self::Test => "Tester / restaurer la fenêtre".into(),
-            Self::Work => "Travail — Chrome 100 %".into(),
-            Self::Meeting => "Réunion — Teams / Chrome".into(),
-            Self::Restore => "Restaurer la disposition".into(),
-            Self::ApplyProfile { profile_id } => format!("Appliquer l’espace #{profile_id}"),
-        }
-    }
-}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Binding {
@@ -65,14 +47,6 @@ impl Binding {
         }
         text.push_str(&self.key_label);
         text
-    }
-    pub fn caption(&self) -> String {
-        format!(
-            "{}{} — {}",
-            if self.enabled { "" } else { "Désactivé · " },
-            self.combination(),
-            self.command.label()
-        )
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -282,7 +256,7 @@ mod tests {
             maximize: false,
         };
         s.validate().unwrap();
-        assert!(s.entries[1].caption().contains("Safari"));
+
         s.entries[2].key = s.entries[1].key;
         s.entries[2].modifiers = s.entries[1].modifiers;
         assert!(s.validate().is_err());

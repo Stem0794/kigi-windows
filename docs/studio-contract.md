@@ -274,3 +274,20 @@ tout primaire redevenu valide. Ancien invalide copié et synchronisé dans un fi
 config.invalid-<temps>.json, backup original conservé, primaire remplacé atomiquement.
 Contrôles exacts juste avant écriture ; même fenêtre de concurrence résiduelle entre
 comparaison finale et rename que le writer existant, pas de verrou universel.
+
+##0.8.0 — Studio unique, essai et raccourci associé
+
+Preferences supprimé ; aucune API openNativeFallback ni option --native-ui utile.
+Une panne WebKit affiche un NSAlert natif ; Réessayer recrée la WebView et annonce
+l’abandon du brouillon non enregistré, sans toucher au moteur/configuration.
+spaces.previewApply accepte un EditParams validé (même géométrie que Save), contrôle
+la révision avant/après sélecteurs, utilise le snapshot unique et refuse de l’écraser.
+Aucune mutation du catalogue ; retour partial/applied/canceled et actual AX mesuré.
+Restaurer garde le brouillon. Son raccourci ne peut cibler que la version enregistrée
+de l’espace ; lien direct sélectionne l’entrée existante ou prépare un brouillon
+désactivé exigeant une capture. Save/Discard/Cancel reste partagé.
+
+Validation CI de capture : uniquement --studio-capture-check + --studio-editor-check
+et chemin temporaire validé ; fenêtres filtrées aux deux bundles de fixtures. Boutons
+NSAlert réels actionnés après entrée en boucle modale, premier Annuler puis Choisir.
+Pas de clic système, de contenu tiers ou de sélecteur automatique en production.

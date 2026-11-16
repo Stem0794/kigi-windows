@@ -1,9 +1,6 @@
 //! Small Studio session: opaque revision + exact primary bytes, existing catalog writes.
 use super::bridge::{EditParams, Failure};
-use crate::{
-    config::{self, Catalog, SavedLayout},
-    geometry,
-};
+use crate::config::{self, Catalog};
 use serde::Serialize;
 use std::{
     path::Path,
@@ -154,30 +151,7 @@ impl Store {
         }
         let selected = match mutation {
             Mutation::Save(input) => {
-                let mut layout = SavedLayout {
-                    schema_version: 1,
-                    windows: input.windows.clone(),
-                };
-                layout.validate().map_err(Failure::invalid)?;
-                if let Some(percent) = input.left_percent {
-                    let geometry = geometry::normalized_split(percent).map_err(Failure::invalid)?;
-                    for (window, g) in layout.windows.iter_mut().zip(geometry) {
-                        if ![
-                            window.geometry.x - g.x,
-                            window.geometry.y - g.y,
-                            window.geometry.width - g.width,
-                            window.geometry.height - g.height,
-                        ]
-                        .iter()
-                        .all(|n| n.abs() < 1e-9)
-                        {
-                            return Err(Failure::invalid(
-                                "La géométrie ne correspond pas aux proportions.",
-                            ));
-                        }
-                        window.geometry = g;
-                    }
-                }
+                let layout = input.layout()?;
                 Some(
                     catalog
                         .upsert(input.profile_id, &input.name, &layout)
@@ -226,7 +200,10 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Profile, SavedWindow};
+    use crate::{
+        config::{Profile, SavedWindow},
+        geometry,
+    };
     fn input(percent: u8) -> EditParams {
         let [a, b] = geometry::normalized_split(percent).unwrap();
         EditParams {

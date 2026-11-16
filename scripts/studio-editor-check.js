@@ -69,6 +69,13 @@
     clickText('Annuler les modifications'); await wait(() => q('#left-percent')?.value === '35');
     listing = await Kigi.request('spaces.list');
     assert(listing.profiles.length === 1 && listing.profiles[0].name === 'Ratio35', 'Unexpected final catalog');
-    window.__kigiEditorCheck = {success: true, width: listing.profiles[0].windows[0].geometry.width, schema: 2};
+    q('#space-shortcut').click();
+    await wait(() => q('#shortcut-command')?.value === 'ApplyProfile');
+    assert(q('#shortcut-profile').value === String(listing.profiles[0].id),'Shortcut linked by wrong profile ID');
+    assert(q('#capture-shortcut').textContent === 'Choisir une combinaison…' && q('#save-shortcut').disabled && !q('#shortcut-enabled').checked,'Invented or activated default shortcut');
+    q('#navigation [data-route="spaces"]').click();await wait(() => !q('#modal').hidden);clickText('Ignorer');
+    await wait(() => !!q('#space-shortcut'));
+    assert((await Kigi.request('shortcuts.list')).settings.entries.every(b=>b.command.kind!=='ApplyProfile'),'Navigation saved a shortcut implicitly');
+    window.__kigiEditorCheck = {success: true, associatedShortcut:true, width: listing.profiles[0].windows[0].geometry.width, schema: 2};
   } catch (error) { window.__kigiEditorCheck = {success: false, message: String(error.message)}; }
 })();

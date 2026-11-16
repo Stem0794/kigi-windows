@@ -9,8 +9,31 @@
     const minimum = initial.profiles[0].name === 'Taille minimale';
     document.querySelectorAll('#navigation button')[1].click();
     await wait(() => !!q('#apply-space'));
+    let captureGeometry = null, captureBundles = null;
     if (!minimum) {
+      q('#capture-space').click(); await wait(() => q('#status').textContent.startsWith('Capture annulée') && !q('#refresh').disabled);
+      assert(JSON.stringify((await Kigi.request('spaces.list')).profiles) === JSON.stringify(initial.profiles), 'Canceled capture wrote catalog');
+      q('#capture-space').click(); await wait(() => q('#status').textContent.startsWith('Disposition capturée') && !q('#refresh').disabled);
+      assert(!q('#draft-indicator').hidden && !(await Kigi.request('diagnostics.summary')).restoreAvailable, 'Capture moved windows or failed to create draft');
+      captureGeometry = [...document.querySelectorAll('#editor-preview .preview-window')].map(w => Object.fromEntries(['left','top','width','height'].map(key=>[key,parseFloat(w.style[key])/100])));
+      captureBundles = [...document.querySelectorAll('#editor-preview .window-bar')].map(w => w.textContent);
+      assert(JSON.stringify((await Kigi.request('spaces.list')).profiles) === JSON.stringify(initial.profiles), 'Successful capture saved implicitly');
+      [...document.querySelectorAll('button')].find(b=>b.textContent==='Annuler les modifications').click();
+      await wait(() => !!q('#left-percent'));
       const input = q('#left-percent'); input.value = '35'; input.dispatchEvent(new Event('input', {bubbles: true}));
+      q('#preview-space').click();
+      await wait(() => q('#layout-result')?.dataset.operation === 'preview' && !q('#refresh').disabled);
+      assert(q('#layout-result').dataset.status === 'applied', 'Draft preview was not applied');
+      assert(JSON.stringify((await Kigi.request('spaces.list')).profiles) === JSON.stringify(initial.profiles), 'Preview wrote the catalog');
+      assert(q('#left-percent').value === '35' && !q('#draft-indicator').hidden && q('#preview-space').disabled, 'Preview lost draft or snapshot guard');
+      let previewRefused=false;
+      try { await Kigi.request('spaces.previewApply',{expectedRevision:initial.revision,profileId:initial.profiles[0].id,name:initial.profiles[0].name,windows:initial.profiles[0].windows,leftPercent:null}); }catch(e){previewRefused=e.code==='SNAPSHOT_ACTIVE';}
+      assert(previewRefused,'Preview replaced the existing snapshot');
+      await new Promise(resolve => setTimeout(resolve,750));
+      q('#restore-layout').click();
+      await wait(() => q('#layout-result')?.dataset.operation === 'restore' && !q('#refresh').disabled);
+      assert(q('#layout-result').dataset.status === 'restored' && q('#left-percent').value === '35' && !q('#draft-indicator').hidden,'Preview restore lost draft');
+      assert(JSON.stringify((await Kigi.request('spaces.list')).profiles) === JSON.stringify(initial.profiles),'Preview restore wrote catalog');
       q('#apply-space').click(); await wait(() => !q('#modal').hidden); clickModal('Annuler');
       assert(!(await Kigi.request('diagnostics.summary')).restoreAvailable, 'Canceled apply changed windows');
       q('#apply-space').click(); await wait(() => !q('#modal').hidden); clickModal('Enregistrer et appliquer');
@@ -34,6 +57,6 @@
     assert(!(await Kigi.request('diagnostics.summary')).restoreAvailable && q('#restore-layout').hidden, 'Return point not cleared');
     assert(!q('#apply-space').disabled, 'Apply not reenabled after restore');
     const final = await Kigi.request('spaces.list'); assert(final.profiles[0].windows[0].geometry.width === .35, 'Apply/restore changed requested ratio');
-    window.__kigiEditorCheck = {success: true, minimum, ratio: .35, restored: true, reportedWidths};
+    window.__kigiEditorCheck = {success: true, captureGeometry, captureBundles, previewChecked: !minimum, minimum, ratio: .35, restored: true, reportedWidths};
   } catch (error) { window.__kigiEditorCheck = {success: false, message: String(error.message)}; }
 })();

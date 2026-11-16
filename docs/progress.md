@@ -879,3 +879,16 @@ CRC/plist/architectures et cinq assets UI comparés au source. [PR#7](https://gi
 empilée sur PR#6 ; main conservée avant retour pilote. Écran classique gardé en
 secours pour cette version, retrait définitif après validation. Clippy : seuls5
 avertissements préexistants du filtre souris.
+
+## 2026-11-16 — Studio0.8.0, finalisation étapes1–3
+
+Demande explicite de poursuivre revue/fusion, retirer l’ancien écran et compléter
+les options. Suppression Preferences et callbacks/formulaires associés ; panne UI
+traitée par dialogue natif Réessayer/Copier diagnostic/Fermer, moteur conservé.
+PreviewApply réutilise le placement/snapshot/readback partagé, sans sauvegarde ;
+validation géométrique commune avec Save. Raccourcis associés accessibles depuis
+l’espace, capture obligatoire pour une nouvelle entrée désactivée, aucune combinaison
+affichée comme réelle avant capture. Tests locaux29 et typage ARM passent. Validation
+Mac renforcée via fenêtres dédiées : vrais sélecteurs capture/annulation pilotés par
+leurs boutons natifs (aucune injection système), comparaison CG indépendante, essai
+brouillon/restore sans écriture et lien de raccourci sans sauvegarde implicite.

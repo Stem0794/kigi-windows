@@ -77,9 +77,6 @@ impl Recorder {
             crate::app::shortcut_captured(None);
         }
     }
-    pub fn is_recording(&self) -> bool {
-        self.ivars().recording.get()
-    }
     fn capture(&self, event: &NSEvent) {
         if self.isHiddenOrHasHiddenAncestor() || self.window().is_none() {
             self.cancel();

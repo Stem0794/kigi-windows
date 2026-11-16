@@ -26,9 +26,25 @@ impl Controller {
             .frontmostApplication()
             .map(|a| a.processIdentifier())
             .filter(|p| *p != std::process::id() as i32)
-            .or(self.ivars().preferences_anchor.get());
+            .or(self.ivars().activation_anchor.get());
         let (_, mut choices, partial) = windows::pair_candidates_for_app(self.mtm(), prior)
             .map_err(|e| Failure::new("CAPTURE_FAILED", e))?;
+        if std::env::args().any(|a| a == "--studio-capture-check")
+            && std::env::var_os("KIGI_TEST_STUDIO_CAPTURE").is_some()
+        {
+            choices.retain(|c| {
+                matches!(
+                    c.bundle_id.as_str(),
+                    "io.kigi.focus.source" | "io.kigi.focus.target"
+                )
+            });
+            if choices.len() != 2 {
+                return Err(Failure::new(
+                    "CAPTURE_FAILED",
+                    "Deux fenêtres de test dédiées sont requises.",
+                ));
+            }
+        }
         self.ivars().picking.set(true);
         #[allow(deprecated)]
         NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
@@ -87,7 +103,7 @@ impl Controller {
     pub(super) fn persist_shortcuts_transaction(
         &self,
         settings: Shortcuts,
-        selected: usize,
+        _selected: usize,
         source: Option<&Option<Vec<u8>>>,
     ) -> Result<(), String> {
         settings.validate()?;
@@ -121,8 +137,7 @@ impl Controller {
         self.ivars().shortcuts.replace(settings);
         self.ivars().hotkeys.replace(Some(keys));
         diagnostics::record("shortcuts.save.complete", "success=true");
-        self.populate_shortcuts(selected);
-        self.sync_preferences();
+
         Ok(())
     }
     fn studio_shortcut_source(&self, revision: &str) -> Result<Option<Vec<u8>>, Failure> {
@@ -346,7 +361,7 @@ impl Controller {
                 }
                 self.ivars().shortcuts.replace(settings);
                 self.ivars().hotkeys.replace(Some(keys));
-                self.populate_shortcuts(0);
+
                 Ok(self.studio_shortcuts_data())
             }
             S::Global(input) => {

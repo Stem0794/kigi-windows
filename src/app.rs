@@ -6,8 +6,7 @@ use crate::{
     gestures::{Contact, Edge, EdgeProbe},
     hotkey::Hotkeys,
     mouse_scroll::MouseScrollTap,
-    preferences::{Preferences, RuntimeSettings},
-    shortcuts::{self, Binding, Command, Shortcuts},
+    shortcuts::{self, Command, Shortcuts},
     studio,
     trackpad::Tap,
     windows::{self, Snapshot},
@@ -29,6 +28,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+thread_local! { static CAPTURE_DIALOG_INDEX: Cell<u32> = const { Cell::new(0) }; }
 thread_local! { static CONTROLLER: RefCell<Option<Retained<Controller>>> = const { RefCell::new(None) }; }
 
 #[derive(Default)]
@@ -100,11 +100,12 @@ struct State {
     permission_flow: RefCell<PermissionFlow>,
     last_permission: Cell<Option<bool>>,
     local_window: RefCell<Option<Retained<NSWindow>>>,
-    preferences: RefCell<Option<Preferences>>,
-    preferences_anchor: Cell<Option<i32>>,
+    activation_anchor: Cell<Option<i32>>,
     studio: RefCell<Option<studio::Studio>>,
     studio_store: RefCell<studio::store::Store>,
     studio_quit_confirmed: Cell<bool>,
+    studio_failure_showing: Cell<bool>,
+    studio_load_failed: Cell<bool>,
     studio_editor_polls: Cell<u8>,
     studio_render_polls: Cell<u8>,
     studio_shortcuts: RefCell<studio::shortcut_store::ShortcutStore>,
@@ -123,30 +124,6 @@ define_class!(
     struct Controller;
     unsafe impl NSObjectProtocol for Controller {}
     impl Controller {
-        #[unsafe(method(shortcutSelected:))]
-        fn shortcut_selected(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let selected=self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_shortcut).unwrap_or(0);
-            self.populate_shortcuts(selected);
-            self.status("Modifiez la combinaison ou l’action, puis cliquez sur Enregistrer.");
-        }
-        #[unsafe(method(shortcutDraftChanged:))]
-        fn shortcut_draft_changed(&self,_:Option<&AnyObject>) { self.status("Modifications non enregistrées. Cliquez sur Enregistrer pour les appliquer."); }
-        #[unsafe(method(shortcutActionChanged:))]
-        fn shortcut_action_changed(&self,_:Option<&AnyObject>) {
-            if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.update_shortcut_action();}
-            self.status("Action modifiée. Cliquez sur Enregistrer pour l’appliquer.");
-        }
-        #[unsafe(method(recordShortcut:))]
-        fn record_shortcut(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            self.ivars().hotkeys.borrow_mut().take();
-            let started=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.recorder.start());
-            if started {
-                self.status("Appuyez sur une combinaison avec ⌘, ⌥ ou ⌃. Échap annule. Les raccourcis Kigi sont suspendus pendant la saisie.");
-                self.schedule_capture(sel!(shortcutCaptureTimeout:),15.0);
-            } else {self.register_hotkeys();}
-        }
         #[unsafe(method(shortcutCaptureDone:))]
         fn capture_done(&self,_:Option<&AnyObject>) {
             let Some(result)=self.ivars().captured.borrow_mut().take() else{return;};
@@ -156,12 +133,7 @@ define_class!(
                 NSApplication::sharedApplication(self.mtm()).stopModalWithCode(NSModalResponseOK);
                 return;
             }
-            let captured=result.is_some();
-            if let Some((key,modifiers,name))=result {
-                if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.set_shortcut_key(key,modifiers,name);}
-            } else {self.restore_shortcut_caption();}
             self.register_hotkeys();
-            self.status(if captured {"Combinaison choisie. Cliquez sur Enregistrer pour l’appliquer."}else{"Saisie annulée. Vos raccourcis précédents restent actifs."});
         }
         // CI-only event delivered directly to our focused Recorder, never posted to macOS.
         #[unsafe(method(studioCaptureFixture:))]
@@ -180,64 +152,6 @@ define_class!(
         fn cancel_studio_capture(&self,_:Option<&AnyObject>){self.cancel_shortcut_capture();}
         #[unsafe(method(shortcutCaptureTimeout:))]
         fn capture_timeout(&self,_:Option<&AnyObject>) {self.cancel_shortcut_capture();}
-        #[unsafe(method(chooseShortcutApp:))]
-        fn choose_shortcut_app(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let panel=NSOpenPanel::openPanel(self.mtm());
-            panel.setTitle(Some(ns_string!("Choisir une application")));
-            panel.setPrompt(Some(ns_string!("Choisir")));
-            panel.setCanChooseDirectories(false);panel.setCanChooseFiles(true);panel.setAllowsMultipleSelection(false);
-            #[allow(deprecated)] panel.setAllowedFileTypes(Some(&NSArray::from_slice(&[ns_string!("app")])));
-            self.ivars().picking.set(true);
-            let result=panel.runModal();self.ivars().picking.set(false);
-            if result!=NSModalResponseOK{return;}
-            let result=(|| {
-                let url=panel.URL().ok_or("Aucune application sélectionnée.")?;
-                let bundle=NSBundle::bundleWithURL(&url).and_then(|b|b.bundleIdentifier()).ok_or("Cette application ne fournit pas d’identifiant valide.")?;
-                if bundle.to_string()=="io.kigi.windows" {return Err("Choisissez une autre application que Kigi.");}
-                let name=url.lastPathComponent().map(|s|s.to_string().trim_end_matches(".app").to_owned()).ok_or("Nom d’application absent.")?;
-                if let Some(p)=self.ivars().preferences.borrow().as_ref(){p.set_shortcut_app(bundle.to_string(),name);}
-                Ok(())
-            })();
-            match result {Ok(())=>self.status("Application choisie. Cliquez sur Enregistrer pour l’appliquer."),Err(e)=>self.status(e)}
-        }
-        #[unsafe(method(saveShortcut:))]
-        fn save_shortcut(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let draft=self.ivars().preferences.borrow().as_ref().and_then(|p|p.selected_shortcut().map(|i|(i,p.shortcut_draft())));
-            if let Some((index,draft))=draft {
-                match draft {
-                    Ok(binding)=>{let mut settings=self.ivars().shortcuts.borrow().clone();if let Some(slot)=settings.entries.get_mut(index){*slot=binding;self.persist_shortcuts(settings,index);}}
-                    Err(e)=>self.status(&e),
-                }
-            }
-        }
-        #[unsafe(method(addShortcut:))]
-        fn add_shortcut(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let mut settings=self.ivars().shortcuts.borrow().clone();let selected=settings.entries.len();
-            if selected>=32 {self.status("Vous pouvez créer jusqu’à 32 raccourcis.");return;}
-            settings.entries.push(Binding{enabled:false,key:45,modifiers:1<<11,key_label:"N".into(),command:Command::Maximize});
-            self.persist_shortcuts(settings,selected);
-        }
-        #[unsafe(method(deleteShortcut:))]
-        fn delete_shortcut(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let selected=self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_shortcut);
-            if let Some(i)=selected {
-                let mut settings=self.ivars().shortcuts.borrow().clone();
-                if i<settings.entries.len(){settings.entries.remove(i);self.persist_shortcuts(settings,i.saturating_sub(1));}
-            }
-        }
-        #[unsafe(method(resetShortcuts:))]
-        fn reset_shortcuts(&self,_:Option<&AnyObject>) {
-            self.cancel_shortcut_capture();
-            let dialog=NSAlert::new(self.mtm());dialog.setMessageText(ns_string!("Rétablir les raccourcis par défaut ?"));
-            dialog.setInformativeText(ns_string!("Vos combinaisons et applications personnalisées seront remplacées. Les espaces et les options souris sont conservés."));
-            dialog.addButtonWithTitle(ns_string!("Rétablir"));dialog.addButtonWithTitle(ns_string!("Annuler"));
-            self.ivars().picking.set(true);let result=dialog.runModal();self.ivars().picking.set(false);
-            if result==NSAlertFirstButtonReturn{self.persist_shortcuts(Shortcuts::default(),1);}
-        }
         #[unsafe(method(runShortcut:))]
         fn run_shortcut(&self,_:Option<&AnyObject>) {
             let Some(index)=self.ivars().shortcut_queue.take() else{return;};
@@ -262,7 +176,7 @@ define_class!(
         }
         #[unsafe(method(startupReport:))]
         fn startup_report(&self,_:Option<&AnyObject>){
-            let visible=self.ivars().preferences.borrow().as_ref().is_some_and(|p|p.window.isVisible()) || self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible());
+            let visible=self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible());
             println!("KIGI_STARTUP {}",serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"architecture":std::env::consts::ARCH,"window_visible":visible,"studio_visible":self.ivars().studio.borrow().as_ref().is_some_and(|s|s.window.isVisible()),"rss_bytes":diagnostics::rss_bytes(),"peak_rss_bytes":diagnostics::peak_rss_bytes(),"accessibility":windows::trusted(),"input_access":Tap::input_trusted(),"previous_launch_known":self.ivars().previous_launch_known.get(),"hotkey_conflict":self.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed)}));
         }
         #[unsafe(method(copyLogs:))]
@@ -337,15 +251,25 @@ define_class!(
             self.status(&result.unwrap_or_else(|e| e));
         }
         #[unsafe(method(saveLayout:))]
-        fn save_layout(&self, _: Option<&AnyObject>) { self.open_profiles(); }
+        fn save_layout(&self, _: Option<&AnyObject>) { self.open_studio(); }
         #[unsafe(method(applyLayout:))]
-        fn apply_layout(&self, _: Option<&AnyObject>) { self.open_profiles(); }
+        fn apply_layout(&self, _: Option<&AnyObject>) { self.open_studio(); }
         #[unsafe(method(openProfiles:))]
         fn open_profiles_action(&self, _: Option<&AnyObject>) { self.open_main_ui(); }
         #[unsafe(method(openStudio:))]
         fn open_studio_action(&self,_:Option<&AnyObject>){self.open_studio();}
-        #[unsafe(method(nativeFallback:))]
-        fn native_fallback(&self,_:Option<&AnyObject>){self.open_profiles();}
+        #[unsafe(method(studioUnavailable:))]
+        fn studio_unavailable(&self,_:Option<&AnyObject>){
+            if self.ivars().studio_failure_showing.replace(true){return;}
+            self.ivars().studio_load_failed.set(true);
+            let dialog=NSAlert::new(self.mtm());
+            dialog.setMessageText(ns_string!("Studio est indisponible"));
+            dialog.setInformativeText(ns_string!("Les fonctions de fond continuent. Réessayer recharge l’interface et abandonne ses brouillons non enregistrés. Les espaces et raccourcis enregistrés sont conservés. Vous pouvez copier le diagnostic avant de réessayer."));
+            dialog.addButtonWithTitle(ns_string!("Réessayer"));dialog.addButtonWithTitle(ns_string!("Copier le diagnostic"));dialog.addButtonWithTitle(ns_string!("Fermer"));
+            let result=dialog.runModal();self.ivars().studio_failure_showing.set(false);
+            if result==NSAlertFirstButtonReturn{self.open_studio();}
+            else if result==NSAlertSecondButtonReturn{let _=self.copy_diagnostics();}
+        }
         #[unsafe(method(studioRenderCheck:))]
         fn studio_render_check(&self,_:Option<&AnyObject>){
             if !std::env::args().any(|a|a=="--studio-check") {return;}
@@ -386,39 +310,7 @@ define_class!(
             if self.ivars().studio.borrow().as_ref().is_some_and(|s|!s.ready()) {
                 diagnostics::record("studio.load_failed","bootstrap_timeout=true");
 
-                self.open_profiles();
-            }
-        }
-        #[unsafe(method(profileSelected:))]
-        fn profile_selected(&self, _: Option<&AnyObject>) {
-            if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-                prefs.show_selection(&self.ivars().catalog.borrow());
-            }
-        }
-        #[unsafe(method(refreshProfiles:))]
-        fn refresh_profiles_action(&self, _: Option<&AnyObject>) {
-            if self.ivars().picking.get() { return; }
-            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
-            self.refresh_profiles(selected);
-        }
-        #[unsafe(method(captureProfile:))]
-        fn capture_profile(&self, _: Option<&AnyObject>) {
-            if self.ivars().picking.get() { return; }
-            let values = self.ivars().preferences.borrow().as_ref()
-                .map(|p| (p.selected_id(), p.name.stringValue().to_string().trim().to_owned()));
-            if let Some((id,name)) = values {
-                if let Err(e) = config::Catalog::valid_name(&name) { self.status(&e); return; }
-                self.personal_layout(true, id, Some(name));
-            }
-        }
-        #[unsafe(method(applySelectedProfile:))]
-        fn apply_selected_profile(&self, _: Option<&AnyObject>) {
-            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
-            if let Some(id) = selected {
-                if self.ivars().layout_snapshot.borrow().is_some() {
-                    self.status("Restaurez la disposition active ou choisissez Travail avant d'en appliquer une autre."); return;
-                }
-                if self.edit_profile(true) { self.personal_layout(false, Some(id), None); }
+                self.studio_unavailable(sel!(studioUnavailable:), None);
             }
         }
         #[unsafe(method(applyNamedProfile:))]
@@ -426,58 +318,6 @@ define_class!(
             if let Some(id) = sender.and_then(|s| u32::try_from(s.tag()).ok()).filter(|id| *id != 0) {
                 self.personal_layout(false, Some(id), None);
             }
-        }
-        #[unsafe(method(renameProfile:))]
-        fn rename_profile(&self, _: Option<&AnyObject>) { self.edit_profile(false); }
-        #[unsafe(method(saveProfilePositions:))]
-        fn save_profile_positions(&self, _: Option<&AnyObject>) { self.edit_profile(true); }
-        #[unsafe(method(duplicateProfile:))]
-        fn duplicate_profile(&self, _: Option<&AnyObject>) {
-            if self.ivars().picking.get() { return; }
-            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
-            let Some(id) = selected else { return; };
-            let result = (|| {
-                let (mut catalog, _) = self.read_catalog()?;
-                let profile = catalog.profile(id)?;
-                let base: String = profile.name.chars().take(48).collect();
-                let layout = profile.layout();
-                let name = (1..=33).map(|n| format!("{base} copie {n}"))
-                    .find(|name| !catalog.profiles.iter().any(|p|p.name.to_lowercase()==name.to_lowercase()))
-                    .ok_or("Aucun nom de copie disponible.")?;
-                let id = catalog.upsert(None, &name, &layout)?;
-                config::save(&config::path()?, &catalog)?;
-                self.set_catalog(catalog, Some(id), true);
-                Ok("Copie créée. Vous pouvez la renommer et modifier ses positions.".to_owned())
-            })();
-            diagnostics::record("profiles.duplicate", format!("success={}", result.is_ok()));
-            self.status(&result.unwrap_or_else(|e: String| e));
-        }
-        #[unsafe(method(deleteProfile:))]
-        fn delete_profile(&self, _: Option<&AnyObject>) {
-            if self.ivars().picking.get() { return; }
-            let selected = self.ivars().preferences.borrow().as_ref().and_then(Preferences::selected_id);
-            let Some(id) = selected else { return; };
-            let result = (|| {
-                let (mut catalog, _) = self.read_catalog()?;
-                let profile = catalog.profile(id)?;
-                let dialog = NSAlert::new(self.mtm());
-                dialog.setMessageText(&NSString::from_str("Supprimer cet espace ?"));
-                dialog.setInformativeText(&NSString::from_str(&format!("« {} » sera retiré des espaces enregistrés. Les fenêtres ouvertes resteront en place.", profile.name)));
-                dialog.addButtonWithTitle(&NSString::from_str("Supprimer"));
-                dialog.addButtonWithTitle(&NSString::from_str("Annuler"));
-                self.ivars().picking.set(true);
-                let confirmed = dialog.runModal() == NSAlertFirstButtonReturn;
-                self.ivars().picking.set(false);
-                if !confirmed { return Ok("Suppression annulée.".to_owned()); }
-                // Re-read after the modal in case the config was externally edited.
-                catalog = self.read_catalog()?.0;
-                catalog.remove(id)?;
-                config::save(&config::path()?, &catalog)?;
-                let next = catalog.profiles.first().map(|p|p.id);
-                self.set_catalog(catalog, next, true);
-                Ok("Espace supprimé. Les autres espaces sont conservés.".into())
-            })();
-            self.status(&result.unwrap_or_else(|e: String| e));
         }
         #[unsafe(method(revealConfig:))]
         fn reveal_config(&self, _: Option<&AnyObject>) {
@@ -683,7 +523,6 @@ define_class!(
                     Err(e) => self.status(&e),
                 }
             }
-            self.update_mouse_scroll_label();
         }
         #[unsafe(method(mouseFilterInterrupted:))]
         fn mouse_filter_interrupted(&self, _: Option<&AnyObject>) {
@@ -699,7 +538,6 @@ define_class!(
         fn resume_mouse_scroll(&self, _: Option<&AnyObject>) {
             if self.ivars().mouse_scroll_requested.get() && !self.mouse_scroll_active() {
                 if let Err(e) = self.start_mouse_scroll() { self.status(&e); }
-                self.update_mouse_scroll_label();
             }
         }
         #[unsafe(method(workspaceContextChanged:))]
@@ -741,7 +579,6 @@ define_class!(
             self.cancel_gesture_dispatch();
             self.refresh_permission();
             self.update_gesture_label();
-            self.update_mouse_scroll_label();
         }
         #[unsafe(method(menuDidClose:))]
         fn menu_did_close(&self, _: &NSMenu) { self.ivars().menu_open.set(false); }
@@ -751,48 +588,6 @@ impl Controller {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(State::default());
         unsafe { msg_send![super(this), init] }
-    }
-    fn sync_preferences(&self) {
-        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-            let registration = self
-                .ivars()
-                .hotkeys
-                .borrow()
-                .as_ref()
-                .map(|h| h.report.clone())
-                .unwrap_or_default();
-            prefs.update_runtime(RuntimeSettings {
-                personal_hotkeys: self.ivars().personal_enabled.get(),
-                shortcuts_received: self.ivars().hotkey_count.get(),
-                registration: &registration,
-                gestures: self.gestures_active(),
-                mouse_requested: self.ivars().mouse_scroll_requested.get(),
-                mouse_active: self.mouse_scroll_active(),
-                accessibility: windows::trusted(),
-                input_access: Tap::input_trusted(),
-                trackpad_report: &self
-                    .ivars()
-                    .tap
-                    .borrow()
-                    .as_ref()
-                    .map(Tap::summary)
-                    .unwrap_or_else(|| self.ivars().trackpad_last_summary.borrow().clone()),
-            });
-        }
-    }
-    fn populate_shortcuts(&self, index: usize) {
-        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
-            p.populate_shortcuts(
-                &self.ivars().shortcuts.borrow(),
-                index,
-                &self.ivars().catalog.borrow(),
-            );
-        }
-    }
-    fn restore_shortcut_caption(&self) {
-        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
-            p.restore_shortcut_caption();
-        }
     }
     fn schedule_capture(&self, selector: Sel, delay: f64) {
         // Both the classic editor and Studio modal must deliver completion/timeout.
@@ -808,9 +603,6 @@ impl Controller {
     }
     fn cancel_shortcut_capture(&self) {
         self.cancel_capture_timer();
-        if let Some(p) = self.ivars().preferences.borrow().as_ref() {
-            p.recorder.cancel();
-        }
         if let Some(recorder) = self.ivars().studio_recorder.borrow().as_ref() {
             recorder.cancel();
         }
@@ -818,17 +610,6 @@ impl Controller {
         // another editor operation, so an old cancellation cannot discard new input.
         if self.ivars().captured.borrow().is_some() {
             self.capture_done(sel!(shortcutCaptureDone:), None);
-        }
-    }
-    fn persist_shortcuts(&self, settings: Shortcuts, selected: usize) {
-        match self.persist_shortcuts_transaction(settings, selected, None) {
-            Ok(()) => self.status(
-                "Raccourcis enregistrés. Les réglages seront conservés au prochain lancement.",
-            ),
-            Err(message) => {
-                self.status(&message);
-                alert(self.mtm(), "Raccourcis non enregistrés", &message);
-            }
         }
     }
     fn execute_command(&self, command: Command) {
@@ -930,7 +711,6 @@ impl Controller {
             }
             self.status(evidence.diagnosis());
         }
-        self.sync_preferences();
         unsafe {
             let _: () = msg_send![self,performSelector:sel!(trackpadPoll:),withObject:std::ptr::null::<AnyObject>(),afterDelay:1.0f64];
         }
@@ -941,13 +721,13 @@ impl Controller {
             .map(|a| a.processIdentifier())
             .filter(|pid| *pid != std::process::id() as i32)
         {
-            self.ivars().preferences_anchor.set(Some(pid));
+            self.ivars().activation_anchor.set(Some(pid));
         }
     }
     fn read_catalog(&self) -> Result<(config::Catalog, bool), String> {
         Ok(config::load(&config::path()?)?.unwrap_or_else(|| (config::Catalog::default(), false)))
     }
-    fn set_catalog(&self, catalog: config::Catalog, selected: Option<u32>, update_form: bool) {
+    fn set_catalog(&self, catalog: config::Catalog, _selected: Option<u32>, _update_form: bool) {
         if let Some(menu) = self.ivars().profiles_menu.get() {
             menu.removeAllItems();
             if catalog.profiles.is_empty() {
@@ -960,11 +740,6 @@ impl Controller {
                     let item = menu_action(menu, self, &profile.name, sel!(applyNamedProfile:));
                     item.setTag(profile.id as isize);
                 }
-            }
-        }
-        if update_form {
-            if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-                prefs.populate(&catalog, selected);
             }
         }
         self.ivars().catalog.replace(catalog);
@@ -981,17 +756,16 @@ impl Controller {
         }
     }
     fn open_main_ui(&self) {
-        if std::env::args().any(|a| a == "--native-ui") {
-            self.open_profiles();
-        } else {
-            self.open_studio();
-        }
+        self.open_studio();
     }
     fn open_studio(&self) {
         if self.ivars().picking.get() {
             return;
         }
         self.cancel_shortcut_capture();
+        if self.ivars().studio_load_failed.replace(false) {
+            self.ivars().studio.borrow_mut().take();
+        }
         if self.ivars().studio.borrow().is_none() {
             match studio::Studio::new(self.mtm()) {
                 Ok(studio) => {
@@ -999,7 +773,7 @@ impl Controller {
                 }
                 Err(_) => {
                     diagnostics::record("studio.load_failed", "assets_unavailable=true");
-                    self.open_profiles();
+                    self.studio_unavailable(sel!(studioUnavailable:), None);
                     return;
                 }
             }
@@ -1011,108 +785,12 @@ impl Controller {
             let _: () = msg_send![self,performSelector:sel!(studioLoadTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:15.0f64];
         }
     }
-    fn open_profiles(&self) {
-        if self.ivars().picking.get() {
-            return;
-        }
-        if let Some(pid) = NSWorkspace::sharedWorkspace()
-            .frontmostApplication()
-            .map(|a| a.processIdentifier())
-            .filter(|pid| *pid != std::process::id() as i32)
-        {
-            self.ivars().preferences_anchor.set(Some(pid));
-        }
-        self.cancel_open();
-        self.cancel_gesture_dispatch();
-        if self.ivars().preferences.borrow().is_none() {
-            self.ivars()
-                .preferences
-                .replace(Some(Preferences::new(self.mtm(), self)));
-            if let Some(p) = self.ivars().preferences.borrow().as_ref() {
-                p.window.setDelegate(Some(ProtocolObject::from_ref(self)));
-            }
-        }
-        let visible = self
-            .ivars()
-            .preferences
-            .borrow()
-            .as_ref()
-            .is_some_and(|p| p.window.isVisible() || p.window.isMiniaturized());
-        if !visible {
-            let selected = self
-                .ivars()
-                .preferences
-                .borrow()
-                .as_ref()
-                .and_then(Preferences::selected_id)
-                .or_else(|| self.ivars().catalog.borrow().profiles.first().map(|p| p.id));
-            self.refresh_profiles(selected);
-            self.populate_shortcuts(1);
-        }
-        self.refresh_permission();
-        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-            if prefs.window.isMiniaturized() {
-                prefs.window.deminiaturize(None);
-            }
-            prefs.window.makeKeyAndOrderFront(None);
-        }
-        #[allow(deprecated)]
-        NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
-    }
-    fn edit_profile(&self, positions: bool) -> bool {
-        if self.ivars().picking.get() {
-            return false;
-        }
-        let data = self.ivars().preferences.borrow().as_ref().and_then(|p| {
-            p.selected_id()
-                .map(|id| (id, p.name.stringValue().to_string().trim().to_owned()))
-        });
-        let Some((id, name)) = data else {
-            return false;
-        };
-        let result = (|| {
-            let (mut catalog, _) = self.read_catalog()?;
-            let previous = catalog.clone();
-            let profile = catalog.profile(id)?;
-            let layout = if positions {
-                self.ivars()
-                    .preferences
-                    .borrow()
-                    .as_ref()
-                    .unwrap()
-                    .edited_layout(profile)
-            } else {
-                profile.layout()
-            };
-            catalog.upsert(Some(id), &name, &layout)?;
-            if catalog != previous {
-                config::save(&config::path()?, &catalog)?;
-            }
-            self.set_catalog(catalog, Some(id), true);
-            Ok(if positions {
-                "Positions enregistrées. Cliquez sur Appliquer pour les utiliser."
-            } else {
-                "Espace renommé."
-            }
-            .to_owned())
-        })();
-        diagnostics::record(
-            "profiles.edit",
-            format!("id={id} positions={positions} success={}", result.is_ok()),
-        );
-        let success = result.is_ok();
-        self.status(&result.unwrap_or_else(|e: String| e));
-        success
-    }
     fn mouse_scroll_active(&self) -> bool {
         self.ivars()
             .mouse_scroll_filter
             .borrow()
             .as_ref()
             .is_some_and(MouseScrollTap::active)
-    }
-    fn update_mouse_scroll_label(&self) {
-        self.sync_preferences();
     }
     fn stop_mouse_scroll(&self) {
         let _: () = unsafe {
@@ -1125,7 +803,6 @@ impl Controller {
             self.ivars().mouse_scroll_last.replace(report);
             drop(filter);
         }
-        self.update_mouse_scroll_label();
     }
     fn start_mouse_scroll(&self) -> Result<(), String> {
         if self.mouse_scroll_active() {
@@ -1150,9 +827,7 @@ impl Controller {
             .as_ref()
             .is_some_and(Tap::active_actions)
     }
-    fn update_gesture_label(&self) {
-        self.sync_preferences();
-    }
+    fn update_gesture_label(&self) {}
     fn cancel_gesture_dispatch(&self) {
         self.ivars().queued_gesture.take();
         let _: () = unsafe {
@@ -1177,9 +852,7 @@ impl Controller {
         }
         self.update_gesture_label();
     }
-    fn update_shortcut_label(&self) {
-        self.sync_preferences();
-    }
+    fn update_shortcut_label(&self) {}
     fn register_hotkeys(&self) {
         self.ivars().hotkeys.borrow_mut().take(); // unregister before reacquiring
         let keys = Hotkeys::register(
@@ -1542,6 +1215,13 @@ impl Controller {
         &self,
         input: &studio::bridge::IdParams,
     ) -> Result<serde_json::Value, studio::bridge::Failure> {
+        self.studio_place(Some(input), None)
+    }
+    fn studio_place(
+        &self,
+        saved: Option<&studio::bridge::IdParams>,
+        draft: Option<&studio::bridge::EditParams>,
+    ) -> Result<serde_json::Value, studio::bridge::Failure> {
         use studio::bridge::Failure;
         if !windows::trusted() {
             return Err(Failure::new(
@@ -1552,12 +1232,13 @@ impl Controller {
         if self.ivars().picking.get() {
             return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
         }
-        if self
-            .ivars()
-            .studio
-            .borrow()
-            .as_ref()
-            .is_some_and(|s| s.dirty())
+        if draft.is_none()
+            && self
+                .ivars()
+                .studio
+                .borrow()
+                .as_ref()
+                .is_some_and(|s| s.dirty())
         {
             return Err(Failure::new(
                 "UNSAVED_CHANGES",
@@ -1571,38 +1252,57 @@ impl Controller {
             ));
         }
         let path = studio_path().map_err(Failure::invalid)?;
-        let profile = self.ivars().studio_store.borrow().checked_profile(
-            &path,
-            &input.expected_revision,
-            input.profile_id,
-        )?;
+        let (layout, profile_id, profile_name, revision) = if let Some(input) = saved {
+            let profile = self.ivars().studio_store.borrow().checked_profile(
+                &path,
+                &input.expected_revision,
+                input.profile_id,
+            )?;
+            (
+                profile.layout(),
+                Some(profile.id),
+                profile.name,
+                input.expected_revision.as_str(),
+            )
+        } else {
+            let input = draft.ok_or_else(|| Failure::invalid("Brouillon absent."))?;
+            self.ivars()
+                .studio_store
+                .borrow()
+                .check_revision(&path, &input.expected_revision)?;
+            (
+                input.layout()?,
+                input.profile_id,
+                input.name.clone(),
+                input.expected_revision.as_str(),
+            )
+        };
+        let operation = if draft.is_some() { "preview" } else { "apply" };
         self.cancel_open();
         self.cancel_gesture_dispatch();
         let prior_pid = NSWorkspace::sharedWorkspace()
             .frontmostApplication()
             .map(|a| a.processIdentifier())
             .filter(|pid| *pid != std::process::id() as i32)
-            .or(self.ivars().preferences_anchor.get());
+            .or(self.ivars().activation_anchor.get());
         self.ivars().picking.set(true);
         let result = (|| {
             let (display, choices, partial) =
                 windows::pair_candidates_for_app(self.mtm(), prior_pid)
                     .map_err(|e| Failure::new("WINDOWS_UNAVAILABLE", e))?;
-            let layout = profile.layout();
             let Some(selected) = self
                 .select_saved_windows(&layout, choices, partial)
                 .map_err(|e| Failure::new("WINDOWS_UNAVAILABLE", e))?
             else {
                 return Ok(
-                    serde_json::json!({"operation":"apply","profileId":profile.id,"profileName":profile.name,"result":windows::LayoutOutcome::canceled(&layout)}),
+                    serde_json::json!({"operation":operation,"profileId":profile_id,"profileName":profile_name,"result":windows::LayoutOutcome::canceled(&layout)}),
                 );
             };
             // A native chooser may stay open while another editor changes the file.
-            self.ivars().studio_store.borrow().checked_profile(
-                &path,
-                &input.expected_revision,
-                input.profile_id,
-            )?;
+            self.ivars()
+                .studio_store
+                .borrow()
+                .check_revision(&path, revision)?;
             let outcome = windows::apply_saved_layout_detailed(
                 &layout,
                 display,
@@ -1612,7 +1312,7 @@ impl Controller {
             )
             .map_err(|e| Failure::new("PLACEMENT_FAILED", e))?;
             Ok(
-                serde_json::json!({"operation":"apply","profileId":profile.id,"profileName":profile.name,"result":outcome}),
+                serde_json::json!({"operation":operation,"profileId":profile_id,"profileName":profile_name,"result":outcome}),
             )
         })();
         self.ivars().picking.set(false);
@@ -1697,7 +1397,7 @@ impl Controller {
                 .frontmostApplication()
                 .map(|a| a.processIdentifier())
                 .filter(|p| *p != std::process::id() as i32)
-                .or(self.ivars().preferences_anchor.get());
+                .or(self.ivars().activation_anchor.get());
             let (display, mut choices, partial) =
                 windows::pair_candidates_for_app(self.mtm(), prior_pid)?;
             self.ivars().picking.set(true);
@@ -1788,9 +1488,6 @@ impl Controller {
         if self.refresh_permission() {
             return true;
         }
-        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-            prefs.show_permissions();
-        }
         self.status("Placement bloqué : Accessibilité non autorisée pour cette copie de Kigi.");
         if !self.ivars().permission_notice.replace(true) {
             let bundle = NSBundle::mainBundle().bundlePath();
@@ -1814,7 +1511,6 @@ impl Controller {
                 self.status("Accessibilité reconnue pour le processus actif.");
             }
         }
-        self.sync_preferences();
         trusted
     }
     fn schedule_permission_poll(&self) {
@@ -1892,11 +1588,7 @@ impl Controller {
 
     fn status(&self, text: &str) {
         diagnostics::record("status", text);
-        if let Some(prefs) = self.ivars().preferences.borrow().as_ref() {
-            prefs.status.setStringValue(&NSString::from_str(text));
-        }
         self.ivars().status.replace(text.into());
-        self.sync_preferences();
     }
 }
 
@@ -2020,7 +1712,7 @@ fn choose_window(
     )));
     dialog.setInformativeText(&NSString::from_str(if partial {
         "Liste partielle : certaines applications n'ont pas répondu à temps. Annulez puis réessayez si une fenêtre manque." } else {
-        "Sélectionnez une fenêtre. Le placement sera appliqué après les deux choix. Échap annule." }));
+        if side.contains("à capturer") { "Sélectionnez une fenêtre. La disposition remplira un brouillon sans déplacer les fenêtres. Échap annule." } else { "Sélectionnez une fenêtre. Le placement sera appliqué après les deux choix. Échap annule." } }));
     let picker = NSPopUpButton::initWithFrame_pullsDown(
         NSPopUpButton::alloc(mtm),
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(520.0, 28.0)),
@@ -2033,6 +1725,26 @@ fn choose_window(
     dialog.setAccessoryView(Some(&picker));
     dialog.addButtonWithTitle(&NSString::from_str("Choisir"));
     dialog.addButtonWithTitle(&NSString::from_str("Annuler"));
+    // Isolated CI only: exercise the actual modal buttons using two owned fixtures.
+    // No system event is injected; production selection is entirely manual.
+    if side.contains("à capturer")
+        && std::env::args().any(|a| a == "--studio-capture-check")
+        && std::env::args().any(|a| a == "--studio-editor-check")
+        && std::env::var_os("KIGI_TEST_STUDIO_CAPTURE").is_some()
+    {
+        let index = CAPTURE_DIALOG_INDEX.with(|n| {
+            let value = n.get();
+            n.set(value + 1);
+            value
+        });
+        let button = dialog
+            .buttons()
+            .objectAtIndex(if index == 0 { 1 } else { 0 });
+        unsafe {
+            let modes = NSArray::from_slice(&[NSModalPanelRunLoopMode]);
+            let _: () = msg_send![&*button,performSelector:sel!(performClick:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.15f64,inModes:&*modes];
+        }
+    }
     if dialog.runModal() != NSAlertFirstButtonReturn {
         return None;
     }
@@ -2101,7 +1813,7 @@ pub fn studio_command(
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some(),"lastResult":c.ivars().status.borrow().clone()});
         match command {
             C::System(op)=>c.studio_system(op),
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.restore","permissions.get","diagnostics.summary","app.openNativeFallback","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.previewApply","spaces.restore","permissions.get","diagnostics.summary","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
             C::Capture(input)=>c.studio_capture_layout(&input.expected_revision),
             C::Recover(input)=>{
@@ -2110,7 +1822,7 @@ pub fn studio_command(
                 let (listing,catalog)=c.ivars().studio_store.borrow_mut().recover(&studio_path().map_err(Failure::invalid)?,&input.expected_revision)?;
                 c.set_catalog(catalog,None,false);Ok(json!({"spaces":listing}))
             }
-            C::Apply(input)=>c.studio_apply(input), C::Restore=>c.studio_restore(),
+            C::Apply(input)=>c.studio_apply(input), C::Preview(input)=>c.studio_place(None,Some(input)), C::Restore=>c.studio_restore(),
             C::Create(_) | C::Update(_) | C::Duplicate(_) | C::Delete(_)=>{
                 if c.ivars().picking.get(){return Err(Failure::new("BUSY","Terminez le dialogue en cours."));}
                 let (revision,mutation)=match command {
@@ -2148,10 +1860,6 @@ pub fn studio_command(
                 else if let Some(studio)=c.ivars().studio.borrow().as_ref(){studio.window.close();}
                 Ok(json!({"requested":true}))
             }
-            C::Fallback=>{
-                unsafe{let _:()=msg_send![&**c,performSelector:sel!(nativeFallback:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}
-                Ok(json!({"requested":true}))
-            }
         }
     })
 }
@@ -2175,8 +1883,8 @@ pub fn studio_render_result(ready: bool) {
     });
 }
 pub fn studio_failed() {
-    diagnostics::record("studio.load_failed", "native_fallback=true");
-    let _ = studio_command(&studio::bridge::Command::Fallback);
+    diagnostics::record("studio.load_failed", "recovery_dialog=true");
+    CONTROLLER.with(|slot| {if let Some(c)=slot.borrow().as_ref(){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioUnavailable:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}}});
 }
 
 /// Called from the main-loop CG tap. Only store one small event and defer UI/AX
@@ -2410,7 +2118,6 @@ pub fn run() {
                 controller.status(&e);
             }
         }
-        controller.update_mouse_scroll_label();
         let center = NSWorkspace::sharedWorkspace().notificationCenter();
         unsafe {
             for name in [
@@ -2475,10 +2182,6 @@ pub fn run() {
         CONTROLLER.with(|c| c.borrow_mut().take());
         controller.stop_tap();
         controller.stop_mouse_scroll();
-        if let Some(prefs) = controller.ivars().preferences.borrow_mut().take() {
-            prefs.window.setDelegate(None);
-            prefs.window.close();
-        }
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
         }

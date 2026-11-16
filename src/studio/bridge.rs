@@ -23,9 +23,9 @@ pub enum Command {
     List,
     Permissions,
     Diagnostics,
-    Fallback,
     SelectApp,
     Apply(IdParams),
+    Preview(EditParams),
     Restore,
     Capture(RevisionParams),
     Recover(RecoveryParams),
@@ -48,6 +48,36 @@ pub struct EditParams {
     pub name: String,
     pub windows: [SavedWindow; 2],
     pub left_percent: Option<u8>,
+}
+impl EditParams {
+    pub fn layout(&self) -> Result<crate::config::SavedLayout, Failure> {
+        crate::config::Catalog::valid_name(&self.name).map_err(Failure::invalid)?;
+        let mut layout = crate::config::SavedLayout {
+            schema_version: 1,
+            windows: self.windows.clone(),
+        };
+        layout.validate().map_err(Failure::invalid)?;
+        if let Some(percent) = self.left_percent {
+            let geometry = crate::geometry::normalized_split(percent).map_err(Failure::invalid)?;
+            for (window, g) in layout.windows.iter_mut().zip(geometry) {
+                if ![
+                    window.geometry.x - g.x,
+                    window.geometry.y - g.y,
+                    window.geometry.width - g.width,
+                    window.geometry.height - g.height,
+                ]
+                .iter()
+                .all(|n| n.abs() < 1e-9)
+                {
+                    return Err(Failure::invalid(
+                        "La géométrie ne correspond pas aux proportions.",
+                    ));
+                }
+                window.geometry = g;
+            }
+        }
+        Ok(layout)
+    }
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -156,7 +186,6 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
         | "spaces.list"
         | "permissions.get"
         | "diagnostics.summary"
-        | "app.openNativeFallback"
         | "spaces.selectApp"
         | "spaces.restore"
         | "app.closeStudio"
@@ -167,7 +196,6 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
                 "spaces.list" => Command::List,
                 "permissions.get" => Command::Permissions,
                 "diagnostics.summary" => Command::Diagnostics,
-                "app.openNativeFallback" => Command::Fallback,
                 "spaces.selectApp" => Command::SelectApp,
                 "spaces.restore" => Command::Restore,
                 "app.closeStudio" => Command::Close,
@@ -194,6 +222,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
         }
         "spaces.capture" => Command::Capture(parameters(p, id)?),
         "spaces.recoverBackup" => Command::Recover(parameters(p, id)?),
+        "spaces.previewApply" => Command::Preview(parameters(p, id)?),
         "spaces.apply" => Command::Apply(parameters(p, id)?),
         "spaces.duplicate" => Command::Duplicate(parameters(p, id)?),
         "spaces.delete" => {

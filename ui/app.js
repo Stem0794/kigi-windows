@@ -10,7 +10,6 @@
   const profiles = () => state.data?.spaces.profiles || [];
   const current = () => profiles().find(p => p.id === state.selected) || null;
   function failure(error) { $('error').textContent = error.message; $('error').hidden = false; $('status').textContent = 'Actualisation nécessaire'; }
-  async function native() { if (!(await guardDraft())) return; try { await Kigi.request('app.openNativeFallback'); } catch (error) { failure(error); } }
   async function refresh() {
     if (state.busy || !(await guardDraft())) return;
     state.busy = true; $('refresh').disabled = true; $('content').setAttribute('aria-busy', 'true');
@@ -23,7 +22,7 @@
       render();
       $('status').textContent = data.spaces.usingBackup ? 'Catalogue de sauvegarde · lecture seule' : 'Lecture du moteur terminée';
       $('version').textContent = `Kigi ${data.version} · Studio`;
-    } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou ouvrez l’interface de secours.'), button('Interface de secours', native)); }
+    } catch (error) { failure(error); if (!state.data) $('content').replaceChildren(el('p', '', 'Données indisponibles. Actualisez ou réouvrez Kigi depuis son menu.')); }
     finally { state.busy = false; $('refresh').disabled = false; $('content').setAttribute('aria-busy', 'false'); if (state.data) render(); $('recover-backup').hidden = !state.data?.spaces.usingBackup; }
   }
   async function navigate(route, id = state.selected) { if (!(await guardDraft())) return; KigiSystem.stopPolling(); KigiSystem.reset(); state.route = route; state.selected = id; state.draft = null; state.original = null; state.invalid.clear(); render(); $('page-title')?.focus(); }
@@ -88,6 +87,7 @@
     const indicator = $('draft-indicator'); if (indicator) indicator.hidden = !dirty;
     const save = $('save-space'); if (save) save.disabled = state.busy || !dirty || !state.data?.spaces.canWrite || state.invalid.size > 0;
     const apply = $('apply-space'); if (apply) apply.disabled = state.busy || !state.data?.spaces.canWrite || !!state.data?.diagnostics.restoreAvailable || state.invalid.size > 0 || !state.draft?.name.trim() || state.draft?.windows.some(w => !w.bundle_id);
+    const preview = $('preview-space'); if (preview) preview.disabled = state.busy || !state.data?.spaces.canWrite || !!state.data?.diagnostics.restoreAvailable || state.invalid.size > 0 || !state.draft?.name.trim() || state.draft?.windows.some(w => !w.bundle_id);
     if (dirty) $('status').textContent = 'Modifications non enregistrées';
   }
   function resetDraft() {
@@ -193,17 +193,17 @@
     if ($('left-percent')) { $('left-percent').value = percent; $('left-percent').setAttribute('aria-invalid', 'false'); }
     if ($('right-percent')) { $('right-percent').value = 100 - percent; $('right-percent').setAttribute('aria-invalid', 'false'); }
   }
-  async function layoutAction(restore = false) {
+  async function layoutAction(restore = false, previewDraft = false) {
     if (state.busy || modalResolve) return;
-    if (!restore && state.dirty) {
+    if (!restore && !previewDraft && state.dirty) {
       const choice = await choose('Enregistrer et appliquer ?', 'Le brouillon sera enregistré, puis ses fenêtres seront placées. La sauvegarde et le placement restent deux opérations distinctes.', [['save', 'Enregistrer et appliquer', 'primary'], ['cancel', 'Annuler']]);
       if (choice !== 'save' || !(await saveDraft())) return;
     }
-    const profile = current(); if (!restore && !profile) return;
+    const profile = previewDraft ? state.draft : current(); if (!restore && !profile) return;
     setEditorBusy(true); state.layoutResult = null; $('layout-result')?.remove();
     $('status').textContent = restore ? 'Restauration en cours…' : 'Placement en cours…';
     try {
-      const result = await Kigi.request(restore ? 'spaces.restore' : 'spaces.apply', restore ? {} : {profileId: profile.id, expectedRevision: state.data.spaces.revision});
+      const result = await Kigi.request(restore ? 'spaces.restore' : previewDraft ? 'spaces.previewApply' : 'spaces.apply', restore ? {} : previewDraft ? {profileId: profile.id, expectedRevision: state.draftRevision, name: profile.name.trim(), windows: profile.windows, leftPercent: state.splitEdited ? splitPercent(profile) : null} : {profileId: profile.id, expectedRevision: state.data.spaces.revision});
       state.layoutResult = result;
       state.data.diagnostics.restoreAvailable = result.result.restoreAvailable;
       $('error').hidden = true; $('status').textContent = result.result.message;
@@ -215,20 +215,25 @@
   function renderLayoutResult(content) {
     const last = state.layoutResult; if (!last) return;
     const result = last.result, card = el('div', `card layout-result ${result.status}`); card.id = 'layout-result'; card.dataset.status = result.status; card.dataset.operation = last.operation; card.setAttribute('role', 'status');
-    card.append(el('h2', '', last.operation === 'restore' ? 'Dernière restauration' : `Dernier placement · ${last.profileName}`), el('p', '', result.message));
-    if (last.operation === 'apply' && result.status !== 'canceled') {
+    card.append(el('h2', '', last.operation === 'restore' ? 'Dernière restauration' : last.operation === 'preview' ? `Essai non enregistré · ${last.profileName}` : `Dernier placement · ${last.profileName}`), el('p', '', result.message));
+    if (last.operation !== 'restore' && result.status !== 'canceled') {
       const widths = values => values.map(r => r == null ? 'Non mesuré' : `${+(r.width * 100).toFixed(1)} %`).join(' / ');
       field(card, 'Largeurs demandées · fenêtres 1 / 2', widths(result.requested));
       field(card, 'Largeurs constatées · fenêtres 1 / 2', widths(result.actual));
     }
     content.append(card);
   }
+  async function configureSpaceShortcut() {
+    if (!(await guardDraft())) return;
+    const id = current()?.id; if (!id) return;
+    await navigate('shortcuts'); KigiSystem.openForProfile(id);
+  }
   function renderEditor(content, inspector) {
     if (!state.draft && current()) { state.draft = clone(current()); state.original = clone(current()); state.draftRevision = state.data.spaces.revision; state.splitEdited = false; state.invalid.clear(); }
     const draft = state.draft, writable = state.data.spaces.canWrite;
     const toolbar = el('div', 'editor-toolbar'); toolbar.append(button('Nouvel espace', newSpace, 'subtle')); const capture = button('Capturer deux fenêtres…', captureSpace, 'subtle'); capture.id = 'capture-space'; toolbar.append(capture);
     if (draft) {
-      const save = button('Enregistrer', saveDraft, 'primary'); save.id = 'save-space'; toolbar.append(save); const apply = button('Appliquer', () => layoutAction(false)); apply.id = 'apply-space'; toolbar.append(apply);
+      const save = button('Enregistrer', saveDraft, 'primary'); save.id = 'save-space'; toolbar.append(save); const apply = button('Appliquer', () => layoutAction(false)); apply.id = 'apply-space'; toolbar.append(apply); const test = button('Tester sans enregistrer', () => layoutAction(false, true), 'subtle'); test.id = 'preview-space'; toolbar.append(test);
       toolbar.append(button('Annuler les modifications', async () => { await discardDraft(); if (!current()) state.selected = profiles()[0]?.id ?? null; render(); $('status').textContent = 'Modifications ignorées'; }, 'subtle'));
     }
     toolbar.querySelectorAll('button').forEach(b => { b.disabled = !writable || state.busy; }); content.append(toolbar);
@@ -266,6 +271,10 @@
       } inspector.append(ratios);
     }
     if (draft.id != null) { const actions = el('div', 'inspector-actions'); const duplicate = button('Dupliquer', () => mutateSpace('spaces.duplicate')); const remove = button('Supprimer', () => mutateSpace('spaces.delete'), 'danger'); duplicate.disabled = remove.disabled = !writable; actions.append(duplicate, remove); inspector.append(actions); }
+    inspector.append(el('div', 'rule'), el('h2', '', 'Raccourci associé'));
+    const bindings = state.data.shortcuts.settings.entries.filter(b => b.command.kind === 'ApplyProfile' && b.command.profile_id === draft.id);
+    inspector.append(el('p', '', draft.id == null ? 'Enregistrez cet espace pour lui associer un raccourci.' : bindings.length ? bindings.map(b => `${KigiSystem.combination(b)} · ${b.enabled ? state.data.shortcuts.globalEnabled ? state.data.shortcuts.registered && !state.data.shortcuts.registrationFailed ? 'Enregistré' : 'À vérifier' : 'Globaux désactivés' : 'Désactivé'}`).join(' ; ') : 'Aucun raccourci associé.'));
+    const shortcut = button('Configurer le raccourci…', configureSpaceShortcut, 'subtle'); shortcut.id = 'space-shortcut'; shortcut.disabled = draft.id == null || state.busy; inspector.append(shortcut);
     inspector.append(el('div', 'rule'), el('p', '', state.data.diagnostics.restoreAvailable ? 'Une disposition temporaire est active. Restaurez-la avant un nouveau placement.' : 'Appliquer déplace les fenêtres ouvertes et crée un retour de restauration.'));
     dirtyChanged();
   }

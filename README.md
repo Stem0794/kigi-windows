@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.7.0 (aperçu)
+# Kigi Windows — Studio 0.8.0 (aperçu)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -21,6 +21,12 @@ partiel et la proportion demandée est conservée. **Restaurer** revient aux pos
 précédentes, en préservant les fenêtres déplacées manuellement ; un retour incertain
 reste disponible. Un seul retour est conservé, partagé avec les dispositions classiques.
 Ouvrez les deux fenêtres avant d’appliquer ; aucune fenêtre de remplacement n’est créée.
+**Tester sans enregistrer** place le brouillon sans modifier le catalogue ;
+**Restaurer** revient aux fenêtres précédentes tout en conservant le brouillon.
+Un seul point de retour est disponible. Dans l’inspecteur d’un espace enregistré,
+**Configurer le raccourci…** ouvre son entrée ou prépare une nouvelle combinaison
+à capturer et enregistrer explicitement.
+
 Studio propose maintenant Raccourcis, Trackpad, Souris, Autorisations et Diagnostics.
 Capture des combinaisons dans une fenêtre native, édition d’app/action, activation,
 conflits et relecture ; les fichiers invalides ne sont pas écrasés. Une capture
@@ -30,16 +36,15 @@ Un raccourci d’espace suit son identifiant stable après renommage ; supprimer
 l’espace laisse une référence signalée manquante, sans appliquer un autre espace. Les essais du
 trackpad affichent les vrais compteurs, sans prétendre valider le global depuis un
 test local. Les options souris distinguent préférence et filtre actif. Copie/export
-utilisent le rapport du moteur. Studio est l’interface par défaut. L’ancien écran reste disponible dans Diagnostics
-ou avec `--native-ui`, uniquement comme secours pendant cette transition.
+utilisent le rapport du moteur. Studio est l’unique interface. Si WebKit échoue, un dialogue natif permet de
+réessayer l’ouverture ou de copier le diagnostic ; les services de fond continuent.
 
 **Capturer deux fenêtres…** choisit deux fenêtres ouvertes et place leur disposition
 dans un brouillon, sans déplacement ni sauvegarde implicite. Cliquez sur Enregistrer.
 Si le catalogue est absent/illisible avec une sauvegarde valide, **Récupérer la sauvegarde…**
 permet de la restaurer après confirmation ; l’ancien fichier invalide est conservé.
 
-Options de lancement : `--studio-ui` ouvre Studio, `--native-ui` force l’ancienne
-fenêtre. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
+Studio s’ouvre normalement au lancement ; `--studio-ui` reste un alias compatible. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
 Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
 auxiliaires WebKit non mesurés. Aperçu livré sur branche UI, avant fusion.
 

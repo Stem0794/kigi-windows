@@ -65,7 +65,8 @@ with tempfile.TemporaryDirectory(prefix="kigi-layout-") as directory:
             saved_bytes = path.read_bytes()
             environment = os.environ.copy(); environment.pop("KIGI_TEST_STUDIO_READBACK", None)
             environment["KIGI_TEST_STUDIO_CONFIG"] = str(path); environment["KIGI_TEST_STUDIO_LAYOUT"] = "1"
-            app = subprocess.Popen([str(binary), "--studio-check", "--studio-editor-check"], env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0); processes.append(app)
+            if not minimum: environment["KIGI_TEST_STUDIO_CAPTURE"] = "1"
+            app = subprocess.Popen([str(binary), "--studio-check", "--studio-editor-check"] + (["--studio-capture-check"] if not minimum else []), env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0); processes.append(app)
             output = []; result = None; deadline = time.monotonic() + 35
             observed = None; last_sample = 0
             while time.monotonic() < deadline and result is None:
@@ -88,6 +89,12 @@ with tempfile.TemporaryDirectory(prefix="kigi-layout-") as directory:
             after = frames()
             for pid in before:
                 assert all(abs(before[pid][key] - after[pid][key]) <= 8 for key in ["X", "Y", "Width", "Height"]), {"before": before, "after": after}
+            if not minimum:
+                for bundle,geometry in zip(result["captureBundles"],result["captureGeometry"]):
+                    pid = source.pid if bundle == "io.kigi.focus.source" else target.pid
+                    base = before[source.pid]
+                    actual = {"X":base["X"]+geometry["left"]*base["Width"],"Y":base["Y"]+geometry["top"]*base["Height"],"Width":geometry["width"]*base["Width"],"Height":geometry["height"]*base["Height"]}
+                    assert all(abs(actual[k]-before[pid][k])<=8 for k in actual), "Capture geometry did not match real initial frames"
             if minimum: assert path.read_bytes() == saved_bytes, "Apply/restore wrote saved config"
             assert json.loads(path.read_text())["profiles"][0]["windows"][0]["geometry"]["width"] == .35
             print("LAYOUT_VERIFIED " + json.dumps({"minimum_size": minimum, "real_placement_observed": True, "reported_geometry_matches": True, "real_frames_restored": True, "result": result}))
