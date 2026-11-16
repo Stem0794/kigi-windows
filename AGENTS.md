@@ -222,3 +222,22 @@ Une largeur minimale compatible avec l’écran ne doit plus annuler le placemen
 afficher les dimensions effectives et le chevauchement éventuel. Ne pas annoncer
 50/50 si Teams refuse50 %. Aucun réajustement continu après un mouvement manuel.
 Ajouter un cas natif dédié à une réunion imposant60 % minimum et vérifier son bord.
+
+## Parité personnelle0.10.0 autorisée
+
+Après audit, l’utilisateur demande de fermer tous les écarts de son workflow
+Hammerspoon, en conservant une app légère avec interface. Cette tranche autorise
+la persistance/reprise des gestes, cibles et seuils configurables, partage Teams
+manuel, scénario de démarrage, lancement des apps absentes, moitié droite et
+navigation fenêtres/onglets. Le remplacement ⌘Tab est volontaire et réversible :
+son callback ne conserve que les commandes reconnues, renvoie immédiatement les
+autres événements et ne journalise aucune frappe. Ctrl+Tab est transmis uniquement
+au PID actif sur action explicite ; ne pas prétendre contrôler tous les onglets
+sans adapter. Un LaunchAgent utilisateur appartenant à Kigi peut lancer la même
+app à la connexion, sans helper, root, KeepAlive ou commande libre. Protéger les
+fichiers étrangers. Ne pas modifier Hammerspoon. Migration additive des raccourcis
+sans écrasement ; pas de service séparé ni d’automatisation arbitraire. Les essais
+natifs ciblent exclusivement les fixtures dédiées ; aucune frappe globale
+synthétique de test. Le périmètre est la parité de l’usage personnel, pas les
+extensions commerciales P6/P7. Intégration après contrôles natifs, limites réelles
+trackpad/Teams/onglets/M5 signalées honnêtement.

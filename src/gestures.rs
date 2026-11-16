@@ -72,9 +72,9 @@ impl TrialEvidence {
         } else if self.began == 0 {
             "Contacts reçus sans début de contact à un doigt. Levez tous les doigts avant l’essai."
         } else if self.edge_starts == 0 {
-            "Débuts de contacts reçus hors des bords à 10 %. Essayez le test local pour voir le point de départ."
+            "Débuts de contacts reçus hors des bords configurés. Essayez le test local pour voir le point de départ."
         } else if self.recognized == 0 {
-            "Départ dans un bord reçu, mais aucun geste complet. Glissez vers l’intérieur sur 10 % de la largeur, en 1,5 s, horizontalement, à un doigt."
+            "Départ dans un bord reçu, mais aucun geste complet. Glissez vers l’intérieur selon les seuils enregistrés, horizontalement, à un doigt."
         } else {
             "Au moins un geste global a été observé. La fiabilité et les faux positifs restent à valider sur ce Mac."
         }
@@ -87,14 +87,31 @@ pub enum Edge {
     Left,
     Right,
 }
-#[derive(Default)]
 pub struct EdgeProbe {
+    edge: f64,
+    travel: f64,
+    duration: u64,
     start: Option<(Contact, Edge)>,
     blocked: bool,
     // None edge: initial center contact; Some edge: last successful swipe's side.
     returning: Option<(Contact, Option<Edge>)>,
 }
+impl Default for EdgeProbe {
+    fn default() -> Self {
+        Self::configured(10, 10, 1500)
+    }
+}
 impl EdgeProbe {
+    pub fn configured(edge: u8, travel: u8, duration: u32) -> Self {
+        Self {
+            edge: f64::from(edge) / 100.,
+            travel: f64::from(travel) / 100.,
+            duration: u64::from(duration),
+            start: None,
+            blocked: false,
+            returning: None,
+        }
+    }
     pub fn cancel(&mut self) {
         self.start = None;
         self.returning = None;
@@ -123,9 +140,9 @@ impl EdgeProbe {
             self.cancel();
             return;
         }
-        let edge = if (0.0..=0.10).contains(&c.x) {
+        let edge = if (0.0..=self.edge).contains(&c.x) {
             Some(Edge::Left)
-        } else if (0.90..=1.0).contains(&c.x) {
+        } else if (1.0 - self.edge..=1.0).contains(&c.x) {
             Some(Edge::Right)
         } else {
             None
@@ -151,9 +168,9 @@ impl EdgeProbe {
                 self.cancel();
                 return None;
             }
-            let edge = if c.x <= 0.10 {
+            let edge = if c.x <= self.edge {
                 Some(Edge::Left)
-            } else if c.x >= 0.90 {
+            } else if c.x >= 1.0 - self.edge {
                 Some(Edge::Right)
             } else {
                 None
@@ -181,7 +198,7 @@ impl EdgeProbe {
             || !(0.0..=1.0).contains(&c.x)
             || !(0.0..=1.0).contains(&c.y)
             || c.ms < start.ms
-            || c.ms - start.ms > 1500
+            || c.ms - start.ms > self.duration
             || (c.y - start.y).abs() > 0.12
             || match edge {
                 Edge::Left => c.x < start.x - 0.03,
@@ -196,7 +213,7 @@ impl EdgeProbe {
             Edge::Right => start.x - c.x,
         };
         let horizontal = inward + 1e-9 >= (c.y - start.y).abs() * 1.5;
-        if inward + 1e-9 >= 0.10 && horizontal {
+        if inward + 1e-9 >= self.travel && horizontal {
             self.cancel();
             self.returning = Some((c, Some(edge)));
             Some(edge)
@@ -217,6 +234,16 @@ mod tests {
             y,
             ms,
         }
+    }
+    #[test]
+    fn configured_edges_distance_and_duration_apply_to_the_same_classifier() {
+        let mut probe = EdgeProbe::configured(20, 15, 2200);
+        probe.begin(contact(0.18, 0.5, 0), 1);
+        assert_eq!(probe.moved(contact(0.32, 0.5, 1800), 1), None);
+        assert_eq!(probe.moved(contact(0.33, 0.5, 1900), 1), Some(Edge::Left));
+        probe.release();
+        probe.begin(contact(0.85, 0.5, 0), 1);
+        assert_eq!(probe.moved(contact(0.70, 0.5, 2201), 1), None);
     }
     #[test]
     fn trial_distinguishes_transport_phases_zones_and_recognition() {

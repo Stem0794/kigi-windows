@@ -158,6 +158,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
         || raw.method.starts_with("gestures.")
         || raw.method.starts_with("mouse.")
         || raw.method.starts_with("meetings.")
+        || raw.method.starts_with("runtime.")
         || matches!(
             raw.method.as_str(),
             "permissions.requestAccessibility"
@@ -309,6 +310,14 @@ mod tests {
                 r#"{"section":"https://example.org"}"#,
                 false,
             ),
+            ("runtime.get", "{}", true),
+            ("runtime.setLoginEnabled", r#"{"enabled":false}"#, true),
+            (
+                "runtime.setLoginEnabled",
+                r#"{"enabled":true,"path":"/tmp/arbitrary"}"#,
+                false,
+            ),
+            ("meetings.apply", "{}", true),
             ("meetings.get", "{}", true),
             ("meetings.identify", "{}", true),
             ("meetings.pause", "{}", true),

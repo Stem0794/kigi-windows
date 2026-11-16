@@ -1023,3 +1023,17 @@ Package0.9.2/build31 :1090605 octets, SHA256
 6df39c4c92ee15e90be8e35950c4388f5787869dc107c483a6e74ce008f46b63.
 CRC, versions, architectures Intel+ARM et5 ressources UI vérifiés. PR#12.
 Seules les précisions documentaires changent après validation.
+
+## 2026-11-16 —0.10.0, parité du workflow personnel
+
+Ferme les écarts de l’audit : gestes persistants/configurables avec reprise bornée,
+correction de l’arrêt après12s inactives, commandes réunion/chat et moitié droite,
+migration additive des raccourcis, navigation fenêtres/onglets, scénario au
+lancement et lancement des apps absentes d’un espace. Ajoute Général, un lancement
+à la connexion appartenant à Kigi et les options de signature/fin Teams héritées.
+Aucun index de raccourci fragile, script libre, service séparé ou modification Lua.
+
+40 tests purs locaux passent ; compilation ARM et syntaxe JS/Python vérifiées.
+Contrôles natifs et package en cours. Contrat précis, compatibilités et limites :
+docs/personal-parity.md. La mesure comparative de légèreté et les essais M5/Teams/
+trackpad physique ne sont pas inventés.

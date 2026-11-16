@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state = {data: null, route: 'home', selected: null, busy: false, draft: null, original: null, draftRevision: null, dirty: false, splitEdited: false, invalid: new Set(), dirtySync: Promise.resolve(), rawRatio: {}, layoutResult: null, nativeDirty: false};
-  const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['shortcuts', 'Raccourcis', '⌘'], ['gestures', 'Trackpad', '◫'], ['mouse', 'Souris', '◉'], ['meetings', 'Réunions Teams', '▥'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
+  const routes = [['home', 'Accueil', '⌂'], ['spaces', 'Espaces', '▤'], ['general', 'Général', '⚙'], ['shortcuts', 'Raccourcis', '⌘'], ['gestures', 'Trackpad', '◫'], ['mouse', 'Souris', '◉'], ['meetings', 'Réunions Teams', '▥'], ['permissions', 'Autorisations', '◇'], ['diagnostics', 'Diagnostics', '≋']];
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
   const button = (label, action, className = '') => { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', action); return node; };
   const names = bundle => ({'com.google.Chrome': 'Google Chrome', 'com.microsoft.teams2': 'Microsoft Teams', 'com.microsoft.teams': 'Microsoft Teams', 'com.apple.Safari': 'Safari'})[bundle] || bundle;

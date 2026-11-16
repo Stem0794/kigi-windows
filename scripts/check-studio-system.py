@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix="kigi-system-") as directory:
                         if line.startswith("KIGI_STUDIO_EDITOR "): result = json.loads(line.removeprefix("KIGI_STUDIO_EDITOR "))
                 assert result and result["success"], "".join(output)
                 settings = json.loads((root / "shortcuts.json").read_text())
-                assert settings["schema_version"] == 1 and len(settings["entries"]) == 7 and settings["entries"][0]["command"]["kind"] == "Maximize"
+                assert settings["schema_version"] == 1 and len(settings["entries"]) == 12 and settings["entries"][0]["command"]["kind"] == "Maximize"
                 assert config.read_bytes() == before, "Shortcut operations altered spaces"
                 if not readback:
                     clipboard = subprocess.check_output(["pbpaste"], text=True)

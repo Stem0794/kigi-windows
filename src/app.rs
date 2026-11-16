@@ -1,3 +1,7 @@
+#[path = "personal.rs"]
+mod personal;
+#[path = "space_launch.rs"]
+mod space_launch;
 #[path = "studio/controller.rs"]
 mod studio_controller;
 use crate::{
@@ -80,6 +84,16 @@ struct PendingOpen {
 
 #[derive(Default)]
 struct State {
+    space_launch: RefCell<Option<space_launch::SpaceLaunch>>,
+    window_cycle: RefCell<windows::WindowCycle>,
+    window_hotkey: RefCell<Option<crate::window_hotkey::WindowHotkey>>,
+    window_cycle_queue: RefCell<std::collections::VecDeque<(bool, bool)>>,
+    runtime_settings: RefCell<crate::runtime_settings::Settings>,
+    runtime_revision: Cell<u64>,
+    input_resume_attempts: Cell<u8>,
+    window_resume_attempts: Cell<u8>,
+    inputs_suspended: Cell<bool>,
+    startup_pending: Cell<bool>,
     teams_settings: RefCell<crate::meetings::Settings>,
     teams_automation: RefCell<windows::TeamsAutomation>,
     teams_revision: Cell<u64>,
@@ -233,6 +247,8 @@ define_class!(
             diagnostics::record("workspace.work", format!("success={}", result.is_ok()));
             self.status(&result.unwrap_or_else(|e| e));
         }
+        #[unsafe(method(workspaceTeamsChat:))]
+        fn workspace_teams_chat(&self,_:Option<&AnyObject>){self.ivars().startup_pending.set(false);self.apply_teams_now();}
         #[unsafe(method(workspaceMeeting:))]
         fn workspace_meeting(&self, _: Option<&AnyObject>) {
             self.inhibit_teams();
@@ -430,9 +446,12 @@ define_class!(
                     NSBackingStoreType::Buffered, false)
             };
             unsafe { window.setReleasedWhenClosed(false) };
-            window.setTitle(ns_string!("Test local — bords du trackpad à 10 %"));
+
+            let settings=self.ivars().runtime_settings.borrow().clone();
+            window.setTitle(&NSString::from_str(&format!("Test local — bords {} %",settings.edge_percent)));
             let view = TouchView::new(mtm);
-            let text = NSTextField::labelWithString(ns_string!("Test local : gardez le pointeur dans cette fenêtre et levez les doigts.\nUn doigt depuis les 10 % extrêmes gauche ou droite vers l’intérieur sur 10 % de la largeur.\nLes compteurs confirment les contacts et les gestes ; aucune application n’est activée.\nCe test local ne valide pas la réception globale."), mtm);
+            view.ivars().probe.replace(EdgeProbe::configured(settings.edge_percent,settings.travel_percent,settings.duration_ms));
+            let text = NSTextField::labelWithString(ns_string!("Test local : gardez le pointeur dans cette fenêtre.\nUn doigt depuis un bord vers l’intérieur, avec les seuils enregistrés dans Trackpad.\nLes compteurs confirment les contacts et les gestes ; aucune application n’est activée.\nCe test local ne valide pas la réception globale."), mtm);
             text.setFrame(NSRect::new(NSPoint::new(20.0,35.0),NSSize::new(560.0,170.0)));
             view.addSubview(&text);
             // hitTest routes the whole diagnostic area to TouchView.
@@ -461,7 +480,7 @@ define_class!(
                 self.status("Écoute globale arrêtée.");
                 alert(self.mtm(), "Bilan du trackpad", &report);
             } else {
-                match Tap::start() {
+                match Tap::probe(&self.ivars().runtime_settings.borrow()) {
                     Ok(tap) => {
                         diagnostics::record("trackpad.global.start", "passive=true actions=false");
                         self.ivars().tap.replace(Some(tap));
@@ -474,21 +493,8 @@ define_class!(
         }
         #[unsafe(method(toggleGestures:))]
         fn toggle_gestures(&self, _: Option<&AnyObject>) {
-            if self.gestures_active() {
-                self.stop_tap(); self.status("Gestes désactivés."); return;
-            }
-            if !self.window_permission() { return; }
-            self.stop_tap();
-            match Tap::start_actions() {
-                Ok(tap) => {
-                    self.ivars().tap.replace(Some(tap));
-                    self.begin_trackpad_poll();
-                    self.update_gesture_label();
-                    diagnostics::record("gestures.start", "left=0.10 right=0.10 min_travel=0.10 direction=inward whole_height=true");
-                    self.status("Test global démarré. Réception des contacts non confirmée ; effectuez un geste puis consultez le bilan.");
-                }
-                Err(e) => self.status(&e),
-            }
+            let enabled=!self.ivars().runtime_settings.borrow().gestures_enabled;
+            self.set_gestures_requested(enabled,true);
         }
         #[unsafe(method(gestureAction:))]
         fn gesture_action(&self, _: Option<&AnyObject>) {
@@ -497,17 +503,18 @@ define_class!(
             if !Tap::input_trusted() || !self.refresh_permission() {
                 self.stop_tap(); self.status("Gestes arrêtés : une autorisation a été révoquée."); return;
             }
-            let action = match edge { Edge::Left => Action::Teams, Edge::Right => Action::Browser };
-            diagnostics::record("gesture.action", format!("edge={edge:?} action={action:?}"));
-            self.execute(action);
+            let target=match edge {Edge::Left=>self.ivars().runtime_settings.borrow().left.clone(),Edge::Right=>self.ivars().runtime_settings.borrow().right.clone()};
+            let command=target.resolve(&self.ivars().shortcuts.borrow());
+            match command {Ok(Some(command))=>self.execute_command(command),Ok(None)=>{},Err(message)=>self.status(&message)}
         }
         #[unsafe(method(pauseGestures:))]
         fn pause_gestures(&self, _: Option<&AnyObject>) {
             self.cancel_open();
             let listening = self.ivars().tap.borrow().is_some();
             self.stop_tap();
+            if !self.ivars().inputs_suspended.get() && self.ivars().runtime_settings.borrow().gestures_enabled { self.schedule_inputs_resume(2.0); }
             if listening {
-                self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Réactivez-la dans Gestes et souris.");
+                self.status("Écoute trackpad arrêtée (veille/session inactive/interruption). Reprise automatique limitée si les gestes restent activés.");
             }
         }
         #[unsafe(method(toggleMouseHorizontal:))]
@@ -536,21 +543,40 @@ define_class!(
         }
         #[unsafe(method(suspendInputs:))]
         fn suspend_inputs(&self, _: Option<&AnyObject>) {
+            self.ivars().window_hotkey.borrow_mut().take();
+            self.ivars().inputs_suspended.set(true);
             self.ivars().teams_suspended.set(true);
-            self.inhibit_teams();
+            self.ivars().teams_automation.borrow_mut().pause_detection();
+            self.ivars().window_cycle.borrow_mut().finish();
             self.pause_gestures(sel!(pauseGestures:), None);
             self.stop_mouse_scroll();
         }
         #[unsafe(method(resumeMouseScroll:))]
         fn resume_mouse_scroll(&self, _: Option<&AnyObject>) {
+            self.ivars().inputs_suspended.set(false);
+            self.ivars().input_resume_attempts.set(0);
+            self.ivars().window_resume_attempts.set(0);
+            self.resume_personal_inputs();
             self.ivars().teams_suspended.set(false);
             if self.ivars().mouse_scroll_requested.get() && !self.mouse_scroll_active() {
                 if let Err(e) = self.start_mouse_scroll() { self.status(&e); }
             }
         }
+        #[unsafe(method(spaceLaunchPoll:))]
+        fn space_launch_poll(&self,_:Option<&AnyObject>){self.poll_space_launch();}
+        #[unsafe(method(windowCycleAction:))]
+        fn window_cycle_action(&self,_:Option<&AnyObject>){
+            let next=self.ivars().window_cycle_queue.borrow_mut().pop_front();
+            let Some((reverse,finish))=next else{return;};
+            if finish {self.ivars().window_cycle.borrow_mut().finish();} else if self.ivars().runtime_settings.borrow().window_switcher && !self.ivars().picking.get(){self.ivars().startup_pending.set(false);let result=self.ivars().window_cycle.borrow_mut().cycle(true,reverse);self.status(&result.unwrap_or_else(|e|e));}
+        }
+        #[unsafe(method(resumePersonalInputs:))]
+        fn resume_personal_inputs_poll(&self,_:Option<&AnyObject>){self.resume_personal_inputs();}
+        #[unsafe(method(startupWorkspace:))]
+        fn startup_workspace(&self,_:Option<&AnyObject>){self.apply_startup_workspace();}
         #[unsafe(method(teamsPoll:))]
         fn teams_poll(&self, _:Option<&AnyObject>) {
-            if !self.ivars().teams_settings.borrow().enabled { return; }
+            if !self.ivars().teams_settings.borrow().enabled && !self.ivars().teams_automation.borrow().tracking() { return; }
             if !self.ivars().teams_suspended.get() {
                 let busy=self.ivars().picking.get() || self.ivars().pending.borrow().is_some() || self.ivars().pending_maximize.borrow().is_some() || self.ivars().layout_snapshot.borrow().is_some() || self.ivars().studio_recorder.borrow().is_some();
                 let now=self.ivars().teams_started.get_or_init(Instant::now).elapsed().as_millis().min(u64::MAX as u128) as u64;
@@ -559,7 +585,9 @@ define_class!(
             self.schedule_capture(sel!(teamsPoll:),1.0);
         }
         #[unsafe(method(workspaceContextChanged:))]
-        fn context_changed(&self, _: &NSNotification) { self.remember_context(); }
+        fn context_changed(&self, _: &NSNotification) { self.remember_context();
+            if !self.refresh_permission(){self.ivars().window_hotkey.borrow_mut().take();if let Ok(mut cycle)=self.ivars().window_cycle.try_borrow_mut(){cycle.finish();}}
+            if NSWorkspace::sharedWorkspace().frontmostApplication().is_some_and(|app|app.processIdentifier()!=std::process::id() as i32){self.ivars().startup_pending.set(false);} if let Some(pid)=self.ivars().activation_anchor.get(){if let Ok(mut cycle)=self.ivars().window_cycle.try_borrow_mut(){cycle.note_app(pid);}} }
         #[unsafe(method(quit:))]
         fn quit(&self, _: Option<&AnyObject>) {
             if !self.ivars().studio_quit_confirmed.replace(false) {
@@ -582,7 +610,7 @@ define_class!(
         #[unsafe(method(applicationShouldTerminateAfterLastWindowClosed:))]
         fn keep_running(&self, _: &NSApplication) -> bool { false }
         #[unsafe(method(applicationDidBecomeActive:))]
-        fn became_active(&self, _: &NSNotification) { self.refresh_permission(); }
+        fn became_active(&self, _: &NSNotification) { self.refresh_permission(); self.ivars().input_resume_attempts.set(0);self.ivars().window_resume_attempts.set(0);self.resume_personal_inputs(); }
         #[unsafe(method(applicationDidResignActive:))]
         fn resigned_active(&self,_:&NSNotification) {self.cancel_shortcut_capture();}
     }
@@ -631,12 +659,18 @@ impl Controller {
         }
     }
     fn execute_command(&self, command: Command) {
+        self.ivars().startup_pending.set(false);
         if !matches!(
             command,
             Command::Application {
                 maximize: false,
                 ..
             } | Command::ChatGpt
+                | Command::TeamsSplit
+                | Command::CycleWindow
+                | Command::CycleAllWindows
+                | Command::NextTab
+                | Command::PreviousTab
         ) {
             self.inhibit_teams();
         }
@@ -657,6 +691,12 @@ impl Controller {
                 .and_then(|b| self.open_application(&b, maximize, Instant::now()));
                 self.status(&result.unwrap_or_else(|e| e));
             }
+            Command::TeamsSplit => self.apply_teams_now(),
+            Command::RightHalf => self.place_right_half(),
+            Command::CycleWindow => self.cycle_windows(false),
+            Command::CycleAllWindows => self.cycle_windows(true),
+            Command::NextTab => self.cycle_tab(false),
+            Command::PreviousTab => self.cycle_tab(true),
             Command::ChatGpt => self.execute(Action::ChatGpt),
             Command::Maximize => self.execute(Action::Maximize),
             Command::PairLeft => self.execute(Action::PairLeft),
@@ -717,23 +757,34 @@ impl Controller {
                 t.report(),
                 t.evidence(),
                 t.active_actions(),
+                t.interrupted(),
             )
         });
-        let Some((samples, elapsed, summary, report, evidence, actions)) = data else {
+        let Some((samples, elapsed, summary, report, evidence, actions, interrupted)) = data else {
             return;
         };
         self.ivars().trackpad_last_summary.replace(summary);
+        if interrupted {
+            self.stop_tap();
+            if self.ivars().runtime_settings.borrow().gestures_enabled {
+                self.schedule_inputs_resume(2.0);
+            }
+            return;
+        }
         if samples > 0 && self.ivars().trackpad_last_samples.replace(samples) == 0 {
             diagnostics::record("trackpad.contacts.received", "coordinates_recorded=false");
         }
         if elapsed >= 12 && !self.ivars().trackpad_empty_reported.replace(true) {
             diagnostics::record("trackpad.trial.complete", &report);
-            if !actions || evidence.recognized == 0 {
+            if !actions {
                 self.stop_tap();
                 self.ivars()
                     .trackpad_last_summary
                     .replace(format!("Test arrêté. {}", evidence.diagnosis()));
                 self.status(evidence.diagnosis());
+                if self.ivars().runtime_settings.borrow().gestures_enabled {
+                    self.schedule_inputs_resume(2.0);
+                }
                 return;
             }
             self.status(evidence.diagnosis());
@@ -1021,6 +1072,7 @@ impl Controller {
         };
     }
     fn execute(&self, action: Action) {
+        self.ivars().startup_pending.set(false);
         if !matches!(action, Action::Teams | Action::ChatGpt) {
             self.inhibit_teams();
         }
@@ -1318,6 +1370,7 @@ impl Controller {
             .or(self.ivars().activation_anchor.get());
         self.ivars().picking.set(true);
         let result = (|| {
+            self.launch_profile_apps(&layout)?;
             let (display, choices, partial) =
                 windows::pair_candidates_for_app(self.mtm(), prior_pid)
                     .map_err(|e| Failure::new("WINDOWS_UNAVAILABLE", e))?;
@@ -1726,7 +1779,7 @@ impl TouchView {
             self.ivars().last_ui.set(Instant::now());
             if let Some(label) = self.ivars().label.get() {
                 label.setStringValue(&NSString::from_str(&format!(
-                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord 10 % vers intérieur : {}.\nRevenez sur un bord puis glissez vers l’intérieur pour recommencer, sans lever le doigt. Aucune action globale.",
+                    "Test LOCAL : contacts reçus, x={:.2}, y={:.2}, phase={:?}.\nGeste(s) bord vers intérieur : {}.\nRevenez sur un bord puis glissez vers l’intérieur pour recommencer, sans lever le doigt. Aucune action globale.",
                     point.x, point.y, touch.phase(), self.ivars().count.get()
                 )));
             }
@@ -1846,7 +1899,7 @@ pub fn studio_command(
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some(),"lastResult":c.ivars().status.borrow().clone()});
         match command {
             C::System(op)=>c.studio_system(op),
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"meetings":c.studio_meetings_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.previewApply","spaces.restore","permissions.get","diagnostics.summary","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","meetings.get","meetings.save","meetings.identify","meetings.probe","meetings.pause","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"meetings":c.studio_meetings_data(),"runtime":c.studio_runtime_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.previewApply","spaces.restore","permissions.get","diagnostics.summary","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","runtime.get","runtime.save","runtime.setLoginEnabled","meetings.apply","meetings.get","meetings.save","meetings.identify","meetings.probe","meetings.pause","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
             C::Capture(input)=>c.studio_capture_layout(&input.expected_revision),
             C::Recover(input)=>{
@@ -2016,15 +2069,31 @@ pub fn run() {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            if std::env::args().any(|a| a == "--login") {
+                return;
+            }
             alert(mtm, "Une autre copie de Kigi est déjà lancée", &format!("Quittez l'autre copie depuis son menu Kigi avant de lancer cette version. Cette nouvelle copie va se fermer sans modifier l'autre.\n\n{copies}"));
             return;
+        }
+        if std::env::args().any(|a| a == "--navigation-check") {
+            match windows::navigation_fixture_check(mtm) {
+                Ok(()) => {
+                    println!("KIGI_NAVIGATION_CHECK true");
+                    std::process::exit(0);
+                }
+                Err(message) => {
+                    eprintln!("KIGI_NAVIGATION_CHECK {message}");
+                    std::process::exit(1);
+                }
+            }
         }
         if std::env::args().any(|a| a == "--teams-check") {
             let manual = std::env::args().any(|a| a == "--manual-override");
             match windows::teams_fixture_check(mtm, manual) {
                 Ok(()) => {
                     let minimum = std::env::args().any(|a| a == "--meeting-minimum");
-                    println!("KIGI_TEAMS_CHECK {{\"manual\":{manual},\"minimum\":{minimum},\"success\":true}}");
+                    let reapply = std::env::args().any(|a| a == "--teams-reapply");
+                    println!("KIGI_TEAMS_CHECK {{\"manual\":{manual},\"minimum\":{minimum},\"reapply\":{reapply},\"success\":true}}");
                     std::process::exit(0);
                 }
                 Err(message) => {
@@ -2035,6 +2104,36 @@ pub fn run() {
         }
         let activation_check = std::env::args().any(|a| a == "--activation-check");
         let controller = Controller::new(mtm);
+        if std::env::args().any(|a| a == "--space-launch-check") {
+            if std::env::var_os("KIGI_TEST_NAVIGATION").is_none() {
+                std::process::exit(1);
+            }
+            let geometry = crate::geometry::normalized_split(50).unwrap();
+            let layout = config::SavedLayout {
+                schema_version: 1,
+                windows: [
+                    config::SavedWindow {
+                        bundle_id: "io.kigi.focus.source".into(),
+                        geometry: geometry[0],
+                    },
+                    config::SavedWindow {
+                        bundle_id: "io.kigi.focus.target".into(),
+                        geometry: geometry[1],
+                    },
+                ],
+            };
+            match controller.launch_profile_apps(&layout) {
+                Ok(()) => {
+                    println!("KIGI_SPACE_LAUNCH true");
+                    std::process::exit(0);
+                }
+                Err(error) => {
+                    eprintln!("KIGI_SPACE_LAUNCH {error:?}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
         controller.ivars().activation_check.set(activation_check);
         controller
             .ivars()
@@ -2079,6 +2178,12 @@ pub fn run() {
             &controller,
             "Restaurer la disposition précédente",
             sel!(workspaceRestore:),
+        );
+        menu_action(
+            &menu,
+            &controller,
+            "Réunion Teams / chat",
+            sel!(workspaceTeamsChat:),
         );
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         menu_action(&menu, &controller, "Quitter Kigi", sel!(quit:));
@@ -2195,6 +2300,13 @@ pub fn run() {
                 );
             }
         }
+        controller.migrate_personal_bindings();
+        controller.load_runtime_settings();
+        controller.resume_personal_inputs();
+        if controller.ivars().runtime_settings.borrow().startup_work {
+            controller.ivars().startup_pending.set(true);
+            controller.schedule_capture(sel!(startupWorkspace:), 1.5);
+        }
         controller.remember_context();
         unsafe {
             center.addObserver_selector_name_object(
@@ -2206,7 +2318,7 @@ pub fn run() {
             if activation_check {
                 let _: () = msg_send![&*controller,performSelector:sel!(activationCheck:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];
                 let _: () = msg_send![&*controller,performSelector:sel!(activationCheckTimeout:),withObject:std::ptr::null::<AnyObject>(),afterDelay:12.0f64];
-            } else {
+            } else if !std::env::args().any(|a| a == "--login") {
                 let _: () = msg_send![&*controller, performSelector:sel!(openProfiles:), withObject:std::ptr::null::<AnyObject>(), afterDelay:0.0f64];
             }
         }
@@ -2229,6 +2341,7 @@ pub fn run() {
         controller.cancel_open();
         CONTROLLER.with(|c| c.borrow_mut().take());
         controller.stop_tap();
+        controller.ivars().window_hotkey.borrow_mut().take();
         controller.stop_mouse_scroll();
         if let Some(window) = controller.ivars().local_window.borrow_mut().take() {
             window.close();
@@ -2289,4 +2402,47 @@ mod tests {
             }
         );
     }
+}
+
+pub fn queue_window_cycle(reverse: bool, finish: bool) -> bool {
+    CONTROLLER.with(|slot| {
+        let Ok(slot) = slot.try_borrow() else {
+            return false;
+        };
+        let Some(c) = slot.as_ref() else {
+            return false;
+        };
+        if c.ivars().picking.get() || c.ivars().inputs_suspended.get() {
+            return false;
+        }
+        if c.ivars().last_permission.get() == Some(false) {
+            return false;
+        }
+        let Ok(settings) = c.ivars().runtime_settings.try_borrow() else {
+            return false;
+        };
+        if !settings.window_switcher {
+            return false;
+        }
+        drop(settings);
+        let Ok(mut queue) = c.ivars().window_cycle_queue.try_borrow_mut() else {
+            return false;
+        };
+        if queue.len() >= 16 {
+            return false;
+        }
+        queue.push_back((reverse, finish));
+        drop(queue);
+        c.schedule_capture(sel!(windowCycleAction:), 0.0);
+        true
+    })
+}
+pub fn schedule_personal_resume() {
+    CONTROLLER.with(|slot| {
+        if let Ok(slot) = slot.try_borrow() {
+            if let Some(c) = slot.as_ref() {
+                c.schedule_inputs_resume(2.0);
+            }
+        }
+    });
 }

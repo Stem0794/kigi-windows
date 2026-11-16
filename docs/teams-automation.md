@@ -39,7 +39,7 @@ fenêtre vivant après sa fermeture. Un timeout/permission absente est « inconn
 retour. La position du chat et l’écran sont revérifiés avant le retour.
 
 Une disposition manuelle Kigi (maximisation, partage, scène, restauration), un déplacement
-mesuré, une minimisation/plein écran, la veille, une fenêtre de réunion de
+mesuré, une minimisation/plein écran, une fenêtre de réunion de
 remplacement ou le bouton **Suspendre cette réunion** cède le contrôle à
 l’utilisateur jusqu’à la fermeture de la fenêtre suivie. Une simple activation
 d’application, notamment ⌥T sans maximisation, conserve le retour automatique.
@@ -66,3 +66,7 @@ avancés explicitement dans cette fixture ; la minuterie réelle reste à vérif
 sur le Mac pilote. Studio vérifie réglages, sauvegarde, révision périmée et refus
 d’activation sans profil. Ces contrôles ne prouvent pas la signature Teams, les
 contraintes de taille de Teams ni le comportement physique du Mac M5.
+
+En0.10.0, la veille suspend l’observation sans perdre le suivi : au réveil, les
+positions et l’écran sont revérifiés avant toute décision. Une modification de
+géométrie conserve la priorité utilisateur et annule le retour automatique.

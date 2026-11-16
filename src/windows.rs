@@ -516,6 +516,7 @@ pub struct MaximizeRequest {
     app: objc2::rc::Retained<NSRunningApplication>,
     started: Instant,
     transitioned: bool,
+    right_half: bool,
     settling: Settling,
 }
 fn active_fullscreen(mtm: MainThreadMarker) -> bool {
@@ -556,8 +557,13 @@ impl MaximizeRequest {
             app,
             started: Instant::now(),
             transitioned: minimized || fullscreen,
+            right_half: false,
             settling: Settling::default(),
         })
+    }
+    pub fn into_right_half(mut self) -> Self {
+        self.right_half = true;
+        self
     }
     pub fn poll(&mut self, mtm: MainThreadMarker) -> Result<Option<String>, String> {
         require_permission()?;
@@ -596,13 +602,34 @@ impl MaximizeRequest {
                 );
             }
         }
-        let target = visible_frame(mtm, frame)?;
+        let display = visible_frame(mtm, frame)?;
+        let target = if self.right_half {
+            display.right_half()
+        } else {
+            display
+        };
         let actual = self.window.set_frame(target)?;
         self.window.raise()?;
         if !actual.approximately(target) {
-            return Err(result_message(actual, target, "maximisée"));
+            return Err(result_message(
+                actual,
+                target,
+                if self.right_half {
+                    "à droite"
+                } else {
+                    "maximisée"
+                },
+            ));
         }
-        Ok(Some(result_message(actual, target, "maximisée")))
+        Ok(Some(result_message(
+            actual,
+            target,
+            if self.right_half {
+                "à droite"
+            } else {
+                "maximisée"
+            },
+        )))
     }
 }
 
@@ -1108,5 +1135,27 @@ pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
 #[path = "teams_windows.rs"]
 mod teams;
 pub use teams::{
-    teams_choices, teams_fixture_check, teams_probe, teams_verify, teams_version, TeamsAutomation,
+    teams_choices, teams_fixture_check, teams_has_meeting, teams_probe, teams_verify,
+    teams_version, TeamsAutomation,
 };
+
+#[path = "window_navigation.rs"]
+mod navigation;
+pub use navigation::{cycle_tab, navigation_fixture_check, WindowCycle};
+
+pub fn has_standard_window(app: &NSRunningApplication) -> bool {
+    let Ok(array) = Element::app(app.processIdentifier()).attribute("AXWindows") else {
+        return false;
+    };
+    let started = Instant::now();
+    for i in 0..unsafe { CFArrayGetCount(array.0) }.min(32) {
+        if started.elapsed() > Duration::from_millis(500) {
+            break;
+        }
+        let window = Element(unsafe { CFRetain(CFArrayGetValueAtIndex(array.0, i)) });
+        if window.is_standard() {
+            return true;
+        }
+    }
+    false
+}
