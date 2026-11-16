@@ -262,6 +262,7 @@ define_class!(
         fn studio_unavailable(&self,_:Option<&AnyObject>){
             if self.ivars().studio_failure_showing.replace(true){return;}
             self.ivars().studio_load_failed.set(true);
+            unsafe {let _:()=msg_send![objc2::class!(NSObject),cancelPreviousPerformRequestsWithTarget:self,selector:sel!(studioLoadTimeout:),object:std::ptr::null::<AnyObject>()];}
             let dialog=NSAlert::new(self.mtm());
             dialog.setMessageText(ns_string!("Studio est indisponible"));
             dialog.setInformativeText(ns_string!("Les fonctions de fond continuent. Réessayer recharge l’interface et abandonne ses brouillons non enregistrés. Les espaces et raccourcis enregistrés sont conservés. Vous pouvez copier le diagnostic avant de réessayer."));
@@ -307,6 +308,7 @@ define_class!(
         }
         #[unsafe(method(studioLoadTimeout:))]
         fn studio_timeout(&self,_:Option<&AnyObject>){
+            if self.ivars().studio_load_failed.get(){return;}
             if self.ivars().studio.borrow().as_ref().is_some_and(|s|!s.ready()) {
                 diagnostics::record("studio.load_failed","bootstrap_timeout=true");
 
@@ -1884,7 +1886,7 @@ pub fn studio_render_result(ready: bool) {
 }
 pub fn studio_failed() {
     diagnostics::record("studio.load_failed", "recovery_dialog=true");
-    CONTROLLER.with(|slot| {if let Some(c)=slot.borrow().as_ref(){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioUnavailable:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}}});
+    CONTROLLER.with(|slot| {if let Some(c)=slot.borrow().as_ref(){if !c.ivars().studio_load_failed.replace(true){unsafe{let _:()=msg_send![&**c,performSelector:sel!(studioUnavailable:),withObject:std::ptr::null::<AnyObject>(),afterDelay:0.0f64];}}}});
 }
 
 /// Called from the main-loop CG tap. Only store one small event and defer UI/AX
