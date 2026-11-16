@@ -213,3 +213,12 @@ Surveillance de l’entrée et Automatisation via NSWorkspace.openURL ; aucune U
 fournie par Studio ni modification des autorisations. Repli sur Réglages si le
 lien est refusé. L’acceptation du lien ne prouve pas la rubrique affichée par macOS.
 Conserver la réouverture à chaque clic lorsque l’accès manque.
+
+## Ancrage Teams0.9.2
+
+L’utilisateur signale la réunion décalée du bord droit. Après la demande de taille,
+recalculer la position avec la taille AX réelle, aligner le bord demandé et relire.
+Une largeur minimale compatible avec l’écran ne doit plus annuler le placement ;
+afficher les dimensions effectives et le chevauchement éventuel. Ne pas annoncer
+50/50 si Teams refuse50 %. Aucun réajustement continu après un mouvement manuel.
+Ajouter un cas natif dédié à une réunion imposant60 % minimum et vérifier son bord.

@@ -998,3 +998,28 @@ Package0.9.1/build30 :1085998 octets, SHA256
 f1cd96244f87b8c6fd69832b8052699420346f10697acfd1bb1de4a905a6bbca.
 CRC, versions, Intel+ARM et les5 ressources UI vérifiés. PR#11 ; seul le suivi
 documentaire change après validation.
+
+## 2026-11-16 —0.9.2, ancrage des fenêtres Teams contraintes
+
+Le moteur annulait tout placement dont la taille différait du ratio demandé,
+remettant notamment une réunion à sa position précédente. Correction : après la
+demande de taille, utiliser la taille mesurée pour aligner au bord de la zone
+utilisable, y compris sur écran d’origine négative. Position contrôlée à1point AX,
+deux tentatives de position au maximum, sans nouvelle demande de redimensionnement.
+Les tailles compatibles avec l’écran restent placées ; le statut affiche les
+largeurs réelles et le chevauchement possible si Teams empêche50/50. Ce message
+reste visible pendant la réunion. Les erreurs d’ancrage/taille hors écran gardent
+le rétablissement conservateur ; aucun recentrage périodique ajouté.
+
+Test pur de géométrie sur écran négatif et taille minimale ; troisième cas natif
+avec réunion imposant60 %, chat50 %, bord droit confirmé et retour après fermeture.
+Validation :34 tests hôte,37 tests natifs macOS15.7.9 Intel, compilation ARM et
+tous les parcours Studio/AX/Carbon réussis. Les trois cas Teams (normal, déplacement
+manuel prioritaire, minimum60 %) passent, y compris le retour du chat après fermeture.
+Run43888389960, source9f966785bb9856ba4451cdf93fa596b92ea45550.
+Le cas réel Teams de l’utilisateur reste à confirmer ; aucune garantie matérielle M5.
+
+Package0.9.2/build31 :1090605 octets, SHA256
+6df39c4c92ee15e90be8e35950c4388f5787869dc107c483a6e74ce008f46b63.
+CRC, versions, architectures Intel+ARM et5 ressources UI vérifiés. PR#12.
+Seules les précisions documentaires changent après validation.

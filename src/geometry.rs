@@ -32,6 +32,38 @@ impl Rect {
         }
     }
 
+    /// Align the measured size, including app-imposed minimums, to a usable edge.
+    pub fn aligned_to_edge(self, display: Self, right: bool) -> Option<Self> {
+        if ![
+            self.width,
+            self.height,
+            display.x,
+            display.y,
+            display.width,
+            display.height,
+        ]
+        .iter()
+        .all(|v| v.is_finite())
+            || self.width <= 0.
+            || self.height <= 0.
+            || display.width <= 0.
+            || display.height <= 0.
+            || self.width > display.width + 8.
+            || self.height > display.height + 8.
+        {
+            return None;
+        }
+        Some(Self {
+            x: if right {
+                display.x + display.width - self.width
+            } else {
+                display.x
+            },
+            y: display.y,
+            ..self
+        })
+    }
+
     pub fn overlap(self, other: Self) -> f64 {
         let w = (self.x + self.width).min(other.x + other.width) - self.x.max(other.x);
         let h = (self.y + self.height).min(other.y + other.height) - self.y.max(other.y);
@@ -167,6 +199,39 @@ impl Settling {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn constrained_windows_anchor_on_negative_origin_and_preserve_measured_size() {
+        let display = Rect {
+            x: -1920.,
+            y: 24.,
+            width: 1880.,
+            height: 1000.,
+        };
+        let actual = Rect {
+            x: -1200.,
+            y: 200.,
+            width: 1100.,
+            height: 1000.,
+        };
+        let right = actual.aligned_to_edge(display, true).unwrap();
+        assert_eq!(right.x, -1140.);
+        assert_eq!(right.x + right.width, display.x + display.width);
+        assert_eq!(right.y, 24.);
+        assert_eq!(right.width, 1100.);
+        assert_eq!(actual.aligned_to_edge(display, false).unwrap().x, display.x);
+        assert!(Rect {
+            width: 2000.,
+            ..actual
+        }
+        .aligned_to_edge(display, true)
+        .is_none());
+        assert!(Rect {
+            width: f64::NAN,
+            ..actual
+        }
+        .aligned_to_edge(display, true)
+        .is_none());
+    }
     #[test]
     fn transition_requires_stability_and_resets_after_movement_or_busy_state() {
         let a = Rect {

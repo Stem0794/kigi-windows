@@ -114,12 +114,40 @@ pub fn teams_choices() -> Result<Vec<Choice>, String> {
     }
     Ok(choices)
 }
+impl Element {
+    fn set_teams_frame(&self, target: Rect, display: Rect, right: bool) -> Result<Rect, String> {
+        let mut actual = self.set_frame(target)?;
+        // Do not resize again: Teams may enforce a width larger than the requested half.
+        // Anchor using the read-back size instead of rolling both windows back.
+        for _ in 0..2 {
+            let anchored = actual
+                .aligned_to_edge(display, right)
+                .ok_or("La taille imposée par Teams dépasse la zone utilisable de l’écran.")?;
+            self.set_pair("AXPosition", 1, [anchored.x, anchored.y])?;
+            actual = self.frame()?;
+            if actual.aligned_to_edge(display, right).is_some_and(|edge| {
+                (actual.x - edge.x).abs() <= 1. && (actual.y - edge.y).abs() <= 1.
+            }) {
+                diagnostics::record(
+                    "teams.frame.anchored",
+                    format!(
+                        "right={right} requested={target:?} actual={actual:?} exact={}",
+                        actual.approximately(target)
+                    ),
+                );
+                return Ok(actual);
+            }
+        }
+        Err("Teams n’a pas confirmé l’alignement au bord de l’écran.".into())
+    }
+}
 struct Session {
     chat: Element,
     meeting: Element,
     before: [Rect; 2],
     applied: [Rect; 2],
     display: Rect,
+    placement_message: String,
 }
 #[derive(Default)]
 pub struct TeamsAutomation {
@@ -242,17 +270,19 @@ impl TeamsAutomation {
                 self.inhibit();
                 return;
             }
-            let unchanged = session
-                .chat
-                .frame()
-                .is_ok_and(|f| f.approximately(session.applied[0]))
+            let chat_frame = session.chat.frame().ok();
+            let meeting_frame = if present {
+                session.meeting.frame().ok()
+            } else {
+                None
+            };
+            let unchanged = chat_frame.is_some_and(|f| f.approximately(session.applied[0]))
                 && visible_frame(mtm, session.applied[0])
                     .is_ok_and(|d| d.approximately(session.display))
-                && (!present
-                    || session
-                        .meeting
-                        .frame()
-                        .is_ok_and(|f| f.approximately(session.applied[1])));
+                && (!present || meeting_frame.is_some_and(|f| f.approximately(session.applied[1])));
+            if !unchanged {
+                diagnostics::record("teams.geometry.changed",format!("chat={chat_frame:?} meeting={meeting_frame:?} expected={:?} present={present}",session.applied));
+            }
             if !unchanged
                 || session.chat.ensure_normal().is_err()
                 || (present && session.meeting.ensure_normal().is_err())
@@ -274,7 +304,7 @@ impl TeamsAutomation {
                 diagnostics::record("teams.end", "attempted=true");
             } else {
                 self.status = if present {
-                    "Réunion reconnue : disposition active."
+                    session.placement_message.as_str()
                 } else {
                     "Fenêtre réunion fermée : confirmation de fin pendant 2 secondes…"
                 }
@@ -351,22 +381,38 @@ impl TeamsAutomation {
                 before,
                 applied: before,
                 display,
+                placement_message: String::new(),
             });
             let session = self.session.as_mut().unwrap();
-            let chat_result = session.chat.set_frame(targets[0]);
+            let chat_result =
+                session
+                    .chat
+                    .set_teams_frame(targets[0], display, !settings.meeting_right);
             session.applied[0] = session.chat.frame().unwrap_or(session.applied[0]);
             chat_result?;
-            let meeting_result = session.meeting.set_frame(targets[1]);
+            let meeting_result =
+                session
+                    .meeting
+                    .set_teams_frame(targets[1], display, settings.meeting_right);
             session.applied[1] = session.meeting.frame().unwrap_or(session.applied[1]);
             meeting_result?;
-            if !session.chat.frame()?.approximately(targets[0])
-                || !session.meeting.frame()?.approximately(targets[1])
-            {
-                return Err(
-                    "Teams impose des dimensions : disposition partielle, rétablissement tenté."
-                        .into(),
-                );
-            }
+            let exact = session
+                .applied
+                .iter()
+                .zip(targets)
+                .all(|(actual, target)| actual.approximately(target));
+            session.placement_message = if exact {
+                "Chat et réunion placés à la largeur demandée et alignés aux bords.".into()
+            } else {
+                format!("Teams limite les dimensions : chat {:.0} %, réunion {:.0} %. Bords alignés ; un chevauchement est possible.",session.applied[0].width/display.width*100.,session.applied[1].width/display.width*100.)
+            };
+            diagnostics::record(
+                "teams.placement",
+                format!(
+                    "exact_requested={exact} chat={:?} meeting={:?}",
+                    session.applied[0], session.applied[1]
+                ),
+            );
             Ok(())
         })();
         if let Err(message) = result {
@@ -386,7 +432,7 @@ impl TeamsAutomation {
             self.status = message;
             diagnostics::record("teams.start", "confirmed=false");
         } else {
-            self.status = "Chat et réunion placés ; géométrie confirmée.".into();
+            self.status = self.session.as_ref().unwrap().placement_message.clone();
             diagnostics::record("teams.start", "confirmed=true");
         }
     }
@@ -400,6 +446,7 @@ pub fn teams_fixture_check(mtm: MainThreadMarker, manual: bool) -> Result<(), St
     require_permission()?;
     let app =
         crate::applications::running("io.kigi.focus.source").ok_or("Fixture Teams absente.")?;
+    let minimum = std::env::args().any(|a| a == "--meeting-minimum");
     let settings = Settings {
         enabled: true,
         chat_title: "Kigi chat fixture".into(),
@@ -419,16 +466,19 @@ pub fn teams_fixture_check(mtm: MainThreadMarker, manual: bool) -> Result<(), St
         .session
         .as_ref()
         .ok_or("Disposition automatique non appliquée.")?;
-    if !session
-        .chat
-        .frame()?
-        .approximately(session.display.left_half())
-        || !session
-            .meeting
-            .frame()?
-            .approximately(session.display.right_half())
+    let chat_frame = session.chat.frame()?;
+    let meeting_frame = session.meeting.frame()?;
+    if !chat_frame.approximately(session.display.left_half())
+        || (meeting_frame.x + meeting_frame.width - session.display.x - session.display.width).abs()
+            > 1.
+        || (meeting_frame.y - session.display.y).abs() > 1.
+        || (!minimum && !meeting_frame.approximately(session.display.right_half()))
+        || (minimum && meeting_frame.width <= session.display.width * 0.55)
     {
-        return Err("Géométrie automatique incorrecte.".into());
+        return Err("Géométrie automatique ou ancrage droit incorrect.".into());
+    }
+    if minimum && !session.placement_message.contains("Teams limite") {
+        return Err("Dimensions limitées annoncées comme un 50/50 exact.".into());
     }
     let target = if manual {
         let target = Rect {

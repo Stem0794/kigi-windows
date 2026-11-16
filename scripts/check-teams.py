@@ -1,4 +1,4 @@
-"""Two bounded AX checks on an owned pair, no Teams or user-window inspection."""
+"""Bounded AX checks on an owned pair, no Teams or user-window inspection."""
 import json
 import os
 from pathlib import Path
@@ -16,8 +16,8 @@ with tempfile.TemporaryDirectory(prefix='kigi-teams-') as directory:
     subprocess.run(['swiftc', 'scripts/focus-fixture.swift', '-o', str(fixture)], check=True)
     (contents / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable': 'fixture', 'CFBundleIdentifier': 'io.kigi.focus.source', 'CFBundleName': 'Kigi Teams fixture', 'CFBundlePackageType': 'APPL'}))
     subprocess.run(['codesign', '--force', '--sign', '-', str(contents.parent)], check=True)
-    for manual in [False, True]:
-        process = subprocess.Popen([str(fixture), '--source', '--teams-pair'], stdout=subprocess.PIPE)
+    for manual, minimum in [(False, False), (True, False), (False, True)]:
+        process = subprocess.Popen([str(fixture), '--source', '--teams-pair'] + (['--meeting-minimum'] if minimum else []), stdout=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 8
             ready = False
@@ -29,10 +29,10 @@ with tempfile.TemporaryDirectory(prefix='kigi-teams-') as directory:
                         ready = line.endswith(' true')
                         break
             assert ready, 'Teams fixture did not become ready'
-            result = subprocess.run([str(binary), '--teams-check'] + (['--manual-override'] if manual else []), env={**os.environ, 'KIGI_TEST_TEAMS': '1'}, capture_output=True, text=True, timeout=15)
+            result = subprocess.run([str(binary), '--teams-check'] + (['--manual-override'] if manual else []) + (['--meeting-minimum'] if minimum else []), env={**os.environ, 'KIGI_TEST_TEAMS': '1'}, capture_output=True, text=True, timeout=15)
             print(result.stdout, result.stderr)
             rows = [json.loads(line.removeprefix('KIGI_TEAMS_CHECK ')) for line in result.stdout.splitlines() if line.startswith('KIGI_TEAMS_CHECK ')]
-            assert result.returncode == 0 and rows == [{'manual': manual, 'success': True}], result.stdout + result.stderr
+            assert result.returncode == 0 and rows == [{'manual': manual, 'minimum': minimum, 'success': True}], result.stdout + result.stderr
         finally:
             if process.poll() is None:
                 process.terminate()
