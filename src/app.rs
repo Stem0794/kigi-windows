@@ -80,6 +80,11 @@ struct PendingOpen {
 
 #[derive(Default)]
 struct State {
+    teams_settings: RefCell<crate::meetings::Settings>,
+    teams_automation: RefCell<windows::TeamsAutomation>,
+    teams_revision: Cell<u64>,
+    teams_suspended: Cell<bool>,
+    teams_started: OnceCell<Instant>,
     snapshot: RefCell<Option<Snapshot>>,
     layout_snapshot: RefCell<Option<windows::LayoutSnapshot>>,
     hotkeys: RefCell<Option<Hotkeys>>,
@@ -214,6 +219,7 @@ define_class!(
         fn pair_right(&self, _: Option<&AnyObject>) { self.execute(Action::PairRight); }
         #[unsafe(method(workspaceWork:))]
         fn workspace_work(&self, _: Option<&AnyObject>) {
+            self.inhibit_teams();
             if self.ivars().picking.get() || !self.window_permission() {
                 return;
             }
@@ -229,6 +235,7 @@ define_class!(
         }
         #[unsafe(method(workspaceMeeting:))]
         fn workspace_meeting(&self, _: Option<&AnyObject>) {
+            self.inhibit_teams();
             if self.ivars().picking.get() || !self.window_permission() {
                 return;
             }
@@ -243,6 +250,7 @@ define_class!(
         }
         #[unsafe(method(workspaceRestore:))]
         fn workspace_restore(&self, _: Option<&AnyObject>) {
+            self.inhibit_teams();
             if self.ivars().picking.get() || !self.window_permission() {
                 return;
             }
@@ -391,6 +399,7 @@ define_class!(
         }
         #[unsafe(method(testWindow:))]
         fn test_window(&self, _: Option<&AnyObject>) {
+            self.inhibit_teams();
             if self.ivars().picking.get() { return; }
             self.cancel_open();
             self.cancel_gesture_dispatch();
@@ -527,14 +536,27 @@ define_class!(
         }
         #[unsafe(method(suspendInputs:))]
         fn suspend_inputs(&self, _: Option<&AnyObject>) {
+            self.ivars().teams_suspended.set(true);
+            self.inhibit_teams();
             self.pause_gestures(sel!(pauseGestures:), None);
             self.stop_mouse_scroll();
         }
         #[unsafe(method(resumeMouseScroll:))]
         fn resume_mouse_scroll(&self, _: Option<&AnyObject>) {
+            self.ivars().teams_suspended.set(false);
             if self.ivars().mouse_scroll_requested.get() && !self.mouse_scroll_active() {
                 if let Err(e) = self.start_mouse_scroll() { self.status(&e); }
             }
+        }
+        #[unsafe(method(teamsPoll:))]
+        fn teams_poll(&self, _:Option<&AnyObject>) {
+            if !self.ivars().teams_settings.borrow().enabled { return; }
+            if !self.ivars().teams_suspended.get() {
+                let busy=self.ivars().picking.get() || self.ivars().pending.borrow().is_some() || self.ivars().pending_maximize.borrow().is_some() || self.ivars().layout_snapshot.borrow().is_some() || self.ivars().studio_recorder.borrow().is_some();
+                let now=self.ivars().teams_started.get_or_init(Instant::now).elapsed().as_millis().min(u64::MAX as u128) as u64;
+                self.ivars().teams_automation.borrow_mut().poll(self.mtm(),&self.ivars().teams_settings.borrow(),now,busy);
+            }
+            self.schedule_capture(sel!(teamsPoll:),1.0);
         }
         #[unsafe(method(workspaceContextChanged:))]
         fn context_changed(&self, _: &NSNotification) { self.remember_context(); }
@@ -609,6 +631,15 @@ impl Controller {
         }
     }
     fn execute_command(&self, command: Command) {
+        if !matches!(
+            command,
+            Command::Application {
+                maximize: false,
+                ..
+            } | Command::ChatGpt
+        ) {
+            self.inhibit_teams();
+        }
         match command {
             Command::Application {
                 bundle, maximize, ..
@@ -990,6 +1021,9 @@ impl Controller {
         };
     }
     fn execute(&self, action: Action) {
+        if !matches!(action, Action::Teams | Action::ChatGpt) {
+            self.inhibit_teams();
+        }
         if self.ivars().picking.get() {
             return;
         }
@@ -1219,6 +1253,7 @@ impl Controller {
         draft: Option<&studio::bridge::EditParams>,
     ) -> Result<serde_json::Value, studio::bridge::Failure> {
         use studio::bridge::Failure;
+        self.inhibit_teams();
         if !windows::trusted() {
             return Err(Failure::new(
                 "PERMISSION_REQUIRED",
@@ -1324,6 +1359,7 @@ impl Controller {
     }
     fn studio_restore(&self) -> Result<serde_json::Value, studio::bridge::Failure> {
         use studio::bridge::Failure;
+        self.inhibit_teams();
         if !windows::trusted() {
             return Err(Failure::new(
                 "PERMISSION_REQUIRED",
@@ -1354,6 +1390,7 @@ impl Controller {
         result
     }
     fn personal_layout(&self, save: bool, profile_id: Option<u32>, profile_name: Option<String>) {
+        self.inhibit_teams();
         if self.ivars().picking.get() || !self.window_permission() {
             return;
         }
@@ -1809,7 +1846,7 @@ pub fn studio_command(
         let summary=||json!({"rustRssBytes":diagnostics::rss_bytes(),"rustPeakRssBytes":diagnostics::peak_rss_bytes(),"webkitMemoryBytes":null,"performance":diagnostics::performance_report(),"gesturesActive":c.gestures_active(),"mouseFilterRequested":c.ivars().mouse_scroll_requested.get(),"mouseFilterActive":c.mouse_scroll_active(),"shortcutsEnabled":c.ivars().personal_enabled.get(),"shortcutConflict":c.ivars().hotkeys.borrow().as_ref().is_some_and(|h|h.failed),"shortcutsReceived":c.ivars().hotkey_count.get(),"restoreAvailable":c.ivars().layout_snapshot.borrow().is_some(),"lastResult":c.ivars().status.borrow().clone()});
         match command {
             C::System(op)=>c.studio_system(op),
-            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.previewApply","spaces.restore","permissions.get","diagnostics.summary","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
+            C::Bootstrap=>Ok(json!({"version":env!("CARGO_PKG_VERSION"),"permissions":permissions,"spaces":spaces()?,"diagnostics":summary(),"shortcuts":c.studio_shortcuts_data(),"gestures":c.studio_gestures_data(),"mouse":c.studio_mouse_data(),"meetings":c.studio_meetings_data(),"capabilities":["spaces.list","spaces.create","spaces.update","spaces.duplicate","spaces.delete","spaces.selectApp","spaces.capture","spaces.recoverBackup","spaces.apply","spaces.previewApply","spaces.restore","permissions.get","diagnostics.summary","shortcuts.list","shortcuts.upsert","shortcuts.delete","shortcuts.reset","shortcuts.reload","shortcuts.setGlobalEnabled","shortcuts.reregister","shortcuts.startCapture","shortcuts.cancelCapture","shortcuts.test","gestures.get","gestures.setEnabled","gestures.startLocalProbe","gestures.startGlobalProbe","gestures.stop","mouse.get","mouse.setHorizontalBlocked","meetings.get","meetings.save","meetings.identify","meetings.probe","meetings.pause","permissions.requestAccessibility","permissions.requestInputMonitoring","permissions.openSettings","diagnostics.copy","diagnostics.export"]})),
             C::List=>spaces(), C::Permissions=>Ok(permissions), C::Diagnostics=>Ok(summary()),
             C::Capture(input)=>c.studio_capture_layout(&input.expected_revision),
             C::Recover(input)=>{
@@ -1982,6 +2019,19 @@ pub fn run() {
             alert(mtm, "Une autre copie de Kigi est déjà lancée", &format!("Quittez l'autre copie depuis son menu Kigi avant de lancer cette version. Cette nouvelle copie va se fermer sans modifier l'autre.\n\n{copies}"));
             return;
         }
+        if std::env::args().any(|a| a == "--teams-check") {
+            let manual = std::env::args().any(|a| a == "--manual-override");
+            match windows::teams_fixture_check(mtm, manual) {
+                Ok(()) => {
+                    println!("KIGI_TEAMS_CHECK {{\"manual\":{manual},\"success\":true}}");
+                    std::process::exit(0);
+                }
+                Err(message) => {
+                    eprintln!("KIGI_TEAMS_CHECK failed: {message}");
+                    std::process::exit(1);
+                }
+            }
+        }
         let activation_check = std::env::args().any(|a| a == "--activation-check");
         let controller = Controller::new(mtm);
         controller.ivars().activation_check.set(activation_check);
@@ -2084,6 +2134,7 @@ pub fn run() {
         status_item.setMenu(Some(&menu));
         CONTROLLER.with(|c| c.replace(Some(controller.clone())));
         let defaults = NSUserDefaults::standardUserDefaults();
+        controller.load_teams_settings();
         controller.ivars().personal_enabled.set(
             defaults
                 .objectForKey(ns_string!("personalHotkeysEnabled"))

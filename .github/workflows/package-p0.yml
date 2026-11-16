@@ -43,6 +43,8 @@ jobs:
           fi
       - name: Build universal application
         run: bash scripts/bundle.sh universal
+      - name: Verify Teams-profile placement, closure and manual override with owned windows
+        run: python3 scripts/check-teams.py
       - name: Verify same-bundle relaunch and collect startup RSS
         run: |
           python3 - <<'PYTHON'
@@ -107,7 +109,8 @@ jobs:
           with zipfile.ZipFile(path) as archive:
               assert archive.testzip() is None
               plist = plistlib.loads(archive.read(next(n for n in archive.namelist() if n.endswith("Contents/Info.plist"))))
-              assert plist["CFBundleShortVersionString"] == "0.8.1" and plist["CFBundleVersion"] == "28"
+              expected = plistlib.loads(Path("resources/Info.plist").read_bytes())
+              assert all(plist[key] == expected[key] for key in ["CFBundleShortVersionString", "CFBundleVersion"])
               binary = archive.read(next(n for n in archive.namelist() if n.endswith("Contents/MacOS/kigi-windows")))
               assert struct.unpack(">II", binary[:8]) == (0xcafebabe, 2)
               assert {struct.unpack(">I", binary[8+i*20:12+i*20])[0] for i in range(2)} == {0x1000007, 0x100000c}

@@ -44,7 +44,17 @@
     assert(refused, 'Unconfirmed delete accepted');
     const removed = await Kigi.request('shortcuts.delete', {expectedRevision: added.revision, index: count, confirmed: true}); assert(removed.settings.entries.length === count, 'Delete failed');
     q('#refresh').click(); await wait(() => !q('#refresh').disabled);
-    for (const route of ['gestures', 'mouse', 'permissions', 'diagnostics']) { q(`#navigation [data-route="${route}"]`).click(); await wait(() => q('#crumb').textContent === ({gestures: 'Trackpad', mouse: 'Souris', permissions: 'Autorisations', diagnostics: 'Diagnostics'})[route]); }
+    for (const route of ['gestures', 'mouse', 'meetings', 'permissions', 'diagnostics']) { q(`#navigation [data-route="${route}"]`).click(); await wait(() => q('#crumb').textContent === ({gestures: 'Trackpad', mouse: 'Souris', meetings: 'Réunions Teams', permissions: 'Autorisations', diagnostics: 'Diagnostics'})[route]); }
+    q('#navigation [data-route="meetings"]').click(); await wait(() => !!q('#save-meetings'));
+    const meetingSettings = await Kigi.request('meetings.get');
+    assert(!meetingSettings.settings.enabled && meetingSettings.settings.chatPercent === 50 && meetingSettings.settings.meetingRight && meetingSettings.settings.maximizeAfter, 'Teams defaults');
+    const percent = q('#meeting-chat-percent'); percent.value = '60'; percent.dispatchEvent(new Event('input', {bubbles:true}));
+    assert(!q('#save-meetings').disabled, 'Teams draft not dirty');
+    q('#save-meetings').click(); await wait(() => !q('#refresh').disabled && q('#save-meetings').disabled);
+    const savedMeeting = await Kigi.request('meetings.get'); assert(savedMeeting.settings.chatPercent === 60 && !savedMeeting.settings.enabled, 'Teams UI persistence');
+    let stale = false; try { await Kigi.request('meetings.save', {expectedRevision: meetingSettings.revision, settings: savedMeeting.settings}); } catch (error) { stale = error.code === 'STALE_REVISION'; } assert(stale, 'Teams stale revision accepted');
+    let uncalibrated = false; try { await Kigi.request('meetings.save', {expectedRevision: savedMeeting.revision, settings: {...savedMeeting.settings, enabled:true}}); } catch (_) { uncalibrated = true; } assert(uncalibrated, 'Uncalibrated Teams rule enabled');
+    await Kigi.request('meetings.save', {expectedRevision: savedMeeting.revision, settings: meetingSettings.settings});
     const gestures = await Kigi.request('gestures.get'); assert(!gestures.active && gestures.counts == null, 'Fake gesture receipt at rest');
     const stopped = await Kigi.request('gestures.setEnabled', {enabled: false}); assert(!stopped.active, 'Gesture stop failed');
     const mouse = await Kigi.request('mouse.setHorizontalBlocked', {enabled: false}); assert(!mouse.active && !mouse.requested, 'Mouse disable failed');

@@ -47,8 +47,29 @@ pub struct Settings {
     pub section: Section,
 }
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MeetingsSave {
+    pub expected_revision: String,
+    pub settings: crate::meetings::Settings,
+}
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeetingsProbe {
+    pub settings: crate::meetings::Settings,
+}
+#[derive(Debug, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum SystemCommand {
+    #[serde(rename = "meetings.get")]
+    Meetings(Empty),
+    #[serde(rename = "meetings.save")]
+    MeetingsSave(MeetingsSave),
+    #[serde(rename = "meetings.identify")]
+    MeetingsIdentify(Empty),
+    #[serde(rename = "meetings.probe")]
+    MeetingsProbe(MeetingsProbe),
+    #[serde(rename = "meetings.pause")]
+    MeetingsPause(Empty),
     #[serde(rename = "shortcuts.list")]
     ShortcutsList(Empty),
     #[serde(rename = "shortcuts.upsert")]

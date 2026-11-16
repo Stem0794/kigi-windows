@@ -2,15 +2,17 @@
 // Configuration views only. All registration, permissions, reports and input stay native.
 window.KigiSystem = (() => {
   let ctx, draft = null, original = null, selected = 0, revision = null, filter = '', scope = 'all', timer, until = 0, generation = 0, captureRequired = false;
+  let meetingDraft = null, meetingOriginal = null, meetingRevision = null, meetingTimer;
+  const meetingDirty = () => meetingDraft != null && JSON.stringify(meetingDraft) !== JSON.stringify(meetingOriginal);
   const copy = value => value == null ? null : JSON.parse(JSON.stringify(value));
-  const isDirty = () => draft != null && (original == null || JSON.stringify(draft) !== JSON.stringify(original));
+  const isDirty = () => meetingDirty() || (draft != null && (original == null || JSON.stringify(draft) !== JSON.stringify(original)));
   const settings = () => ctx.data().shortcuts;
   const combo = binding => [[4096, '⌃'], [2048, '⌥'], [512, '⇧'], [256, '⌘']].filter(([flag]) => binding.modifiers & flag).map(([, glyph]) => glyph).join('') + binding.key_label;
   const actionName = command => ({Application: command.name || 'Application', ChatGpt: 'ChatGPT dans Chrome', Maximize: 'Maximiser', PairLeft: 'Gauche puis droite', PairRight: 'Droite puis gauche', Test: 'Test / restauration de fenêtre', Work: 'Travail — Chrome 100 %', Meeting: 'Réunion — Teams / Chrome', Restore: 'Restaurer la disposition', ApplyProfile: ctx?.data().spaces.profiles.find(p => p.id === command.profile_id)?.name ? `Espace : ${ctx.data().spaces.profiles.find(p => p.id === command.profile_id).name}` : `Espace supprimé #${command.profile_id}`})[command.kind];
   const rowState = binding => !binding.enabled ? 'Désactivé' : !settings().globalEnabled ? 'Globaux désactivés' : settings().capturing ? 'Capture en cours' : settings().registrationFailed || !settings().registered ? 'À vérifier' : 'Enregistré';
-  const dirtyChanged = () => { ctx.syncDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = captureRequired || !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
-  function reset() { captureRequired = false; draft = null; original = null; revision = null; ctx?.syncDirty(); }
-  function stopPolling() { clearTimeout(timer); until = 0; generation++; }
+  const dirtyChanged = () => { ctx.syncDirty(); const meetingSave = document.getElementById('save-meetings'); if (meetingSave) meetingSave.disabled = !meetingDirty() || ctx.busy(); const meetingMark = document.getElementById('meeting-dirty'); if (meetingMark) meetingMark.hidden = !meetingDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = captureRequired || !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
+  function reset() { meetingDraft = null; meetingOriginal = null; meetingRevision = null; captureRequired = false; draft = null; original = null; revision = null; ctx?.syncDirty(); }
+  function stopPolling() { clearTimeout(meetingTimer); meetingTimer = null; clearTimeout(timer); until = 0; generation++; }
   async function refreshData() { const data = await Kigi.request('app.bootstrap'); ctx.replace(data); }
   async function operation(method, params = {}, message = '') {
     if (ctx.busy()) return null;
@@ -25,6 +27,7 @@ window.KigiSystem = (() => {
     finally { ctx.setBusy(false); ctx.render(); }
   }
   async function save() {
+    if (meetingDirty()) return saveMeetings();
     if (!draft || ctx.busy()) return false;
     if (captureRequired) { ctx.fail(new Error('Choisissez une combinaison avant d’enregistrer.')); return false; }
     if (draft.command.kind === 'ApplyProfile' && !draft.command.profile_id) { ctx.fail(new Error('Choisissez un espace enregistré.')); return false; }
@@ -39,7 +42,7 @@ window.KigiSystem = (() => {
   }
   async function guard() {
     if (!isDirty()) return true;
-    const choice = await ctx.choose('Raccourci non enregistré', 'Enregistrer les modifications avant de continuer ?', [['save', 'Enregistrer', 'primary'], ['discard', 'Ignorer'], ['cancel', 'Annuler']]);
+    const choice = await ctx.choose(meetingDirty() ? 'Réglages Teams non enregistrés' : 'Raccourci non enregistré', 'Enregistrer les modifications avant de continuer ?', [['save', 'Enregistrer', 'primary'], ['discard', 'Ignorer'], ['cancel', 'Annuler']]);
     if (choice === 'save') return save();
     if (choice === 'discard') { reset(); await ctx.syncDirty(); return true; }
     return false;
@@ -132,6 +135,68 @@ window.KigiSystem = (() => {
     content.append(ctx.el('pre', 'report', data.report || 'Aucune mesure de filtre dans cette session.'));
     inspector.replaceChildren(ctx.el('h2', '', 'ÉTAT DU FILTRE')); ctx.field(inspector, 'Préférence enregistrée', data.requested ? 'Activée' : 'Désactivée'); ctx.field(inspector, 'Filtre actif', data.active ? 'Oui' : 'Non'); ctx.field(inspector, 'Accessibilité', data.accessibility ? 'Accordée' : 'Refusée / indisponible');
   }
+  async function saveMeetings() {
+    if (!meetingDraft || ctx.busy()) return false;
+    ctx.setBusy(true);
+    try {
+      await Kigi.request('meetings.save', {expectedRevision: meetingRevision, settings: meetingDraft});
+      meetingDraft = null; meetingOriginal = null; meetingRevision = null;
+      await ctx.syncDirty(); await refreshData(); ctx.clearError();
+      ctx.status('Réglages Teams enregistrés. L’état indique si cette réunion peut être automatisée.'); return true;
+    } catch (error) { ctx.fail(error); return false; }
+    finally { ctx.setBusy(false); ctx.render(); }
+  }
+  function pollMeetings() {
+    if (meetingTimer || ctx.route() !== 'meetings') return;
+    const token = generation;
+    meetingTimer = setTimeout(async () => {
+      meetingTimer = null;
+      if (token !== generation || ctx.route() !== 'meetings') return;
+      if (!ctx.busy()) {
+        try {
+          const data = await Kigi.request('meetings.get');
+          if (token !== generation || ctx.route() !== 'meetings') return;
+          ctx.data().meetings = data;
+          const status = document.getElementById('meeting-live-status');
+          if (status) status.textContent = data.status || 'Configurez et activez le profil pour commencer.';
+        } catch (_) { /* The explicit refresh action reports persistent bridge errors. */ }
+      }
+      pollMeetings();
+    }, 2000);
+  }
+  function meetings(content, inspector) {
+    const data = ctx.data().meetings;
+    if (!meetingDraft) { meetingDraft = copy(data.settings); meetingOriginal = copy(data.settings); meetingRevision = data.revision; }
+    ctx.heading(content, 'Réunions Teams', 'Le chat et la réunion doivent exister dans deux fenêtres Teams séparées.');
+    content.append(ctx.el('p', '', 'À la première configuration, ouvrez une réunion puis identifiez les fenêtres. Les repères de titre restent locaux. Gardez une partie stable du titre, commune à vos réunions, en retirant les noms de personnes ou de réunions. Aucun titre n’est ajouté aux journaux.'));
+    tools(content, [['Identifier les fenêtres…', async () => {
+      const result = await operation('meetings.identify');
+      if (result && !result.canceled) { meetingDraft.chatTitle = result.chatTitle; meetingDraft.meetingTitle = result.meetingTitle; ctx.render(); dirtyChanged(); ctx.status('Fenêtres identifiées. Vérifiez les parties stables des titres puis testez la détection.'); }
+    }]]);
+    for (const [key, label] of [['chatTitle', 'Le titre du chat contient'], ['meetingTitle', 'Le titre de la réunion contient']]) {
+      const input = ctx.el('input'); input.id = `meeting-${key}`; input.type = 'text'; input.maxLength = 256; input.autocomplete = 'off'; input.spellcheck = false; input.value = meetingDraft[key]; input.addEventListener('input', () => { meetingDraft[key] = input.value; dirtyChanged(); }); field(content, label, input);
+    }
+    const side = ctx.el('select'); side.id = 'meeting-side';
+    for (const [value, label] of [['right', 'Réunion à droite, chat à gauche'], ['left', 'Réunion à gauche, chat à droite']]) { const option = ctx.el('option', '', label); option.value = value; side.append(option); }
+    side.value = meetingDraft.meetingRight ? 'right' : 'left'; side.addEventListener('change', () => { meetingDraft.meetingRight = side.value === 'right'; dirtyChanged(); }); field(content, 'Disposition pendant la réunion', side);
+    const percent = ctx.el('input'); percent.id = 'meeting-chat-percent'; percent.type = 'number'; percent.min = 20; percent.max = 80; percent.step = 1; percent.value = meetingDraft.chatPercent;
+    percent.addEventListener('input', () => { meetingDraft.chatPercent = Number(percent.value); dirtyChanged(); }); field(content, 'Largeur du chat (%) · la réunion prend le reste', percent);
+    const end = ctx.el('select'); end.id = 'meeting-end';
+    for (const [value, label] of [['maximize', 'Remettre le chat à 100 %'], ['restore', 'Rétablir la position initiale du chat']]) { const option = ctx.el('option', '', label); option.value = value; end.append(option); }
+    end.value = meetingDraft.maximizeAfter ? 'maximize' : 'restore'; end.addEventListener('change', () => { meetingDraft.maximizeAfter = end.value === 'maximize'; dirtyChanged(); }); field(content, 'À la fermeture de la réunion', end);
+    check(content, 'Activer la disposition automatique', meetingDraft.enabled, enabled => { meetingDraft.enabled = enabled; dirtyChanged(); }, 'meetings-enabled');
+    content.append(ctx.el('p', 'muted', 'L’activation vérifie les repères sur les deux fenêtres actuellement ouvertes. Après un déplacement manuel ou une autre disposition appliquée par Kigi, cette réunion reste sous votre contrôle. Une fenêtre minimisée ou en plein écran suspend l’automatisme.'));
+    const actions = ctx.el('div', 'system-actions'); const save = ctx.button('Enregistrer', saveMeetings, 'primary'); save.id = 'save-meetings';
+    const mark = ctx.el('span', 'tag', 'Modifié'); mark.id = 'meeting-dirty';
+    actions.append(save, ctx.button('Tester la détection', async () => { const result = await operation('meetings.probe', {settings: meetingDraft}); if (result) ctx.status(result.message); }, 'subtle'), mark); content.append(actions);
+    inspector.replaceChildren(ctx.el('h2', '', 'AUTOMATISME TEAMS'));
+    ctx.field(inspector, 'Préférence enregistrée', data.settings.enabled ? 'Activée' : 'Désactivée');
+    ctx.field(inspector, 'Version Teams détectée', data.teamsVersion || 'Teams non lancé / version indisponible');
+    const liveStatus = ctx.el('p', 'report', data.status || 'Configurez et activez le profil pour commencer.'); liveStatus.id = 'meeting-live-status'; inspector.append(liveStatus);
+    tools(inspector, [['Actualiser l’état', () => operation('meetings.get')], ['Suspendre cette réunion', () => operation('meetings.pause', {}, 'Automatisme suspendu jusqu’à la fermeture de la réunion')]]);
+    inspector.append(ctx.el('p', 'muted', 'Une seconde de stabilité avant le placement. Deux secondes après la disparition confirmée de la fenêtre réunion. Aucun déplacement si la détection est ambiguë. À valider sur votre version de Teams.'));
+    dirtyChanged(); pollMeetings();
+  }
   function permissions(content, inspector) {
     const data = ctx.data().permissions; ctx.heading(content, 'Autorisations', 'L’affichage ne déclenche aucune demande. Tant que l’accès manque, chaque clic sur Demander l’accès rouvre Réglages Système.');
     for (const [key, label, section, method, detail] of [['accessibility', 'Accessibilité', 'Accessibility', 'permissions.requestAccessibility', 'Déplacement et activation des fenêtres.'], ['inputMonitoring', 'Surveillance de l’entrée', 'InputMonitoring', 'permissions.requestInputMonitoring', 'Réception des événements du trackpad, sans garantie de contacts.'], ['chromeAutomation', 'Automatisation Chrome', 'Automation', null, 'Dernier appel ChatGPT de cette session ; une révocation ultérieure n’est connue qu’au prochain essai.']]) {
@@ -155,5 +220,5 @@ window.KigiSystem = (() => {
     }
     ctx.render(); dirtyChanged();
   }
-  return {openForProfile, combination: combo, setup(context) { ctx = context; }, dirty: isDirty, guard, reset, stopPolling, render(route, content, inspector) { ({shortcuts, gestures, mouse, permissions, diagnostics})[route](content, inspector); }};
+  return {openForProfile, combination: combo, setup(context) { ctx = context; }, dirty: isDirty, guard, reset, stopPolling, render(route, content, inspector) { ({shortcuts, gestures, mouse, meetings, permissions, diagnostics})[route](content, inspector); }};
 })();
