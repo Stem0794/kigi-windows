@@ -671,3 +671,248 @@ vérifiés ; 806 932 octets, SHA256
 `8d8f47c8cb706cf15c2a3444ab7ded8794e85d7da03dfa0ddceb2c06cb69f0f7`.
 Le retour sur macOS 26.7.2 ARM64 et le trackpad physique reste à confirmer.
 Ces essais utilisent des fenêtres contrôlées, pas Teams/Chrome sur le Mac pilote.
+
+## 2026-11-13 — Studio 0.6.0, phases 0–1 (branche dédiée)
+
+L’utilisateur confirme la correction 0.5.4 et demande l’étape suivante. Reprise
+sur main67f0305 ; contrat Studio utilisateur lu, phases0–1 sur ui/studio-shell.
+Audit/branchements/baseline dans docs/studio-contract.md.
+
+Fenêtre redimensionnable locale WKWebView, trois colonnes, Accueil/Espaces/
+Autorisations/Diagnostics en lecture seule. Catalogue réel relu sans écriture,
+profils libres conservés, fallback signalé, mémoire des auxiliaires inconnue.
+Bridge JSON v1 borné/strict/allowlist, document principal local et vue vérifiés,
+navigation externe bloquée, assets packagés, CSP sans réseau et valeurs texte.
+Aucune modification de la reconnaissance des gestes ou de l’activation0.5.4.
+
+Ancienne UI par défaut ; ouvrir Studio via menu ou --studio-ui, --native-ui force
+le secours. Aucun cutover ou merge main dans cette tranche. L’édition des ratios
+et la sauvegarde restent la phase2. CI étendue d’un seul essai WKWebView réel,
+avec rendu DOM, réouverture et config inchangée ; régressions natives conservées.
+Format, typage ARM et22 tests hôte passent. Validation macOS/package en attente.
+
+Validation finale Studio : [run43416541318, tentative2](https://github.com/Stem0794/kigi-windows/actions/runs/43416541318)
+réussi au commit1b479adb :25 tests natifs, deux démarrages, bridge/WKWebView/DOM,
+fermeture-réouverture, config inchangée et quatre régressions de focus. La première
+tentative avait échoué sur un timeout AX250ms à la maximisation plein écran,
+après succès Studio ; relance unique sans modification du moteur ou du contrôle.
+RSS Rust37 343 232→42 467 328 octets (auxiliaires WebKit non mesurés).
+Bundle0.6.0/build20 universel, assets locaux, CRC/plist/architectures vérifiés ;
+868101 octets, SHA256e39663841f736ec10bde6ab0776dc7aeaeeac20b30494611e687848753411d74.
+[PR#1](https://github.com/Stem0794/kigi-windows/pull/1), main conservée en0.5.4.
+Essais physiques Studio/VoiceOver encore requis ; phase2 non commencée.
+
+## 2026-11-13 — Studio0.6.1, phase2 éditeur (branche séparée)
+
+Suite demandée pendant l’essai0.6.0. Base ui/studio-shell66ab813, nouvelle branche
+ui/studio-editor. Édition1–99 %, presets, drag/clavier, champs liés, choix d’apps natif,
+CRUD et sauvegarde Rust. Brouillons non persistés, garde des changements à la navigation,
+fermeture et ⌘Q. Profils libres et snapshots conservés ; aucun Apply/Restore Studio.
+Révision opaque + comparaison des octets, backup/écriture atomique et refus d’un primaire
+invalide. Le détail de la fenêtre de concurrence résiduelle est dans studio-contract.
+Typage ARM, syntaxeJS et24 tests hôte passent. Essais natifs/package en attente.
+
+Validation finale : [run43423531866](https://github.com/Stem0794/kigi-windows/actions/runs/43423531866)
+réussi au commitff974dbee08e80619cbb4c4399d50e53b3a593d5 :27 tests macOS15.7.9
+Intel, deux relances, quatre cas de focus, bridge/DOM/cycle Studio. Le vrai parcours
+éditeur a converti explicitement un ancien profil libre schema1, sauvegardé35/65,
+vérifié Annuler, clavier, navigation avec brouillon, copie/suppression, conflit
+conservant le brouillon et annulation de fermeture. Seconde instance :35/65 relu
+sur schema2. Tout ce parcours écrit uniquement un catalogue temporaire isolé.
+
+Premier run43422385218 : moteur/Studio passent, parcours éditeur en timeout UI.
+Correction de la réactivation des boutons après Actualiser et conservation des
+valeurs numériques invalides lors d’un rerender ; contrôle de non-régression ajouté.
+Le nouveau run passe sans changement de limite AX ni assouplissement d’assertion.
+ClippyARM termine avec les seuls5 needless_borrow préexistants dans mouse_scroll.rs.
+
+Package0.6.1/build21 universel Intel/ARM :918563 octets, SHA256
+c2f2b65245aff0bbd9d6d1afd0ee16dbd308608347e1deb0b0f96effb89ba6c3.
+CRC/plist/architectures et ressources embarquées vérifiés. [PR#2](https://github.com/Stem0794/kigi-windows/pull/2)
+empilée sur PR#1 ; main et branche0.6.0 conservées. Choix d’app natif, drag physique,
+VoiceOver et coûts WebKit auxiliaires restent à essayer/mesurer sur le Mac pilote.
+
+## 2026-11-13 — Studio0.6.2, phase3 Apply/Restore
+
+Suite demandée pendant l’essai0.6.1. Branche ui/studio-apply basée sur badfb77,
+sans modifier les branches d’essai précédentes. Appliquer/Restaurer Studio reliés
+au moteur partagé : préflights, sélection des fenêtres, snapshot unique, ratios
+normalisés et comparaison AX réelle. Séparation placement/activation, retour typé
+applied/partial/restored/canceled et géométrie inconnue nullable. Les retours partiels
+restent restaurables ; déplacement manuel ignoré suivant la politique existante.
+Révision du profil recontrôlée après le sélecteur. Aucune réécriture des proportions
+constatées dans le catalogue. Pas de parité système ni de test brouillon previewApply.
+24 tests hôte, typage ARM, syntaxeJS passent ; Clippy ne signale que les5 anciens
+needless_borrow dans mouse_scroll.rs. Validation native/package en attente.
+
+Validation finale : [run43434129431](https://github.com/Stem0794/kigi-windows/actions/runs/43434129431)
+réussi au commit1b91c64afeb579e3885c83201fd749b529f21a51, macOS15.7.9 Intel.
+27 tests natifs, deux relances, quatre cas de focus, chargement/cycle Studio et
+parcours éditeur/relecture passent. Nouveau parcours réel Apply/Restore :
+35/65 demandé et constaté, puis demande35/65 contrainte à55/65 signalée partial.
+Dans les deux cas, observation CGWindowBounds indépendante pendant le placement,
+valeurs affichées conformes à cette mesure, retour initial restauré/vérifié.
+Annuler l’application sale ne crée pas de retour ; Enregistrer et appliquer garde
+35/65 ; un second placement refuse d’écraser le snapshot. Cas contraint : octets
+config inchangés après apply/restore. Le premier run43433626306 avait déjà passé
+le même code moteur ; le second renforce l’observation indépendante des dimensions.
+Aucune limite AX ou assertion de résultat n’a été assouplie.
+
+Package0.6.2/build22 universel :939445 octets, SHA256
+99954359d32a62a3c3942734ccdf9ea4d97072d9d190ea8ed9d94e000d64a183.
+[PR#3](https://github.com/Stem0794/kigi-windows/pull/3) empilée sur PR#2 ; branches
+0.6.0/0.6.1 et main conservées. Chrome/Teams réels, choix ambigu/annulation du
+sélecteur, déplacements manuels et changements d’écran restent à essayer sur le
+Mac pilote ; politique de non-écrasement manuel couverte par les tests purs existants.
+
+## 2026-11-13 — Studio0.6.3, phase4 réglages système
+
+Suite demandée après0.6.2, nouvelle branche ui/studio-system. Pages Raccourcis,
+Trackpad, Souris, Autorisations et Diagnostics reliées aux services natifs.
+CRUD des raccourcis + revision/octets exacts, rollback Carbon/writer, global/reload/
+reregister/reset, choix d’app et test explicite. Recorder natif modal avec suspension,
+timeout15s et annulation ; aucun captureur JS. Données réelles, Chrome mesuré au dernier
+appel, bilans et copie/export backend. UI des essais bornée13s, pas de polling au repos.
+Brouillons partagés avec la garde de fermeture ; moteur/gestes10 % inchangés.
+26 tests hôte, typage ARM et syntaxeJS passent ; Clippy : les5 avertissements préexistants
+du filtre souris seulement. Cas natif Carbon/capture/pages/relaunch en attente du run.
+
+Validation finale : [run43443497259](https://github.com/Stem0794/kigi-windows/actions/runs/43443497259)
+réussi au commite78b97991b0bad8552f4fd213860f04a9a15abf3, macOS15.7.9 Intel.
+29 tests natifs, relances, focus, Studio, éditeur et Apply/Restore passent.
+Nouveau parcours : édition/sauvegarde, doublon refusé, véritable conflit Carbon
+avec réservation exclusive et rollback, Recorder focalisé avec suspension observée,
+annulation native/restitution, global off/on, ajout/suppression confirmée, cinq pages,
+rapport réel dans le presse-papiers et relecture après relance. Espaces inchangés.
+Premier run43442571310 : réservation fixture non exclusive, donc aucun conflit
+garanti. Fixture corrigée sans assouplir les assertions ni changer le moteur.
+
+Package0.6.3/build23 universel :1048517 octets, SHA256
+d7b5aea7368597f432c7f62a1f2e12cab0b8a03f998334a1dfad8de7dc66402e.
+CRC/plist/architectures et cinq ressources UI comparés au source. [PR#4](https://github.com/Stem0794/kigi-windows/pull/4)
+empilée sur PR#3 ; main conservée. Capture physique, timeout/perte de focus,
+sélecteur d’app, prompts TCC, trackpad et souris restent à essayer sur le Mac pilote.
+Ouverture AppKit par défaut maintenue jusqu’au cutover dédié.
+
+## 2026-11-13 — Retour pilote0.6.3, correctifs0.6.4
+
+Capture restait ouverte après combinaison, callback différé seulement en default
+pendant runModal. Completion/timeout maintenant planifiés dans les deux modes ;
+message UI explicite, sauvegarde toujours volontaire. Actions Work/Meeting/Restore/
+ApplyProfile ajoutées aux deux interfaces, profil par ID stable résolu au lancement.
+Trackpad : délai artificiel1s retiré, une action par contact/lever conservée et testée.
+27 tests hôte, typage ARM et syntaxeJS passent. Validation native étendue pour
+la capture réussie via événement local au Recorder, sans frappe système. En attente CI.
+
+Validation finale : [run43448237760](https://github.com/Stem0794/kigi-windows/actions/runs/43448237760)
+réussi au commite727d5a04f97bee90ca449734c2c9d9b8a484530, macOS15.7.9 Intel.
+30 tests natifs, deux relances, quatre cas de focus, Studio/éditeur et placement/
+restauration réels passent. Capture native réussie par NSEvent fixe livré uniquement
+à notre Recorder : fermeture sans Annuler et message/combinaison/brouillon UI sous2,5s ;
+réglages disque inchangés avant Enregistrer et hotkeys rétablis. Annulation/conflit
+Carbon/relecture passent encore. Les quatre nouvelles actions sont proposées.
+
+Premier run43446725088 : lecture DOM avant rendu fini (tabs0, busytrue), sans erreur
+de bootstrap. Contrôle CI corrigé pour attendre busyfalse + titre, borné80 essais,
+puis seulement lancer les parcours suivants ; assertions de résultat conservées.
+Clippy ARM : seuls5 avertissements préexistants mouse_scroll.rs.
+
+Package0.6.4/build24 :1065609 octets, SHA256
+39f6db838ce93d804203af8220ad1f3fe3fb0f59eb2cd62aadd64328cf47ffeb.
+CRC/plist/architectures et cinq assets vérifiés. [PR#5](https://github.com/Stem0794/kigi-windows/pull/5)
+empilée sur PR#4, main conservée. La capture physique, timeout/perte de focus et
+les nouveaux raccourcis d’espaces restent à essayer sur le Mac pilote. Le test pur
+valide deux gestes rapprochés après lever, pas la constance du transport matériel.
+
+## 2026-11-13 — Geste continu0.6.5
+
+Demande explicite de ne pas imposer le lever. Après un geste reconnu, le même
+contact peut rejoindre un bord et déclencher à nouveau sur10 % vers l’intérieur.
+Au même bord : recul6 % minimum pour éviter les rebonds ; aucun réarmement dans
+le centre. Contact initial au centre autorisé à rejoindre un bord. Interruption
+multitouch/clic/changement de contact reste annulée jusqu’au lever. Départ réarmé
+comptabilisé dans le bilan global. Classificateur partagé local/global, pas de
+nouvelle API de transport. Tests purs ciblés : répétition/alternance sans lever,
+pause, centre/jitter et changement de contact. Validation native en attente.
+
+Validation finale : [run43455247183](https://github.com/Stem0794/kigi-windows/actions/runs/43455247183)
+réussi au commitebbb6deb64e9c8b06c1cd42df40867e1b007b5cd, macOS15.7.9 Intel.
+32 tests natifs, relances, focus, UI/éditeur, placement/restauration et capture native
+passent. Le premier run43452385204 est resté bloqué en compilation/tests sans logs
+disponibles ; second passage déclenché par clarification d’un commentaire, sans
+changement fonctionnel ni assouplissement de tests.
+
+Package0.6.5/build25 :1066120 octets, SHA256
+f1ccbec40ec04f9015847a9e05fb9e8805aec20c59c850503fd8c7705c83abf9.
+CRC/plist/architectures Intel+ARM et cinq assets UI vérifiés. [PR#6](https://github.com/Stem0794/kigi-windows/pull/6)
+empilée sur PR#5 ; main conservée. Réarmement continu validé par classificateur
+pur partagé, pas encore physiquement sur trackpad. Les interruptions réelles de
+contact/clic/multitouch restent sécurisées par annulation jusqu’au lever.
+
+## 2026-11-13 — Studio0.7.0 par défaut
+
+Suite de la bascule autorisée. Lancement/Dock/menus ouvrent Studio, doublons de menus
+retirés ; ancien écran limité au secours Diagnostics/échec WebKit/--native-ui.
+Capture native de deux fenêtres vers brouillon, géométrie libre conservée, révision
+contrôlée avant/après sélecteurs ; Enregistrer reste explicite. Récupération de
+sauvegarde affichée en lecture seule après confirmation, comparaison exacte des
+octets du primaire et de la sauvegarde, copie durable du primaire invalide avant
+remplacement atomique ; sauvegarde intacte. Fichier primaire absent également traité.
+29 tests hôte et typage ARM passent ; protocole/récupération/conflits étendus. Parcours
+natif supplémentaire pour confirmation/annulation/recovery/conservation, et assertion
+Studio ouvert par défaut. Capture physique/choix des fenêtres restent à essayer.
+
+Validation finale : [run43461695305](https://github.com/Stem0794/kigi-windows/actions/runs/43461695305)
+réussi au commit681f2e503e685a9745d7bf9544e99f72344ded45, macOS15.7.9 Intel.
+32 tests natifs ; Studio visible par défaut sur deux lancements, focus maximisé/
+plein écran, UI/éditeur, placement/restauration et capture raccourci passent.
+Parcours recovery réel : backup en lecture seule, refus sans confirmation, Annuler
+conserve le primaire, confirmation récupère exactement les profils, backup intact et
+config.invalid-*.json contenant les octets invalides initiaux. Capture deux fenêtres
+proposée dans Studio ; choix/annulation physique restent à tester sur le Mac pilote.
+Le premier run43460728595 passait déjà ; second après correction du message de
+capture, pour qu’il reste visible après le rendu du brouillon.
+
+Package0.7.0/build26 :1079048 octets, SHA256
+53797123aaba24b264b49e4d952de3ec9f986768d077a8cdd0f8a4f03f65bff2.
+CRC/plist/architectures et cinq assets UI comparés au source. [PR#7](https://github.com/Stem0794/kigi-windows/pull/7)
+empilée sur PR#6 ; main conservée avant retour pilote. Écran classique gardé en
+secours pour cette version, retrait définitif après validation. Clippy : seuls5
+avertissements préexistants du filtre souris.
+
+## 2026-11-16 — Studio0.8.0, finalisation étapes1–3
+
+Demande explicite de poursuivre revue/fusion, retirer l’ancien écran et compléter
+les options. Suppression Preferences et callbacks/formulaires associés ; panne UI
+traitée par dialogue natif Réessayer/Copier diagnostic/Fermer, moteur conservé.
+PreviewApply réutilise le placement/snapshot/readback partagé, sans sauvegarde ;
+validation géométrique commune avec Save. Raccourcis associés accessibles depuis
+l’espace, capture obligatoire pour une nouvelle entrée désactivée, aucune combinaison
+affichée comme réelle avant capture. Tests locaux29 et typage ARM passent. Validation
+Mac renforcée via fenêtres dédiées : vrais sélecteurs capture/annulation pilotés par
+leurs boutons natifs (aucune injection système), comparaison CG indépendante, essai
+brouillon/restore sans écriture et lien de raccourci sans sauvegarde implicite.
+
+Validation finale : [run43841774087](https://github.com/Stem0794/kigi-windows/actions/runs/43841774087)
+réussi au commit9b621b7612303c5e4a4f9bac0ac6b6f37bfdf2c7, macOS15.7.9 Intel.
+32 tests natifs et tous les parcours existants passent. Nouveaux cas : premier
+sélecteur de capture annulé puis deux choix réels via boutons AppKit, géométrie
+capturée comparée aux CGWindowBounds initiaux, catalogue inchangé avant Save.
+Essai35/65 du brouillon puis Restore sans write, brouillon conservé et snapshot
+non écrasable ; Apply enregistré/restauration et contrainte55/65 restent vérifiés.
+Accès au raccourci depuis l’espace : ID stable, nouvelle combinaison non inventée,
+Save désactivé jusqu’à capture, Ignorer ne crée aucune entrée. Relecture/recovery
+et conflit Carbon/annulation/capture native restent vérifiés. Aucun événement
+clavier/clic système injecté ; interfaces de fixtures dédiées uniquement.
+
+Revue globale de la série avant intégration : bridge strict/local/typé, écritures
+protégées par octets/révision, snapshot partagé et rollback Carbon conservés ;
+correction du faux timeout8s sur capture/preview et du nettoyage des callbacks
+WebKit/notification d’erreur. Clippy : seulement5 avertissements historiques du
+filtre souris.29 tests hôte et check ARM passent également.
+
+Package0.8.0/build27 :1017561 octets, SHA256
+11c87f130f641de6b3215419c514a1ed6e2b1bb434739ba794fc2fcb5ff36622.
+[PR#8](https://github.com/Stem0794/kigi-windows/pull/8) consolide PR#1–#7 vers main,
+fusion autorisée par la demande de poursuivre les points1–3 après ces contrôles.
+Les essais physiques du M5 restent distincts des contrôles macOS Intel du runner.

@@ -20,20 +20,12 @@ pub enum Command {
     PairLeft,
     PairRight,
     Test,
-}
-impl Command {
-    pub fn label(&self) -> String {
-        match self {
-            Self::Application { name, maximize, .. } => {
-                format!("{}{}", name, if *maximize { " · maximiser" } else { "" })
-            }
-            Self::ChatGpt => "Retrouver ChatGPT dans Chrome".into(),
-            Self::Maximize => "Maximiser la fenêtre".into(),
-            Self::PairLeft => "Partager : gauche puis droite".into(),
-            Self::PairRight => "Partager : droite puis gauche".into(),
-            Self::Test => "Tester / restaurer la fenêtre".into(),
-        }
-    }
+    Work,
+    Meeting,
+    Restore,
+    ApplyProfile {
+        profile_id: u32,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -55,14 +47,6 @@ impl Binding {
         }
         text.push_str(&self.key_label);
         text
-    }
-    pub fn caption(&self) -> String {
-        format!(
-            "{}{} — {}",
-            if self.enabled { "" } else { "Désactivé · " },
-            self.combination(),
-            self.command.label()
-        )
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -130,6 +114,9 @@ impl Shortcuts {
         }
         let mut seen = std::collections::HashSet::new();
         for b in &self.entries {
+            if matches!(b.command, Command::ApplyProfile { profile_id: 0 }) {
+                return Err("Choisissez un espace enregistré.".into());
+            }
             if !valid_combination(b.key, b.modifiers)
                 || b.key_label.is_empty()
                 || b.key_label.chars().count() > 16
@@ -160,10 +147,10 @@ impl Shortcuts {
         Ok(())
     }
 }
-pub fn load(path: &Path) -> Result<Shortcuts, String> {
+pub fn read_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
     let mut f = match File::open(path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Shortcuts::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err("Impossible de lire les raccourcis.".into()),
     };
     let mut bytes = Vec::new();
@@ -174,14 +161,40 @@ pub fn load(path: &Path) -> Result<Shortcuts, String> {
     if bytes.len() > 65536 {
         return Err("Fichier de raccourcis trop volumineux ; conservé.".into());
     }
-    let settings: Shortcuts =
-        serde_json::from_slice(&bytes).map_err(|_| "Raccourcis illisibles ; fichier conservé.")?;
+    Ok(Some(bytes))
+}
+pub fn decode(bytes: Option<&[u8]>) -> Result<Shortcuts, String> {
+    let settings = match bytes {
+        Some(bytes) => serde_json::from_slice(bytes)
+            .map_err(|_| "Raccourcis illisibles ; fichier conservé.")?,
+        None => Shortcuts::default(),
+    };
     settings.validate()?;
     Ok(settings)
 }
+pub fn load(path: &Path) -> Result<Shortcuts, String> {
+    decode(read_bytes(path)?.as_deref())
+}
 pub fn save(path: &Path, settings: &Shortcuts, expected: &Shortcuts) -> Result<(), String> {
+    save_inner(path, settings, expected, None)
+}
+pub fn save_checked(
+    path: &Path,
+    settings: &Shortcuts,
+    expected: &Shortcuts,
+    source: &Option<Vec<u8>>,
+) -> Result<(), String> {
+    save_inner(path, settings, expected, Some(source))
+}
+fn save_inner(
+    path: &Path,
+    settings: &Shortcuts,
+    expected: &Shortcuts,
+    source: Option<&Option<Vec<u8>>>,
+) -> Result<(), String> {
     settings.validate()?;
-    if &load(path)? != expected {
+    let before = read_bytes(path)?;
+    if &decode(before.as_deref())? != expected || source.is_some_and(|s| s != &before) {
         return Err(
             "Les raccourcis ont changé sur disque. Rouvrez Kigi avant d’enregistrer.".into(),
         );
@@ -199,6 +212,11 @@ pub fn save(path: &Path, settings: &Shortcuts, expected: &Shortcuts) -> Result<(
         f.write_all(&bytes)
             .and_then(|_| f.sync_all())
             .map_err(|_| "Écriture des raccourcis impossible.")?;
+        if source.is_some()
+            && read_bytes(path).map_err(|_| "Lecture des raccourcis impossible.")? != before
+        {
+            return Err("Les raccourcis ont changé sur disque. Rechargez avant d’enregistrer.");
+        }
         fs::rename(&temp, path).map_err(|_| "Enregistrement des raccourcis impossible.")
     })();
     if result.is_err() {
@@ -210,6 +228,25 @@ pub fn save(path: &Path, settings: &Shortcuts, expected: &Shortcuts) -> Result<(
 mod tests {
     use super::*;
     #[test]
+    fn workspace_commands_roundtrip_and_require_a_stable_profile_id() {
+        let mut settings = Shortcuts::default();
+        for command in [
+            Command::Work,
+            Command::Meeting,
+            Command::Restore,
+            Command::ApplyProfile { profile_id: 7 },
+        ] {
+            settings.entries[0].command = command;
+            settings.validate().unwrap();
+            assert_eq!(
+                decode(Some(&serde_json::to_vec(&settings).unwrap())).unwrap(),
+                settings
+            );
+        }
+        settings.entries[0].command = Command::ApplyProfile { profile_id: 0 };
+        assert!(settings.validate().is_err());
+    }
+    #[test]
     fn defaults_reassignment_duplicates_and_modifiers() {
         let mut s = Shortcuts::default();
         s.validate().unwrap();
@@ -219,7 +256,7 @@ mod tests {
             maximize: false,
         };
         s.validate().unwrap();
-        assert!(s.entries[1].caption().contains("Safari"));
+
         s.entries[2].key = s.entries[1].key;
         s.entries[2].modifiers = s.entries[1].modifiers;
         assert!(s.validate().is_err());

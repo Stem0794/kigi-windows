@@ -107,3 +107,79 @@ Vérifier le cas maximisé et le cas plein écran natif sur fenêtres de test
 contrôlées, sans screenshots ni événements clavier synthétiques. La fixture
 Swift est uniquement un outil de validation CI, pas une couche livrée dans
 l’app Rust. Le mode de vérification cible uniquement la fixture dédiée.
+
+## Studio autorisé — 13 novembre 2026
+
+Après confirmation de la correction 0.5.4, reprendre le plan utilisateur Studio
+sur branche UI dédiée et PR séparée. Pour cette tranche : phases 0–1, WKWebView
+locale et bridge strict en lecture seule, ancien AppKit conservé par défaut.
+Cette architecture remplace pour l’interface la restriction WebView historique
+du handover initial ; moteur, taps, hotkeys et snapshots restent Rust natifs.
+Ne pas merger main avant revue, ni anticiper CRUD/ratio/Apply/Restore ou parité.
+Références et branchements : docs/studio-contract.md.
+
+## Studio phase2 — suite autorisée
+
+Pendant l’essai de l’aperçu0.6.0, l’utilisateur demande de poursuivre. Branche
+ui/studio-editor basée sur ui/studio-shell, PR distincte, pas de merge main.
+Éditeur de proportions1–99 %, brouillon, sélection d’apps native et CRUD contrôlé
+avec révision/exact bytes. Préserver les profils libres, schémas et snapshots.
+Phase3 Apply/Restore et parité système restent pour la tranche suivante.
+
+## Studio phase3 — suite autorisée
+
+Pendant l’essai0.6.1, poursuivre Apply/Restore sur ui/studio-apply, basée sur
+ui/studio-editor. PR séparée, pas de merge main. Réutiliser sélection native,
+préflights AX et snapshot unique ; résultats structurés avec readback réel,
+partiels honnêtes, aucune réécriture du ratio demandé. Pas de previewApply ni de
+parité raccourcis/souris/gestes dans cette tranche. Essais AX avec fixtures réelles.
+
+## Studio phase4 — suite autorisée
+
+Après0.6.2, l’utilisateur demande l’étape suivante. Branche ui/studio-system,
+PR empilée séparée, pas de merge main. Porter Raccourcis, Trackpad, Souris,
+Autorisations et Diagnostics en réutilisant les services natifs. Capture dans
+le Recorder natif, timeout/annulation et restitution Carbon. Aucun keydown WebView
+pour capturer, aucune nouvelle règle de geste ou commande vers un espace.
+Garder le fallback et le défaut AppKit jusqu’au cutover dédié après essais.
+
+## Retour Studio0.6.3 — corrections0.6.4 autorisées
+
+Capture réussie bloquée jusqu’à Annuler : corriger la livraison du callback/timeout
+dans la boucle modale, fermer et afficher un retour explicite sans sauvegarde implicite.
+Compléter les actions de raccourci avec Travail, Réunion, Restaurer et espace stable.
+Utilisateur signale gestes irréguliers : retirer le délai artificiel après réussite,
+conserver bande10 %, déplacement10 %, un doigt et lever pour réarmer. Ne pas
+annoncer réparer le transport ou confirmer le matériel sans essai. Branche
+ui/studio-actions, PR distincte, main et aperçus précédents conservés.
+
+## Geste continu0.6.5 — demande explicite
+
+Lever le doigt ne doit pas être systématique. Autoriser l’enchaînement à un doigt
+par retour à un bord puis déplacement intérieur ; aucun réarmement au centre.
+Retour au même bord : recul6 % minimum pour éviter le jitter si le déclenchement
+a lieu tout près de la limite. Un contact peut commencer au centre puis rejoindre
+un bord. Les interruptions multitouch/clic/périphérique restent bloquantes jusqu’au
+lever. Mêmes seuils10 % et délai1,5s par geste, sans nouvelle API de transport.
+Branche ui/trackpad-rearm, PR séparée, aucune fusion main.
+
+## Bascule Studio0.7.0 autorisée
+
+L’utilisateur valide la recommandation : compléter capture/récupération, ouvrir
+Studio par défaut au lancement/Dock, unifier les menus. Capture de deux fenêtres
+vers brouillon via sélecteurs natifs, pas de sauvegarde implicite ; vérification
+de révision avant/après sélecteurs. Récupération backup explicite/confirmée, octets
+primaire/backup vérifiés, ancien invalide conservé. Ancien écran disponible via
+Diagnostics, erreur WebKit ou --native-ui pendant cette version ; pas de suppression
+du code ni de fusion main avant retour pilote. Branche ui/studio-default, PR dédiée.
+
+## Étapes1–3 autorisées — Studio0.8.0
+
+L’utilisateur demande de poursuivre finalisation/revue-fusion, retrait de l’ancien
+écran et options Studio. Supprimer Preferences AppKit et ses branchements ; garder
+un dialogue natif de récupération de chargement, sans réintroduire une seconde UI.
+Ajouter previewApply sans écriture via le moteur/snapshot existants et accès aux
+raccourcis depuis un espace enregistré, sans combinaison fictive ni activation
+implicite. Vérifications ciblées et parcours Mac de capture/annulation, essai/restore,
+relecture et raccourci associé. Revue de l’ensemble puis fusion sur main autorisée
+après contrôles natifs réussis. Ne pas prétendre avoir testé physiquement le Mac M5.

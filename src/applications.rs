@@ -10,6 +10,10 @@ use objc2_foundation::{
 };
 use std::sync::mpsc::{self, Receiver};
 
+thread_local! {static CHROME_AUTOMATION:std::cell::Cell<&'static str>=const{std::cell::Cell::new("unknown")};}
+pub fn chrome_automation_state() -> &'static str {
+    CHROME_AUTOMATION.with(|s| s.get())
+}
 pub const CHROME: &str = "com.google.Chrome";
 const TEAMS: [&str; 2] = ["com.microsoft.teams2", "com.microsoft.teams"];
 
@@ -123,6 +127,7 @@ pub fn open(bundle: &str) -> Result<Receiver<Result<i32, isize>>, String> {
 /// Fixed script, in-process and main-thread only. No page content/history access.
 /// Return only a structural result; never export URL lists or AppleScript error text.
 pub fn chatgpt(mtm: objc2::MainThreadMarker) -> Result<String, String> {
+    CHROME_AUTOMATION.with(|s| s.set("unknown"));
     let _ = mtm; // enforce AppKit/main-thread execution for NSAppleScript
     if NSWorkspace::sharedWorkspace()
         .URLForApplicationWithBundleIdentifier(&NSString::from_str(CHROME))
@@ -149,6 +154,7 @@ pub fn chatgpt(mtm: objc2::MainThreadMarker) -> Result<String, String> {
                 0
             }
         };
+        CHROME_AUTOMATION.with(|s| s.set(if code == -1743 { "denied" } else { "unknown" }));
         crate::diagnostics::record("chrome.chatgpt.error", format!("code={code}"));
         return Err(match code {
             -1743 => "Automatisation Chrome refusée. Autorisez Kigi Windows → Google Chrome dans Réglages Système > Confidentialité et sécurité > Automatisation.".into(),
@@ -156,6 +162,7 @@ pub fn chatgpt(mtm: objc2::MainThreadMarker) -> Result<String, String> {
             _ => format!("Impossible de retrouver ChatGPT dans Chrome (code {code}). Aucun onglet de secours ouvert."),
         });
     }
+    CHROME_AUTOMATION.with(|s| s.set("granted"));
     match result.unwrap().int32Value() {
         1 => {
             crate::diagnostics::record("chrome.chatgpt.reused", "existing_tab=true");

@@ -1,14 +1,59 @@
-# Kigi Windows — raccourcis configurables 0.5.4
+# Kigi Windows — Studio 0.8.0 (pilote)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
+
+## Studio : éditeur d’espaces
+
+Studio s’ouvre au lancement et depuis le Dock/menu **Ouvrir Kigi…**. Interface redimensionnable :
+Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations et Diagnostics avec
+données réelles. Dans Espaces :
+créer ou sélectionner un espace, choisir ses apps, glisser le séparateur ou saisir
+les proportions1–99 %, puis **Enregistrer**. Presets50/50,35/65,70/30,30/70 ;
+flèches pour ajuster au clavier. L’aperçu et la sauvegarde ne déplacent pas les fenêtres.
+Les dispositions libres restent intactes avant conversion explicite en deux colonnes.
+Duplication/suppression et dialogues de brouillon sont pris en charge. Un fichier
+modifié ailleurs bloque l’écriture : conserver le brouillon ou Actualiser.
+**Appliquer** place les deux fenêtres ouvertes, avec sélection native en cas d’ambiguïté.
+Appliquer utilise la version enregistrée ; Tester sans enregistrer utilise le brouillon. Les largeurs
+réellement constatées s’affichent ; si une app impose une taille, le placement reste
+partiel et la proportion demandée est conservée. **Restaurer** revient aux positions
+précédentes, en préservant les fenêtres déplacées manuellement ; un retour incertain
+reste disponible. Un seul retour est conservé, partagé avec les dispositions rapides du menu.
+Ouvrez les deux fenêtres avant d’appliquer ; aucune fenêtre de remplacement n’est créée.
+**Tester sans enregistrer** place le brouillon sans modifier le catalogue ;
+**Restaurer** revient aux fenêtres précédentes tout en conservant le brouillon.
+Un seul point de retour est disponible. Dans l’inspecteur d’un espace enregistré,
+**Configurer le raccourci…** ouvre son entrée ou prépare une nouvelle combinaison
+à capturer et enregistrer explicitement.
+
+Studio propose maintenant Raccourcis, Trackpad, Souris, Autorisations et Diagnostics.
+Capture des combinaisons dans une fenêtre native, édition d’app/action, activation,
+conflits et relecture ; les fichiers invalides ne sont pas écrasés. Une capture
+réussie ferme sa fenêtre et affiche la combinaison choisie, à enregistrer explicitement.
+Actions ajoutées : Travail, Réunion, Restaurer et Appliquer un espace enregistré.
+Un raccourci d’espace suit son identifiant stable après renommage ; supprimer
+l’espace laisse une référence signalée manquante, sans appliquer un autre espace. Les essais du
+trackpad affichent les vrais compteurs, sans prétendre valider le global depuis un
+test local. Les options souris distinguent préférence et filtre actif. Copie/export
+utilisent le rapport du moteur. Studio est l’unique interface. Si WebKit échoue, un dialogue natif permet de
+réessayer l’ouverture ou de copier le diagnostic ; les services de fond continuent.
+
+**Capturer deux fenêtres…** choisit deux fenêtres ouvertes et place leur disposition
+dans un brouillon, sans déplacement ni sauvegarde implicite. Cliquez sur Enregistrer.
+Si le catalogue est absent/illisible avec une sauvegarde valide, **Récupérer la sauvegarde…**
+permet de la restaurer après confirmation ; l’ancien fichier invalide est conservé.
+
+Studio s’ouvre normalement au lancement ; `--studio-ui` reste un alias compatible. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
+Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
+auxiliaires WebKit non mesurés. Les changements Studio sont regroupés pour intégration sur main après revue et validation native.
 
 ## Installer et utiliser
 
 Quitter l'ancienne copie, remplacer `Kigi Windows.app` au même emplacement,
 puis relancer. La fenêtre Kigi s’ouvre au lancement et reste accessible dans le Dock.
-Cinq onglets regroupent Espaces, Raccourcis, Gestes et souris, Autorisations et
-Diagnostics. Fermer la fenêtre conserve les fonctions de fond ; ⌘Q quitte Kigi.
+Sept pages regroupent Accueil, Espaces, Raccourcis, Trackpad, Souris, Autorisations
+et Diagnostics. Fermer la fenêtre conserve les fonctions de fond ; ⌘Q quitte Kigi.
 Le menu Kigi conserve seulement l’ouverture, les espaces et les dispositions rapides.
 Cette version utilise une
 signature ad hoc, sans Developer ID ni notarisation ; les autorisations macOS
@@ -70,7 +115,7 @@ Le geste garde sa bande de départ de 10 % et nécessite seulement un déplaceme
 vers l’intérieur d’au moins 10 % de la largeur depuis le point de départ, sans
 arrivée au centre imposée. Le déplacement doit être principalement horizontal.
 Les micro-mouvements et les déplacements surtout verticaux ne déclenchent pas
-d’action. Une action par contact et cooldown conservés.
+d’action. Retour sur un bord puis nouveau glissement intérieur pour réarmer, sans lever le doigt.
 
 ## Fiabilité P0/P1 — 0.5.2
 
@@ -181,7 +226,7 @@ Le départ peut se faire sur **toute la hauteur** : x≤0,10 à gauche ou x≥0,
 à droite. Le doigt doit avancer d’au moins 10 % de la largeur depuis son point de départ
 vers l’intérieur en ≤1,5 s, sans devoir atteindre le milieu, avec
 une dérive verticale ≤0,12 ; tolérance de recul vers l'extérieur de 0,03.
-Une action par contact, cooldown global 1 s. Deux doigts, clic/drag observé,
+Sans lever : retour sur un bord puis nouveau glissement intérieur. Un retour au même bord exige un recul d’au moins 6 % ; aucun réarmement au centre. Deux doigts, clic/drag observé,
 identité/device différent, mauvaise direction, délai ou début manquant annulent.
 Une séquence annulée doit se terminer par retrait de tous les doigts avant de
 réarmer. Une commande manuelle annule le geste encore en attente. Aucune action

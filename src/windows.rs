@@ -475,6 +475,9 @@ fn preferred_window(app: &NSRunningApplication) -> Result<Element, String> {
 pub fn raise_application_window(app: &NSRunningApplication) -> Result<(), String> {
     require_permission()?;
     let window = preferred_window(app)?;
+    focus_window(app, &window)
+}
+fn focus_window(app: &NSRunningApplication, window: &Element) -> Result<(), String> {
     window.unminimize()?;
     // A background AppKit request may be refused on recent macOS. Use the
     // public, permission-gated app attribute before raising its existing window.
@@ -729,6 +732,43 @@ pub fn arrange_pair(
 pub struct LayoutSnapshot {
     parts: [LayoutFrame; 2],
     prior_pid: Option<i32>,
+    display: Rect,
+}
+/// Geometry is confirmed by AX readback; missing measurements remain null.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutOutcome {
+    pub status: &'static str,
+    pub message: String,
+    pub requested: [Option<NormalizedRect>; 2],
+    pub actual: [Option<NormalizedRect>; 2],
+    pub restore_available: bool,
+    pub activation_confirmed: Option<bool>,
+    pub restored: usize,
+    pub ignored: usize,
+    pub pending: usize,
+}
+impl LayoutOutcome {
+    pub fn canceled(layout: &SavedLayout) -> Self {
+        Self {
+            status: "canceled",
+            message: "Placement annulé ; aucune fenêtre déplacée.".into(),
+            requested: layout.windows.each_ref().map(|w| Some(w.geometry)),
+            actual: [None, None],
+            restore_available: false,
+            activation_confirmed: None,
+            restored: 0,
+            ignored: 0,
+            pending: 0,
+        }
+    }
+    fn legacy(self) -> Result<String, String> {
+        if self.status == "partial" {
+            Err(self.message)
+        } else {
+            Ok(self.message)
+        }
+    }
 }
 struct LayoutFrame {
     window: Element,
@@ -750,9 +790,17 @@ impl Element {
 }
 impl LayoutSnapshot {
     pub fn restore(&mut self) -> Result<String, String> {
+        self.restore_detailed()?.legacy()
+    }
+    pub fn restore_detailed(&mut self) -> Result<LayoutOutcome, String> {
         require_permission()?;
         let (mut restored, mut skipped, mut pending) = (0, 0, 0);
-        for part in &mut self.parts {
+        let requested = self
+            .parts
+            .each_ref()
+            .map(|p| NormalizedRect::capture(p.before, self.display));
+        let mut actual = [None, None];
+        for (index, part) in self.parts.iter_mut().enumerate() {
             let current = match part.window.frame() {
                 Ok(frame) => frame,
                 Err(_) if part.window.confirmed_gone() => {
@@ -764,18 +812,26 @@ impl LayoutSnapshot {
                     continue;
                 }
             };
+            actual[index] = NormalizedRect::capture(current, self.display);
             match restore_decision(current, part.before, part.applied) {
                 RestoreDecision::AlreadyRestored => {}
                 RestoreDecision::UserMoved => skipped += 1,
                 RestoreDecision::Unknown => pending += 1,
                 RestoreDecision::Restore => match part.window.set_frame(part.before) {
-                    Ok(actual) if actual.approximately(part.before) => restored += 1,
-                    Ok(actual) => {
-                        part.applied = Some(actual);
-                        pending += 1;
+                    Ok(frame) => {
+                        actual[index] = NormalizedRect::capture(frame, self.display);
+                        if frame.approximately(part.before) {
+                            restored += 1;
+                        } else {
+                            part.applied = Some(frame);
+                            pending += 1;
+                        }
                     }
                     Err(_) => {
                         part.applied = part.window.frame().ok();
+                        actual[index] = part
+                            .applied
+                            .and_then(|r| NormalizedRect::capture(r, self.display));
                         pending += 1;
                     }
                 },
@@ -785,24 +841,47 @@ impl LayoutSnapshot {
             "workspace.restore.result",
             format!("restored={restored} skipped={skipped} pending={pending}"),
         );
-        if pending > 0 {
-            return Err(format!("Restauration incomplète : {pending} fenêtre(s) en erreur ou de position incertaine. Le retour est conservé ; les autres fenêtres ont été traitées."));
+        if pending == 0 {
+            if let Some(app) = self
+                .prior_pid
+                .and_then(NSRunningApplication::runningApplicationWithProcessIdentifier)
+            {
+                let _ = crate::applications::activate(&app);
+            }
         }
-        if let Some(app) = self
-            .prior_pid
-            .and_then(NSRunningApplication::runningApplicationWithProcessIdentifier)
-        {
-            let _ = crate::applications::activate(&app);
-        }
-        Ok(format!("Disposition précédente : {restored} fenêtre(s) restaurée(s), {skipped} ignorée(s) car fermée(s) ou déplacée(s) manuellement."))
+        Ok(LayoutOutcome {
+            status: if pending > 0 { "partial" } else { "restored" },
+            message: if pending > 0 {
+                format!("Restauration partielle : {restored} fenêtre(s) restaurée(s), {skipped} ignorée(s), {pending} en erreur ou incertaine(s). Le retour reste disponible.")
+            } else {
+                format!("{restored} fenêtre(s) restaurée(s), {skipped} ignorée(s) car fermée(s) ou déplacée(s) manuellement.")
+            },
+            requested,
+            actual,
+            restore_available: pending > 0,
+            activation_confirmed: None,
+            restored,
+            ignored: skipped,
+            pending,
+        })
     }
 }
 fn apply_workspace(
+    display: Rect,
     choices: [Choice; 2],
     targets: [Rect; 2],
     snapshot: &mut Option<LayoutSnapshot>,
     prior_pid: Option<i32>,
 ) -> Result<String, String> {
+    apply_workspace_detailed(display, choices, targets, snapshot, prior_pid)?.legacy()
+}
+fn apply_workspace_detailed(
+    display: Rect,
+    choices: [Choice; 2],
+    targets: [Rect; 2],
+    snapshot: &mut Option<LayoutSnapshot>,
+    prior_pid: Option<i32>,
+) -> Result<LayoutOutcome, String> {
     require_permission()?;
     if snapshot.is_some() {
         return Err("Une disposition temporaire est déjà active. Restaurez-la ou choisissez Travail avant d'en appliquer une autre.".into());
@@ -832,6 +911,7 @@ fn apply_workspace(
             },
         ],
         prior_pid,
+        display,
     });
     let mut complete = true;
     for (part, target) in snapshot.as_mut().unwrap().parts.iter_mut().zip(targets) {
@@ -846,20 +926,57 @@ fn apply_workspace(
             }
         }
     }
+    let requested = targets.map(|r| NormalizedRect::capture(r, display));
+    // Confirm both after the writes; a second window can cause layout adjustment.
+    let frames = snapshot
+        .as_ref()
+        .unwrap()
+        .parts
+        .each_ref()
+        .map(|p| p.window.frame().ok());
+    complete &= frames
+        .iter()
+        .zip(targets)
+        .all(|(actual, target)| actual.is_some_and(|r| r.approximately(target)));
     diagnostics::record(
         "workspace.apply",
         format!("geometry_ok={complete} snapshot=true"),
     );
-    if !complete {
-        return Err(
-            "Placement incomplet. Le retour est conservé : utilisez Restaurer la disposition."
-                .into(),
-        );
-    }
-    crate::applications::activate(&focus)?;
-    snapshot.as_ref().unwrap().parts[1].window.raise()?;
-    Ok("Disposition appliquée aux deux fenêtres.".into())
+    let actual = frames.map(|r| r.and_then(|r| NormalizedRect::capture(r, display)));
+    let activation = if complete {
+        let requested = crate::applications::request_activation(&focus).is_ok();
+        let raised = focus_window(&focus, &snapshot.as_ref().unwrap().parts[1].window).is_ok();
+        Some(
+            requested
+                && raised
+                && focus.isActive()
+                && NSWorkspace::sharedWorkspace()
+                    .frontmostApplication()
+                    .is_some_and(|a| a.processIdentifier() == focus.processIdentifier()),
+        )
+    } else {
+        None
+    };
+    Ok(LayoutOutcome {
+        status: if complete { "applied" } else { "partial" },
+        message: if !complete {
+            "Placement partiel : une fenêtre impose ses dimensions ou ne répond pas. Le retour est conservé ; utilisez Restaurer.".into()
+        } else if activation == Some(true) {
+            "Positions des deux fenêtres confirmées.".into()
+        } else {
+            "Positions des deux fenêtres confirmées ; activation au premier plan non confirmée."
+                .into()
+        },
+        requested,
+        actual,
+        restore_available: true,
+        activation_confirmed: activation,
+        restored: 0,
+        ignored: 0,
+        pending: 0,
+    })
 }
+
 pub fn meeting_browser(
     mtm: MainThreadMarker,
     snapshot: &mut Option<LayoutSnapshot>,
@@ -872,6 +989,7 @@ pub fn meeting_browser(
     let chrome = preferred_window(&chrome_app)?;
     let display = visible_frame(mtm, chrome.frame()?)?;
     apply_workspace(
+        display,
         [
             Choice {
                 label: String::new(),
@@ -937,6 +1055,27 @@ pub fn apply_saved_layout(
 ) -> Result<String, String> {
     layout.validate()?;
     apply_workspace(
+        display,
+        choices,
+        layout
+            .windows
+            .each_ref()
+            .map(|w| w.geometry.on_display(display)),
+        snapshot,
+        prior_pid,
+    )
+}
+
+pub fn apply_saved_layout_detailed(
+    layout: &SavedLayout,
+    display: Rect,
+    choices: [Choice; 2],
+    snapshot: &mut Option<LayoutSnapshot>,
+    prior_pid: Option<i32>,
+) -> Result<LayoutOutcome, String> {
+    layout.validate()?;
+    apply_workspace_detailed(
+        display,
         choices,
         layout
             .windows
