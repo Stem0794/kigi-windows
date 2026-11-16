@@ -154,7 +154,7 @@ window.KigiSystem = (() => {
     content.append(ctx.el('p','','⌘⇧Tab parcourt dans l’autre sens. La bascule conserve une liste pendant l’enchaînement et regroupe les applications récemment activées. Désactiver cette option rend immédiatement ⌘Tab à macOS.'));
     content.append(ctx.el('p','','Pour les onglets, les actions disponibles transmettent Ctrl+Tab ou Ctrl+⇧Tab à l’application active. Chrome les prend en charge ; les autres applications peuvent leur donner un autre comportement. Choisissez les combinaisons dans Raccourcis.'));
     runtimeSaveButton(content);
-    inspector.replaceChildren(ctx.el('h2','','NAVIGATION'));ctx.field(inspector,'Remplacement ⌘Tab',ctx.data().runtime.switcherActive?'Actif':ctx.data().runtime.settings.windowSwitcher?(ctx.data().shortcuts.globalEnabled?'Demandé · vérifier Accessibilité':'Suspendu · raccourcis globaux désactivés'):'Désactivé');
+    inspector.replaceChildren(ctx.el('h2','','NAVIGATION'));ctx.field(inspector,'Remplacement ⌘Tab',ctx.data().runtime.switcherActive?'Actif':ctx.data().runtime.settings.windowSwitcher?(ctx.data().shortcuts.globalEnabled?'Demandé · vérifier Accessibilité et conflits ⌘Tab':'Suspendu · raccourcis globaux désactivés'):'Désactivé');
   }
   function gestures(content, inspector) {
     const data=ctx.data().gestures,draft=runtimeSettings();ctx.heading(content,'Gestes du trackpad','Un doigt depuis un bord vers l’intérieur, sur toute la hauteur.');

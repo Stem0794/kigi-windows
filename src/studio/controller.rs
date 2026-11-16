@@ -205,6 +205,10 @@ impl Controller {
         source: Option<&Option<Vec<u8>>>,
     ) -> Result<(), String> {
         settings.validate()?;
+        if self.ivars().runtime_settings.borrow().window_switcher && settings.reserves_window_tab()
+        {
+            return Err("⌘Tab et ⌘⇧Tab sont gérés dans Général. Désactivez ce remplacement avant de les utiliser comme raccourcis.".into());
+        }
         self.ivars().shortcut_queue.take();
         self.cancel_open();
         self.cancel_shortcut_capture();
@@ -234,6 +238,7 @@ impl Controller {
         }
         self.ivars().shortcuts.replace(settings);
         self.ivars().hotkeys.replace(Some(keys));
+        self.sync_window_shortcut();
         diagnostics::record("shortcuts.save.complete", "success=true");
 
         Ok(())
@@ -454,12 +459,10 @@ impl Controller {
             S::Mouse(_) => Ok(self.studio_mouse_data()),
             S::Capture(_) => self.studio_capture_shortcut(),
             S::Upsert(input) => {
-                if input.binding.enabled
-                    && input.binding.key == 48
-                    && input.binding.modifiers == 256
+                if input.binding.reserves_window_tab()
                     && self.ivars().runtime_settings.borrow().window_switcher
                 {
-                    return Err(Failure::invalid("⌘Tab est géré dans Général. Désactivez ce remplacement avant de l’utiliser comme raccourci."));
+                    return Err(Failure::invalid("⌘Tab et ⌘⇧Tab sont gérés dans Général. Désactivez ce remplacement avant de l’utiliser comme raccourci."));
                 }
                 let source = self.studio_shortcut_source(&input.expected_revision)?;
                 let mut settings = self.ivars().shortcuts.borrow().clone();

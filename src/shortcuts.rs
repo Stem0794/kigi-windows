@@ -43,6 +43,9 @@ pub struct Binding {
     pub command: Command,
 }
 impl Binding {
+    pub fn reserves_window_tab(&self) -> bool {
+        self.enabled && self.key == 48 && matches!(self.modifiers, 256 | 768)
+    }
     pub fn combination(&self) -> String {
         let mut text = String::new();
         for (flag, glyph) in [(1 << 12, "⌃"), (1 << 11, "⌥"), (1 << 9, "⇧"), (1 << 8, "⌘")]
@@ -115,6 +118,9 @@ pub fn valid_combination(key: u32, modifiers: u32) -> bool {
         && modifiers & ((1 << 8) | (1 << 11) | (1 << 12)) != 0
 }
 impl Shortcuts {
+    pub fn reserves_window_tab(&self) -> bool {
+        self.entries.iter().any(Binding::reserves_window_tab)
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.schema_version != 1 || self.entries.len() > 32 {
             return Err("Configuration des raccourcis non prise en charge (32 maximum).".into());
@@ -255,6 +261,15 @@ mod tests {
     }
     #[test]
     fn defaults_reassignment_duplicates_and_modifiers() {
+        let mut probe = Shortcuts::default();
+        for modifiers in [256, 768, 2048, 2304] {
+            probe.entries[0].key = 48;
+            probe.entries[0].modifiers = modifiers;
+            assert_eq!(probe.reserves_window_tab(), matches!(modifiers, 256 | 768));
+        }
+        probe.entries[0].modifiers = 768;
+        probe.entries[0].enabled = false;
+        assert!(!probe.reserves_window_tab());
         let mut s = Shortcuts::default();
         s.validate().unwrap();
         s.entries[1].command = Command::Application {

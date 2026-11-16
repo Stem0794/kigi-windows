@@ -117,7 +117,9 @@ impl Controller {
     }
     pub(super) fn sync_window_shortcut(&self) {
         self.ivars().window_resume_attempts.set(0);
-        if self.ivars().personal_enabled.get() {
+        if self.ivars().personal_enabled.get()
+            && !self.ivars().shortcuts.borrow().reserves_window_tab()
+        {
             self.resume_personal_inputs();
         } else {
             self.ivars().window_hotkey.borrow_mut().take();
@@ -138,6 +140,7 @@ impl Controller {
             return;
         }
         if self.ivars().personal_enabled.get()
+            && !self.ivars().shortcuts.borrow().reserves_window_tab()
             && self.ivars().runtime_settings.borrow().window_switcher
             && self
                 .ivars()
@@ -272,16 +275,8 @@ impl Controller {
                 "Réglages modifiés. Actualisez avant de réessayer.",
             ));
         }
-        if input.settings.window_switcher
-            && self
-                .ivars()
-                .shortcuts
-                .borrow()
-                .entries
-                .iter()
-                .any(|b| b.enabled && b.key == 48 && b.modifiers == 256)
-        {
-            return Err(Failure::invalid("Un raccourci utilise déjà ⌘Tab. Modifiez-le avant d’activer la bascule entre fenêtres."));
+        if input.settings.window_switcher && self.ivars().shortcuts.borrow().reserves_window_tab() {
+            return Err(Failure::invalid("Un raccourci utilise déjà ⌘Tab ou ⌘⇧Tab. Modifiez-le avant d’activer la bascule entre fenêtres."));
         }
         if input.settings.gestures_enabled {
             for target in [&input.settings.left, &input.settings.right] {
