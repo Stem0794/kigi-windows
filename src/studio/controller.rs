@@ -69,19 +69,35 @@ impl Controller {
     fn open_permission_settings(
         &self,
         section: &crate::studio::system::Section,
-    ) -> Result<(), Failure> {
+    ) -> Result<bool, Failure> {
         let workspace = NSWorkspace::sharedWorkspace();
-        let url = workspace
-            .URLForApplicationWithBundleIdentifier(ns_string!("com.apple.systempreferences"))
-            .ok_or_else(|| Failure::invalid("Réglages Système introuvable."))?;
-        if !workspace.openURL(&url) {
-            return Err(Failure::invalid("Ouverture de Réglages Système refusée."));
+        // Settings routing is best effort: URL acceptance is not proof of the visible pane.
+        let targeted =
+            objc2_foundation::NSURL::URLWithString(&NSString::from_str(section.settings_url()))
+                .is_some_and(|url| workspace.openURL(&url));
+        if !targeted {
+            let url = workspace
+                .URLForApplicationWithBundleIdentifier(ns_string!("com.apple.systempreferences"))
+                .ok_or_else(|| Failure::invalid("Réglages Système introuvable."))?;
+            if !workspace.openURL(&url) {
+                return Err(Failure::invalid("Ouverture de Réglages Système refusée."));
+            }
         }
         diagnostics::record(
             "permissions.settings.request",
-            format!("section={section:?}"),
+            format!("section={section:?} targeted={targeted}"),
         );
-        Ok(())
+        Ok(targeted)
+    }
+    fn permission_settings_message(
+        section: &crate::studio::system::Section,
+        targeted: bool,
+    ) -> String {
+        if targeted {
+            format!("Ouverture de {} demandée. Activez Kigi puis actualisez. Si macOS affiche une autre page, sélectionnez cette rubrique dans Confidentialité et sécurité.", section.label())
+        } else {
+            format!("Réglages Système ouvert. Dans Confidentialité et sécurité, sélectionnez {} et activez Kigi, puis actualisez.", section.label())
+        }
     }
 
     pub(super) fn studio_capture_layout(&self, revision: &str) -> Result<Value, Failure> {
@@ -612,11 +628,15 @@ impl Controller {
                 }
                 let trusted = windows::trusted();
                 let settings_requested = action.open_settings && !trusted;
-                if settings_requested {
-                    self.open_permission_settings(&crate::studio::system::Section::Accessibility)?;
-                }
+                let section = crate::studio::system::Section::Accessibility;
+                let targeted = settings_requested && self.open_permission_settings(&section)?;
+                let message = if trusted {
+                    "Accessibilité accordée à cette copie.".into()
+                } else {
+                    Self::permission_settings_message(&section, targeted)
+                };
                 Ok(
-                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"accessibility":trusted,"message":if trusted{"Accessibilité accordée à cette copie."}else{"Ouverture de Réglages Système demandée. Dans Confidentialité et sécurité, activez Kigi dans Accessibilité, puis actualisez."}}),
+                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"settingsTargeted":targeted,"accessibility":trusted,"message":message}),
                 )
             }
             S::Input(_) => {
@@ -630,19 +650,21 @@ impl Controller {
                 }
                 let trusted = Tap::input_trusted();
                 let settings_requested = action.open_settings && !trusted;
-                if settings_requested {
-                    self.open_permission_settings(
-                        &crate::studio::system::Section::InputMonitoring,
-                    )?;
-                }
+                let section = crate::studio::system::Section::InputMonitoring;
+                let targeted = settings_requested && self.open_permission_settings(&section)?;
+                let message = if trusted {
+                    "Surveillance de l’entrée accordée à cette copie.".into()
+                } else {
+                    Self::permission_settings_message(&section, targeted)
+                };
                 Ok(
-                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"inputAccess":trusted,"message":if trusted{"Surveillance de l’entrée accordée à cette copie."}else{"Ouverture de Réglages Système demandée. Dans Confidentialité et sécurité, activez Kigi dans Surveillance de l’entrée, puis actualisez."}}),
+                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"settingsTargeted":targeted,"inputAccess":trusted,"message":message}),
                 )
             }
             S::OpenSettings(input) => {
-                self.open_permission_settings(&input.section)?;
+                let targeted = self.open_permission_settings(&input.section)?;
                 Ok(
-                    json!({"requested":true,"settingsRequested":true,"message":"Ouverture demandée. Sélectionnez la rubrique dans Confidentialité et sécurité."}),
+                    json!({"requested":true,"settingsRequested":true,"settingsTargeted":targeted,"message":Self::permission_settings_message(&input.section,targeted)}),
                 )
             }
             S::Copy(_) => {

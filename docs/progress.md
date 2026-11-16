@@ -973,3 +973,17 @@ correctif de maintenance ; source validé inchangé par la mise à jour document
   Cette mise à jour de suivi ne modifie aucun fichier livré.
 - Validation réelle Teams/M5 et repères stables du pilote restent nécessaires.
   Détails et limites : docs/teams-automation.md.
+
+## 2026-11-16 —0.9.1, accès direct aux rubriques d’autorisation
+
+Le bouton d’accès à l’entrée demandait seulement l’ouverture de Réglages Système.
+Il cible maintenant Confidentialité et sécurité / Surveillance de l’entrée avec
+le lien fixe Privacy_ListenEvent. Accessibilité et Automatisation utilisent leurs
+rubriques dédiées ; la commande typée ne permet aucune URL libre. Repli sur
+l’application Réglages si NSWorkspace refuse le lien, messages adaptés, demandes
+natives uniques par session et clics répétés conservés. Aucun changement TCC.
+Le routage est celui de macOS : un openURL accepté ne certifie pas la page visible.
+
+Référence de comportement Sequoia :
+https://developer.apple.com/forums/thread/828052 (retour de développeur, pas un
+contrat de stabilité Apple pour les ancres). Tests et paquet à consigner après CI.
