@@ -26,7 +26,11 @@ def stop(process):
         try: process.wait(timeout=4)
         except subprocess.TimeoutExpired:
             process.kill(); process.wait()
-with tempfile.TemporaryDirectory(prefix='kigi-teams-') as directory:
+# Launch Services does not retain discoverable app registrations in NSTemporaryDirectory.
+# Install only owned fixtures under this runner's Applications and remove them afterward.
+fixture_directory = Path.home() / 'Applications'
+fixture_directory.mkdir(exist_ok=True)
+with tempfile.TemporaryDirectory(prefix='Kigi-CI-', dir=fixture_directory) as directory:
     root = Path(directory)
     fixture = root / 'fixture'
     subprocess.run(['swiftc', 'scripts/focus-fixture.swift', '-o', str(fixture)], check=True)

@@ -9,6 +9,18 @@ if let index = CommandLine.arguments.firstIndex(of: "--register") {
     for path in CommandLine.arguments.dropFirst(index + 1) {
         let status = LSRegisterURL(URL(fileURLWithPath: path) as CFURL, true)
         if status != noErr { exit(1) }
+        guard let bundle = Bundle(url: URL(fileURLWithPath: path))?.bundleIdentifier else { exit(1) }
+        let expected = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        let deadline = Date().addingTimeInterval(3)
+        var found = false
+        repeat {
+            if let registered = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle),
+               registered.standardizedFileURL.resolvingSymlinksInPath() == expected {
+                found = true; break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        if !found { fputs("Fixture registration is not discoverable\n", stderr); exit(1) }
     }
     exit(0)
 }
