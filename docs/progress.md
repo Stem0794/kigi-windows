@@ -892,3 +892,27 @@ affichée comme réelle avant capture. Tests locaux29 et typage ARM passent. Val
 Mac renforcée via fenêtres dédiées : vrais sélecteurs capture/annulation pilotés par
 leurs boutons natifs (aucune injection système), comparaison CG indépendante, essai
 brouillon/restore sans écriture et lien de raccourci sans sauvegarde implicite.
+
+Validation finale : [run43841774087](https://github.com/Stem0794/kigi-windows/actions/runs/43841774087)
+réussi au commit9b621b7612303c5e4a4f9bac0ac6b6f37bfdf2c7, macOS15.7.9 Intel.
+32 tests natifs et tous les parcours existants passent. Nouveaux cas : premier
+sélecteur de capture annulé puis deux choix réels via boutons AppKit, géométrie
+capturée comparée aux CGWindowBounds initiaux, catalogue inchangé avant Save.
+Essai35/65 du brouillon puis Restore sans write, brouillon conservé et snapshot
+non écrasable ; Apply enregistré/restauration et contrainte55/65 restent vérifiés.
+Accès au raccourci depuis l’espace : ID stable, nouvelle combinaison non inventée,
+Save désactivé jusqu’à capture, Ignorer ne crée aucune entrée. Relecture/recovery
+et conflit Carbon/annulation/capture native restent vérifiés. Aucun événement
+clavier/clic système injecté ; interfaces de fixtures dédiées uniquement.
+
+Revue globale de la série avant intégration : bridge strict/local/typé, écritures
+protégées par octets/révision, snapshot partagé et rollback Carbon conservés ;
+correction du faux timeout8s sur capture/preview et du nettoyage des callbacks
+WebKit/notification d’erreur. Clippy : seulement5 avertissements historiques du
+filtre souris.29 tests hôte et check ARM passent également.
+
+Package0.8.0/build27 :1017561 octets, SHA256
+11c87f130f641de6b3215419c514a1ed6e2b1bb434739ba794fc2fcb5ff36622.
+[PR#8](https://github.com/Stem0794/kigi-windows/pull/8) consolide PR#1–#7 vers main,
+fusion autorisée par la demande de poursuivre les points1–3 après ces contrôles.
+Les essais physiques du M5 restent distincts des contrôles macOS Intel du runner.

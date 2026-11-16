@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.8.0 (aperçu)
+# Kigi Windows — Studio 0.8.0 (pilote)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -15,11 +15,11 @@ Les dispositions libres restent intactes avant conversion explicite en deux colo
 Duplication/suppression et dialogues de brouillon sont pris en charge. Un fichier
 modifié ailleurs bloque l’écriture : conserver le brouillon ou Actualiser.
 **Appliquer** place les deux fenêtres ouvertes, avec sélection native en cas d’ambiguïté.
-Un brouillon modifié doit être enregistré explicitement avant placement. Les largeurs
+Appliquer utilise la version enregistrée ; Tester sans enregistrer utilise le brouillon. Les largeurs
 réellement constatées s’affichent ; si une app impose une taille, le placement reste
 partiel et la proportion demandée est conservée. **Restaurer** revient aux positions
 précédentes, en préservant les fenêtres déplacées manuellement ; un retour incertain
-reste disponible. Un seul retour est conservé, partagé avec les dispositions classiques.
+reste disponible. Un seul retour est conservé, partagé avec les dispositions rapides du menu.
 Ouvrez les deux fenêtres avant d’appliquer ; aucune fenêtre de remplacement n’est créée.
 **Tester sans enregistrer** place le brouillon sans modifier le catalogue ;
 **Restaurer** revient aux fenêtres précédentes tout en conservant le brouillon.
@@ -46,7 +46,7 @@ permet de la restaurer après confirmation ; l’ancien fichier invalide est con
 
 Studio s’ouvre normalement au lancement ; `--studio-ui` reste un alias compatible. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
 Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
-auxiliaires WebKit non mesurés. Aperçu livré sur branche UI, avant fusion.
+auxiliaires WebKit non mesurés. Les changements Studio sont regroupés pour intégration sur main après revue et validation native.
 
 ## Installer et utiliser
 
