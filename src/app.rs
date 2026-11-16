@@ -2023,7 +2023,8 @@ pub fn run() {
             let manual = std::env::args().any(|a| a == "--manual-override");
             match windows::teams_fixture_check(mtm, manual) {
                 Ok(()) => {
-                    println!("KIGI_TEAMS_CHECK {{\"manual\":{manual},\"success\":true}}");
+                    let minimum = std::env::args().any(|a| a == "--meeting-minimum");
+                    println!("KIGI_TEAMS_CHECK {{\"manual\":{manual},\"minimum\":{minimum},\"success\":true}}");
                     std::process::exit(0);
                 }
                 Err(message) => {

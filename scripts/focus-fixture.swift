@@ -54,6 +54,7 @@ class Fixture: NSObject, NSApplicationDelegate {
             window.title = "Kigi chat fixture"
             let meeting = NSWindow(contentRect: NSRect(x: 200, y: 140, width: 650, height: 450), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
             meeting.title = "Kigi meeting fixture"
+            if CommandLine.arguments.contains("--meeting-minimum") { meeting.contentMinSize = NSSize(width: screen.width * 0.60, height: 200) }
             meeting.isReleasedWhenClosed = false
             meeting.makeKeyAndOrderFront(nil)
             meetingWindow = meeting
