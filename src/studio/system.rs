@@ -83,6 +83,14 @@ pub struct MeetingsProbe {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum SystemCommand {
+    #[serde(rename = "runtime.setLoginEnabled")]
+    Login(Enabled),
+    #[serde(rename = "runtime.get")]
+    Runtime(Empty),
+    #[serde(rename = "runtime.save")]
+    RuntimeSave(RuntimeSave),
+    #[serde(rename = "meetings.apply")]
+    MeetingsApply(Empty),
     #[serde(rename = "meetings.get")]
     Meetings(Empty),
     #[serde(rename = "meetings.save")]
@@ -137,4 +145,11 @@ pub enum SystemCommand {
     Copy(Empty),
     #[serde(rename = "diagnostics.export")]
     Export(Empty),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeSave {
+    pub expected_revision: String,
+    pub settings: crate::runtime_settings::Settings,
 }

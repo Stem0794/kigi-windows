@@ -279,7 +279,7 @@ impl Studio {
             include_str!("../../scripts/studio-recovery-check.js")
         } else if std::env::var_os("KIGI_TEST_STUDIO_SYSTEM").is_some() {
             if std::env::var_os("KIGI_TEST_STUDIO_READBACK").is_some() {
-                "Kigi.request('shortcuts.list').then(s=>{window.__kigiEditorCheck={success:s.settings.entries[0].command.kind==='Maximize'&&s.settings.entries.length===7,readback:true}}).catch(e=>{window.__kigiEditorCheck={success:false,message:e.message}});void 0;"
+                "Promise.all([Kigi.request('shortcuts.list'),Kigi.request('runtime.get')]).then(([s,r])=>{window.__kigiEditorCheck={success:s.settings.entries[0].command.kind==='Maximize'&&s.settings.entries.length===12&&r.settings.travelPercent===13,readback:true}}).catch(e=>{window.__kigiEditorCheck={success:false,message:e.message}});void 0;"
             } else {
                 include_str!("../../scripts/studio-system-check.js")
             }

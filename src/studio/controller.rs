@@ -5,7 +5,9 @@ use serde_json::{json, Value};
 
 impl Controller {
     pub(super) fn inhibit_teams(&self) {
-        if self.ivars().teams_settings.borrow().enabled {
+        if self.ivars().teams_settings.borrow().enabled
+            || self.ivars().teams_automation.borrow().tracking()
+        {
             self.ivars().teams_automation.borrow_mut().inhibit();
         }
     }
@@ -203,6 +205,10 @@ impl Controller {
         source: Option<&Option<Vec<u8>>>,
     ) -> Result<(), String> {
         settings.validate()?;
+        if self.ivars().runtime_settings.borrow().window_switcher && settings.reserves_window_tab()
+        {
+            return Err("⌘Tab et ⌘⇧Tab sont gérés dans Général. Désactivez ce remplacement avant de les utiliser comme raccourcis.".into());
+        }
         self.ivars().shortcut_queue.take();
         self.cancel_open();
         self.cancel_shortcut_capture();
@@ -232,6 +238,7 @@ impl Controller {
         }
         self.ivars().shortcuts.replace(settings);
         self.ivars().hotkeys.replace(Some(keys));
+        self.sync_window_shortcut();
         diagnostics::record("shortcuts.save.complete", "success=true");
 
         Ok(())
@@ -383,6 +390,19 @@ impl Controller {
             return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
         }
         match op {
+            S::Login(input) => {
+                let path = crate::login_item::path().map_err(Failure::invalid)?;
+                let exe = std::env::current_exe()
+                    .map_err(|_| Failure::invalid("Chemin d’application indisponible."))?;
+                crate::login_item::set(&path, &exe, input.enabled).map_err(Failure::invalid)?;
+                Ok(self.studio_runtime_data())
+            }
+            S::Runtime(_) => Ok(self.studio_runtime_data()),
+            S::RuntimeSave(input) => self.studio_save_runtime(input),
+            S::MeetingsApply(_) => {
+                self.apply_teams_now();
+                Ok(json!({"message":self.ivars().status.borrow().clone()}))
+            }
             S::Meetings(_) => Ok(self.studio_meetings_data()),
             S::MeetingsIdentify(_) => self.identify_teams(),
             S::MeetingsProbe(input) => {
@@ -439,6 +459,11 @@ impl Controller {
             S::Mouse(_) => Ok(self.studio_mouse_data()),
             S::Capture(_) => self.studio_capture_shortcut(),
             S::Upsert(input) => {
+                if input.binding.reserves_window_tab()
+                    && self.ivars().runtime_settings.borrow().window_switcher
+                {
+                    return Err(Failure::invalid("⌘Tab et ⌘⇧Tab sont gérés dans Général. Désactivez ce remplacement avant de l’utiliser comme raccourci."));
+                }
                 let source = self.studio_shortcut_source(&input.expected_revision)?;
                 let mut settings = self.ivars().shortcuts.borrow().clone();
                 let index = input.index.unwrap_or(settings.entries.len());
@@ -527,6 +552,7 @@ impl Controller {
                 }
                 self.ivars().personal_enabled.set(input.enabled);
                 self.ivars().hotkeys.replace(Some(keys));
+                self.sync_window_shortcut();
                 if !std::env::args().any(|a| a == "--studio-system-check") {
                     NSUserDefaults::standardUserDefaults()
                         .setBool_forKey(input.enabled, ns_string!("personalHotkeysEnabled"));
@@ -567,25 +593,11 @@ impl Controller {
                 )
             }
             S::GesturesEnable(input) => {
-                if !input.enabled {
-                    self.stop_tap();
-                } else if !self.gestures_active() {
-                    if !windows::trusted() {
-                        return Err(Failure::new(
-                            "PERMISSION_REQUIRED",
-                            "Autorisez Accessibilité avant les gestes.",
-                        ));
-                    }
-                    self.stop_tap();
-                    let tap =
-                        Tap::start_actions().map_err(|e| Failure::new("INPUT_UNAVAILABLE", e))?;
-                    self.ivars().tap.replace(Some(tap));
-                    self.begin_trackpad_poll();
-                }
+                self.set_gestures_requested(input.enabled, true);
                 Ok(self.studio_gestures_data())
             }
             S::StopGestures(_) => {
-                self.stop_tap();
+                self.set_gestures_requested(false, false);
                 Ok(self.studio_gestures_data())
             }
             S::LocalProbe(_) => {
@@ -594,7 +606,8 @@ impl Controller {
             }
             S::GlobalProbe(_) => {
                 self.stop_tap();
-                let tap = Tap::start().map_err(|e| Failure::new("INPUT_UNAVAILABLE", e))?;
+                let tap = Tap::probe(&self.ivars().runtime_settings.borrow())
+                    .map_err(|e| Failure::new("INPUT_UNAVAILABLE", e))?;
                 self.ivars().tap.replace(Some(tap));
                 self.begin_trackpad_poll();
                 Ok(self.studio_gestures_data())

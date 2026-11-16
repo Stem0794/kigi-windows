@@ -15,15 +15,21 @@ mod gestures;
 #[cfg(target_os = "macos")]
 mod hotkey;
 #[cfg(any(target_os = "macos", test))]
+mod login_item;
+#[cfg(any(target_os = "macos", test))]
 mod meetings;
 #[cfg(any(target_os = "macos", test))]
 mod mouse_scroll;
+#[cfg(any(target_os = "macos", test))]
+mod runtime_settings;
 #[cfg(target_os = "macos")]
 mod shortcut_recorder;
 #[cfg(any(target_os = "macos", test))]
 mod shortcuts;
 #[cfg(target_os = "macos")]
 mod trackpad;
+#[cfg(target_os = "macos")]
+mod window_hotkey;
 #[cfg(target_os = "macos")]
 mod windows;
 

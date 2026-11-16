@@ -35,6 +35,7 @@ extern "C" {
 }
 #[derive(Default)]
 struct Stats {
+    limits: (u8, u8, u32),
     events: u64,
     with_touches: u64,
     samples: u64,
@@ -58,11 +59,8 @@ pub struct Tap {
     stats: Box<Stats>,
 }
 impl Tap {
-    pub fn start() -> Result<Self, String> {
-        Self::start_mode(false)
-    }
-    pub fn start_actions() -> Result<Self, String> {
-        Self::start_mode(true)
+    pub fn probe(settings: &crate::runtime_settings::Settings) -> Result<Self, String> {
+        Self::start_mode(false, Some(settings), true)
     }
     pub fn active_actions(&self) -> bool {
         self.stats.actions && !self.stats.disabled
@@ -76,17 +74,33 @@ impl Tap {
     pub fn input_trusted() -> bool {
         unsafe { CGPreflightListenEventAccess() }
     }
-    fn start_mode(actions: bool) -> Result<Self, String> {
+    pub fn configured(
+        settings: &crate::runtime_settings::Settings,
+        prompt: bool,
+    ) -> Result<Self, String> {
+        Self::start_mode(true, Some(settings), prompt)
+    }
+    fn start_mode(
+        actions: bool,
+        settings: Option<&crate::runtime_settings::Settings>,
+        prompt: bool,
+    ) -> Result<Self, String> {
         unsafe {
             // Separate, explicit opt-in from Accessibility. Available since 10.15.
             let trusted = CGPreflightListenEventAccess();
             diagnostics::record("permission.input.check", format!("trusted={trusted}"));
-            if !trusted && !CGRequestListenEventAccess() {
+            if !trusted && (!prompt || !CGRequestListenEventAccess()) {
                 return Err("Surveillance de l'entrée non autorisée. Autorisez-la pour l’écoute du trackpad, puis relancez Kigi. Cela ne garantit pas l'accès aux contacts.".into());
             }
             let mut stats = Box::new(Stats {
+                limits: settings
+                    .map(|s| (s.edge_percent, s.travel_percent, s.duration_ms))
+                    .unwrap_or((10, 10, 1500)),
                 started: Some(Instant::now()),
                 actions,
+                edges: settings
+                    .map(|s| EdgeProbe::configured(s.edge_percent, s.travel_percent, s.duration_ms))
+                    .unwrap_or_default(),
                 ..Default::default()
             });
             // Gesture=29 is NSEventTypeGesture in public AppKit headers, NOT
@@ -152,8 +166,8 @@ impl Tap {
         )
     }
     pub fn report(&self) -> String {
-        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : 10 % par bord, glissement intérieur ≥10 % de largeur, durée 1,5 s. Retour au bord pour réarmer sans lever le doigt (recul ≥6 % au même bord). Aucune coordonnée ni identité conservée dans ce bilan.",
-            self.stats.events,self.stats.with_touches,self.stats.samples,self.stats.began,self.stats.moved,self.stats.edge_starts,self.stats.left,self.stats.right,self.stats.conversion_failed,self.stats.wrong_type,self.stats.disabled,self.stats.actions,self.evidence().diagnosis())
+        format!("Essai global : events={} with_contacts={} one_finger_samples={} began={} moved={} edge_starts={} left={} right={} conversion_failed={} wrong_type={} interrupted={} actions={}.\n{}\nDépart : {} % par bord, glissement intérieur ≥{} % de largeur, durée {} ms. Retour au bord pour réarmer sans lever le doigt (recul ≥6 % au même bord). Aucune coordonnée ni identité conservée dans ce bilan.",
+            self.stats.events,self.stats.with_touches,self.stats.samples,self.stats.began,self.stats.moved,self.stats.edge_starts,self.stats.left,self.stats.right,self.stats.conversion_failed,self.stats.wrong_type,self.stats.disabled,self.stats.actions,self.evidence().diagnosis(),self.stats.limits.0,self.stats.limits.1,self.stats.limits.2)
     }
 }
 impl Drop for Tap {
@@ -246,7 +260,9 @@ unsafe extern "C" fn callback(
         stats.samples += 1;
         if phase == NSTouchPhase::Began {
             stats.began += 1;
-            if (0.0..=0.10).contains(&sample.x) || (0.90..=1.0).contains(&sample.x) {
+            if sample.x <= f64::from(stats.limits.0) / 100.
+                || sample.x >= 1. - f64::from(stats.limits.0) / 100.
+            {
                 stats.edge_starts += 1;
             }
             stats.edges.begin(sample, fingers);

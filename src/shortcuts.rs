@@ -16,6 +16,12 @@ pub enum Command {
         maximize: bool,
     },
     ChatGpt,
+    TeamsSplit,
+    RightHalf,
+    CycleWindow,
+    CycleAllWindows,
+    NextTab,
+    PreviousTab,
     Maximize,
     PairLeft,
     PairRight,
@@ -37,6 +43,9 @@ pub struct Binding {
     pub command: Command,
 }
 impl Binding {
+    pub fn reserves_window_tab(&self) -> bool {
+        self.enabled && self.key == 48 && matches!(self.modifiers, 256 | 768)
+    }
     pub fn combination(&self) -> String {
         let mut text = String::new();
         for (flag, glyph) in [(1 << 12, "⌃"), (1 << 11, "⌥"), (1 << 9, "⇧"), (1 << 8, "⌘")]
@@ -74,7 +83,7 @@ impl Default for Shortcuts {
             Command::PairLeft,
             Command::PairRight,
         ];
-        Self {
+        let base = Self {
             schema_version: 1,
             entries: Action::ALL
                 .into_iter()
@@ -98,7 +107,8 @@ impl Default for Shortcuts {
                     }
                 })
                 .collect(),
-        }
+        };
+        personal_parity(&base)
     }
 }
 pub fn valid_combination(key: u32, modifiers: u32) -> bool {
@@ -108,6 +118,9 @@ pub fn valid_combination(key: u32, modifiers: u32) -> bool {
         && modifiers & ((1 << 8) | (1 << 11) | (1 << 12)) != 0
 }
 impl Shortcuts {
+    pub fn reserves_window_tab(&self) -> bool {
+        self.entries.iter().any(Binding::reserves_window_tab)
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.schema_version != 1 || self.entries.len() > 32 {
             return Err("Configuration des raccourcis non prise en charge (32 maximum).".into());
@@ -248,6 +261,15 @@ mod tests {
     }
     #[test]
     fn defaults_reassignment_duplicates_and_modifiers() {
+        let mut probe = Shortcuts::default();
+        for modifiers in [256, 768, 2048, 2304] {
+            probe.entries[0].key = 48;
+            probe.entries[0].modifiers = modifiers;
+            assert_eq!(probe.reserves_window_tab(), matches!(modifiers, 256 | 768));
+        }
+        probe.entries[0].modifiers = 768;
+        probe.entries[0].enabled = false;
+        assert!(!probe.reserves_window_tab());
         let mut s = Shortcuts::default();
         s.validate().unwrap();
         s.entries[1].command = Command::Application {
@@ -284,5 +306,66 @@ mod tests {
         assert!(save(&p, &defaults, &s).is_err());
         assert_eq!(fs::read(&p).unwrap(), b"invalid");
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+/// One-time, additive personal migration. Never replace an occupied combination.
+pub fn personal_parity(settings: &Shortcuts) -> Shortcuts {
+    let mut updated = settings.clone();
+    for (key, modifiers, label, command) in [
+        (17, 4864, "T", Command::TeamsSplit),
+        (125, 768, "↓", Command::RightHalf),
+        (48, 2048, "Tab", Command::NextTab),
+        (48, 2560, "Tab", Command::PreviousTab),
+        (50, 2048, "`", Command::CycleWindow),
+    ] {
+        if updated.entries.len() < 32
+            && !updated
+                .entries
+                .iter()
+                .any(|b| b.key == key && b.modifiers == modifiers)
+        {
+            updated.entries.push(Binding {
+                enabled: true,
+                key,
+                modifiers,
+                key_label: label.into(),
+                command,
+            });
+        }
+    }
+    updated
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+    #[test]
+    fn additive_migration_keeps_custom_bindings_and_is_idempotent() {
+        let mut original = Shortcuts::default();
+        original.entries.truncate(7);
+        original.entries.push(Binding {
+            enabled: true,
+            key: 48,
+            modifiers: 2048,
+            key_label: "Tab".into(),
+            command: Command::ChatGpt,
+        });
+        let updated = personal_parity(&original);
+        assert_eq!(
+            &updated.entries[..original.entries.len()],
+            &original.entries
+        );
+        assert_eq!(
+            updated
+                .entries
+                .iter()
+                .find(|b| b.key == 48 && b.modifiers == 2048)
+                .unwrap()
+                .command,
+            Command::ChatGpt
+        );
+        assert_eq!(personal_parity(&updated), updated);
+        updated.validate().unwrap();
     }
 }

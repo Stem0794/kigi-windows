@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
     pub enabled: bool,
+    #[serde(default)]
+    pub distinguish_chat: bool,
+    #[serde(default)]
+    pub end_on_title_change: bool,
     pub chat_title: String,
     pub meeting_title: String,
     pub meeting_right: bool,
@@ -15,6 +19,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: false,
+            distinguish_chat: false,
+            end_on_title_change: false,
             chat_title: String::new(),
             meeting_title: String::new(),
             meeting_right: true,
@@ -45,6 +51,42 @@ impl Settings {
         }
         Ok(())
     }
+    pub fn meeting_matches(&self, title: &str) -> bool {
+        if !Self::matches(title, &self.meeting_title) {
+            return false;
+        }
+        if !self.distinguish_chat {
+            return true;
+        }
+        if Self::matches(title, &self.chat_title) {
+            return false;
+        }
+        let prefix = title
+            .split('|')
+            .next()
+            .unwrap_or(title)
+            .trim()
+            .to_lowercase();
+        ![
+            "chat",
+            "conversation",
+            "activity",
+            "activité",
+            "calendar",
+            "calendrier",
+            "calls",
+            "appels",
+            "teams",
+            "équipes",
+            "files",
+            "fichiers",
+            "settings",
+            "paramètres",
+            "window",
+            "fenêtre",
+        ]
+        .contains(&prefix.as_str())
+    }
     pub fn matches(title: &str, marker: &str) -> bool {
         !marker.trim().is_empty() && title.to_lowercase().contains(&marker.trim().to_lowercase())
     }
@@ -60,7 +102,7 @@ pub fn classify(titles: &[&str], settings: &Settings) -> Result<Option<(usize, u
     let meeting: Vec<_> = titles
         .iter()
         .enumerate()
-        .filter(|(_, title)| Settings::matches(title, &settings.meeting_title))
+        .filter(|(_, title)| settings.meeting_matches(title))
         .map(|(i, _)| i)
         .collect();
     if meeting.is_empty() {
@@ -91,6 +133,9 @@ pub struct Gate {
     phase: Phase,
 }
 impl Gate {
+    pub fn activate(&mut self) {
+        self.phase = Phase::Active;
+    }
     pub fn inhibit(&mut self) {
         self.phase = Phase::Inhibited;
     }
@@ -124,6 +169,33 @@ impl Gate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn calibrated_shared_suffix_excludes_chat_and_ordinary_pages() {
+        let settings = Settings {
+            chat_title: "Chat |".into(),
+            meeting_title: "Company".into(),
+            distinguish_chat: true,
+            ..Settings::default()
+        };
+        assert_eq!(
+            classify(
+                &[
+                    "Chat | Company",
+                    "Calendar | Company",
+                    "Customer call | Company"
+                ],
+                &settings
+            )
+            .unwrap(),
+            Some((0, 2))
+        );
+        assert!(classify(
+            &["Chat | Company", "Call one | Company", "Call two | Company"],
+            &settings
+        )
+        .is_err());
+        assert!(!settings.meeting_matches("Settings | Company"));
+    }
     #[test]
     fn debounce_unknown_and_reappearance_never_restore_early() {
         let mut gate = Gate::default();

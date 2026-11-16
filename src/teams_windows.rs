@@ -66,6 +66,16 @@ pub fn teams_version() -> Option<String> {
         .ok()
         .map(|s| s.to_string())
 }
+pub fn teams_has_meeting(settings: &Settings) -> Result<bool, String> {
+    let app = match app() {
+        Ok(Some(app)) => app,
+        Ok(None) | Err(_) => return Ok(false),
+    };
+    if settings.chat_title.trim().is_empty() || settings.meeting_title.trim().is_empty() {
+        return Err("Profil Teams à configurer avant le scénario de démarrage.".into());
+    }
+    Ok(selected(&inventory(&app)?, settings)?.is_some())
+}
 pub fn teams_probe(settings: &Settings) -> Result<String, String> {
     require_permission()?;
     let app = app()?.ok_or("Ouvrez Teams, son chat et une réunion dans deux fenêtres séparées.")?;
@@ -159,6 +169,57 @@ pub struct TeamsAutomation {
     pub status: String,
 }
 impl TeamsAutomation {
+    pub fn pause_detection(&mut self) {
+        self.gate.step(None, 0);
+    }
+    pub fn tracking(&self) -> bool {
+        self.session.is_some()
+    }
+    pub fn apply_now(
+        &mut self,
+        mtm: MainThreadMarker,
+        settings: &Settings,
+        now: u64,
+    ) -> Result<String, String> {
+        require_permission()?;
+        let app = app()?.ok_or("Ouvrez Teams et ses deux fenêtres avant de partager.")?;
+        let entries = inventory(&app)?;
+        self.apply_selected(mtm, settings, now, &app, &entries)
+    }
+    fn apply_selected(
+        &mut self,
+        mtm: MainThreadMarker,
+        settings: &Settings,
+        now: u64,
+        app: &NSRunningApplication,
+        entries: &[Entry],
+    ) -> Result<String, String> {
+        let (chat,meeting)=selected(&entries,settings)?.ok_or("Aucune paire chat/réunion correspondant au profil. Identifiez les fenêtres dans Réunions Teams.")?;
+        let before = self
+            .session
+            .take()
+            .filter(|session| {
+                same(&session.chat, &entries[chat].window)
+                    && same(&session.meeting, &entries[meeting].window)
+            })
+            .map(|s| s.before);
+        self.blocker = None;
+        self.candidate = None;
+        self.gate = Gate::default();
+        self.advance_internal(mtm, settings, now, entries, true);
+        if let Some(session) = self.session.as_mut() {
+            if let Some(before) = before {
+                session.before = before;
+            }
+            session.chat.raise()?;
+            session.meeting.raise()?;
+            let _ = crate::applications::request_activation(app);
+            focus_window(app, &session.meeting)?;
+            Ok(self.status.clone())
+        } else {
+            Err(self.status.clone())
+        }
+    }
     pub fn inhibit(&mut self) {
         self.blocker_missing_since = None;
         self.gate.inhibit();
@@ -177,7 +238,7 @@ impl TeamsAutomation {
         self.status = message.into();
     }
     pub fn poll(&mut self, mtm: MainThreadMarker, settings: &Settings, now: u64, busy: bool) {
-        if !settings.enabled {
+        if !settings.enabled && self.session.is_none() {
             return;
         }
         if busy {
@@ -219,6 +280,16 @@ impl TeamsAutomation {
         }
     }
     fn advance(&mut self, mtm: MainThreadMarker, settings: &Settings, now: u64, entries: &[Entry]) {
+        self.advance_internal(mtm, settings, now, entries, false);
+    }
+    fn advance_internal(
+        &mut self,
+        mtm: MainThreadMarker,
+        settings: &Settings,
+        now: u64,
+        entries: &[Entry],
+        force: bool,
+    ) {
         if let Some(blocker) = self.blocker.as_ref() {
             let present = entries.iter().any(|e| same(&e.window, blocker));
             match normal_or_closed(blocker) {
@@ -238,17 +309,17 @@ impl TeamsAutomation {
             self.blocker_missing_since = None;
             self.blocker = None;
             // Do not rearm while a replacement matching meeting still exists.
-            if entries
-                .iter()
-                .any(|e| Settings::matches(&e.title, &settings.meeting_title))
-            {
+            if entries.iter().any(|e| settings.meeting_matches(&e.title)) {
                 return;
             }
             self.gate.step(Some(false), now);
         }
         if let Some(session) = self.session.as_ref() {
             // The exact meeting remains active even if its title changes or it is minimized.
-            let present = entries.iter().any(|e| same(&e.window, &session.meeting));
+            let present = entries.iter().any(|e| {
+                same(&e.window, &session.meeting)
+                    && (!settings.end_on_title_change || settings.meeting_matches(&e.title))
+            });
             if !present {
                 match normal_or_closed(&session.meeting) {
                     Ok(true) => {}
@@ -262,10 +333,9 @@ impl TeamsAutomation {
                     }
                 }
             }
-            let replacements = entries.iter().any(|e| {
-                !same(&e.window, &session.meeting)
-                    && Settings::matches(&e.title, &settings.meeting_title)
-            });
+            let replacements = entries
+                .iter()
+                .any(|e| !same(&e.window, &session.meeting) && settings.meeting_matches(&e.title));
             if replacements {
                 self.inhibit();
                 return;
@@ -338,7 +408,10 @@ impl TeamsAutomation {
                 Element(unsafe { CFRetain(meeting.0) }),
             ]);
         }
-        if self.gate.step(Some(true), now) != Effect::Start {
+        if force {
+            self.gate.activate();
+        }
+        if !force && self.gate.step(Some(true), now) != Effect::Start {
             self.status = "Profil reconnu ; attente de stabilité ou de fin de suspension.".into();
             return;
         }
@@ -350,10 +423,7 @@ impl TeamsAutomation {
                 window.can_set("AXSize")?;
             }
             let before = [chat.frame()?, meeting.frame()?];
-            let display = visible_frame(mtm, before[0])?;
-            if !display.approximately(visible_frame(mtm, before[1])?) {
-                return Err("Les deux fenêtres Teams doivent être sur le même écran.".into());
-            }
+            let display = visible_frame(mtm, before[1])?;
             let width = display.width * f64::from(settings.chat_percent) / 100.;
             let left = Rect {
                 width: if settings.meeting_right {
@@ -447,7 +517,9 @@ pub fn teams_fixture_check(mtm: MainThreadMarker, manual: bool) -> Result<(), St
     let app =
         crate::applications::running("io.kigi.focus.source").ok_or("Fixture Teams absente.")?;
     let minimum = std::env::args().any(|a| a == "--meeting-minimum");
+    let reapply = std::env::args().any(|a| a == "--teams-reapply");
     let settings = Settings {
+        maximize_after: !reapply,
         enabled: true,
         chat_title: "Kigi chat fixture".into(),
         meeting_title: "Kigi meeting fixture".into(),
@@ -480,6 +552,23 @@ pub fn teams_fixture_check(mtm: MainThreadMarker, manual: bool) -> Result<(), St
     if minimum && !session.placement_message.contains("Teams limite") {
         return Err("Dimensions limitées annoncées comme un 50/50 exact.".into());
     }
+    if reapply {
+        let session = automation.session.as_ref().unwrap();
+        session.chat.set_frame(Rect {
+            x: session.display.x + 50.,
+            width: session.display.width * 0.7,
+            ..session.display
+        })?;
+        automation.apply_selected(mtm, &settings, 1500, &app, &inventory(&app)?)?;
+        if !automation
+            .session
+            .as_ref()
+            .is_some_and(|s| s.before[0].approximately(before))
+        {
+            return Err("La réapplication a écrasé le point de retour initial.".into());
+        }
+    }
+    let session = automation.session.as_ref().unwrap();
     let target = if manual {
         let target = Rect {
             x: session.display.x + 75.,
