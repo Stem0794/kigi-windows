@@ -19,6 +19,14 @@ impl WindowCycle {
         self.choices.clear();
     }
     pub fn cycle(&mut self, all: bool, reverse: bool) -> Result<String, String> {
+        self.cycle_steps(all, reverse, 1)
+    }
+    pub fn cycle_steps(
+        &mut self,
+        all: bool,
+        reverse: bool,
+        steps: usize,
+    ) -> Result<String, String> {
         require_permission()?;
         let current = NSWorkspace::sharedWorkspace()
             .frontmostApplication()
@@ -109,6 +117,26 @@ impl WindowCycle {
                     }
                 }
             }
+            if all {
+                self.choices.sort_by_key(|choice| {
+                    if focused
+                        .as_ref()
+                        .is_some_and(|focused| unsafe { CFEqual(focused.0, choice.window.0) != 0 })
+                    {
+                        0
+                    } else if current.as_ref().is_some_and(|app| {
+                        app.processIdentifier() == choice.app.processIdentifier()
+                    }) {
+                        1000
+                    } else {
+                        self.apps
+                            .iter()
+                            .position(|pid| *pid == choice.app.processIdentifier())
+                            .map(|index| index + 1)
+                            .unwrap_or(999)
+                    }
+                });
+            }
             if !found_focus && !self.choices.is_empty() {
                 self.index = if reverse { 0 } else { self.choices.len() - 1 };
             }
@@ -118,9 +146,9 @@ impl WindowCycle {
             return Err("Aucune autre fenêtre accessible à parcourir.".into());
         }
         self.index = if reverse {
-            (self.index + self.choices.len() - 1) % self.choices.len()
+            (self.index + self.choices.len() - steps % self.choices.len()) % self.choices.len()
         } else {
-            (self.index + 1) % self.choices.len()
+            (self.index + steps) % self.choices.len()
         };
         let choice = &self.choices[self.index];
         choice.window.unminimize()?;

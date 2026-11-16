@@ -67,8 +67,9 @@ pub fn teams_version() -> Option<String> {
         .map(|s| s.to_string())
 }
 pub fn teams_has_meeting(settings: &Settings) -> Result<bool, String> {
-    let Some(app) = app()? else {
-        return Ok(false);
+    let app = match app() {
+        Ok(Some(app)) => app,
+        Ok(None) | Err(_) => return Ok(false),
     };
     if settings.chat_title.trim().is_empty() || settings.meeting_title.trim().is_empty() {
         return Err("Profil Teams à configurer avant le scénario de démarrage.".into());

@@ -49,14 +49,17 @@ with tempfile.TemporaryDirectory(prefix='kigi-teams-') as directory:
             assert result.returncode==0 and rows==[{'manual':manual,'minimum':minimum,'reapply':reapply,'success':True}],result.stdout+result.stderr
         finally: stop(process)
     source=subprocess.Popen([str(paths['source']),'--source','--teams-pair'],stdout=subprocess.PIPE)
-    target=subprocess.Popen([str(paths['target'])],stdout=subprocess.PIPE)
+    target=None
     try:
-        ready(source); ready(target)
+        ready(source)
+        target=subprocess.Popen([str(paths['target'])],stdout=subprocess.PIPE)
+        ready(target)
         result=subprocess.run([str(binary),'--navigation-check'],env={**os.environ,'KIGI_TEST_NAVIGATION':'1'},capture_output=True,text=True,timeout=20)
         print(result.stdout,result.stderr)
         assert result.returncode==0 and 'KIGI_NAVIGATION_CHECK true' in result.stdout,result.stdout+result.stderr
     finally:
-        stop(source);stop(target)
+        stop(source)
+        if target is not None: stop(target)
     subprocess.run([str(fixture),'--register',str(root/'source.app'),str(root/'target.app')],check=True)
     try:
         result=subprocess.run([str(binary),'--space-launch-check'],env={**os.environ,'KIGI_TEST_NAVIGATION':'1'},capture_output=True,text=True,timeout=15)

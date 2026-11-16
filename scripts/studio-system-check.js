@@ -61,6 +61,14 @@
     q('#save-runtime').click(); await wait(() => !q('#refresh').disabled && q('#save-runtime').disabled);
     let runtimeSaved=await Kigi.request('runtime.get'); assert(runtimeSaved.settings.launchMissingApps !== runtimeOriginal.settings.launchMissingApps,'Runtime UI preference not saved');
     let runtimeStale=false;try{await Kigi.request('runtime.save',{expectedRevision:runtimeOriginal.revision,settings:runtimeOriginal.settings});}catch(error){runtimeStale=error.code==='STALE_REVISION';}assert(runtimeStale,'Runtime stale revision accepted');
+    let switcher=q('#window-switcher');switcher.checked=true;switcher.dispatchEvent(new Event('change',{bubbles:true}));
+    q('#save-runtime').click();await wait(()=>!q('#refresh').disabled&&q('#save-runtime').disabled);
+    const switcherEnabled=await Kigi.request('runtime.get');const switcherPermissions=await Kigi.request('permissions.get');
+    assert(switcherEnabled.settings.windowSwitcher,'Window switcher not persisted');
+    if(switcherPermissions.accessibility==='granted')assert(switcherEnabled.switcherActive,'Dedicated CmdTab event loop did not start');
+    switcher=q('#window-switcher');switcher.checked=false;switcher.dispatchEvent(new Event('change',{bubbles:true}));
+    q('#save-runtime').click();await wait(()=>!q('#refresh').disabled&&q('#save-runtime').disabled);
+    assert(!(await Kigi.request('runtime.get')).switcherActive,'System shortcut was not released');
     q('#navigation [data-route="gestures"]').click(); await wait(()=>!!q('#gesture-left'));
     const edge=q('#gesture-edgePercent');edge.value='15';edge.dispatchEvent(new Event('input',{bubbles:true}));
     q('#save-runtime').click();await wait(()=>!q('#refresh').disabled && q('#save-runtime').disabled);

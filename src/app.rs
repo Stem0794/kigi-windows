@@ -83,11 +83,28 @@ struct PendingOpen {
 }
 
 #[derive(Default)]
+struct PickingGate(Cell<bool>);
+impl PickingGate {
+    fn get(&self) -> bool {
+        self.0.get()
+    }
+    fn set(&self, value: bool) {
+        self.0.set(value);
+        crate::window_hotkey::set_capture_allowed(!value);
+    }
+    fn replace(&self, value: bool) -> bool {
+        let old = self.get();
+        self.set(value);
+        old
+    }
+}
+
+#[derive(Default)]
 struct State {
     space_launch: RefCell<Option<space_launch::SpaceLaunch>>,
     window_cycle: RefCell<windows::WindowCycle>,
     window_hotkey: RefCell<Option<crate::window_hotkey::WindowHotkey>>,
-    window_cycle_queue: RefCell<std::collections::VecDeque<(bool, bool)>>,
+    window_cycle_queue: RefCell<std::collections::VecDeque<(i32, bool)>>,
     runtime_settings: RefCell<crate::runtime_settings::Settings>,
     runtime_revision: Cell<u64>,
     input_resume_attempts: Cell<u8>,
@@ -115,7 +132,7 @@ struct State {
     activation_check: Cell<bool>,
     activation_check_done: Cell<bool>,
     previous_launch_known: Cell<bool>,
-    picking: Cell<bool>,
+    picking: PickingGate,
     menu_open: Cell<bool>,
     mouse_scroll_requested: Cell<bool>,
     mouse_scroll_filter: RefCell<Option<MouseScrollTap>>,
@@ -567,8 +584,14 @@ define_class!(
         #[unsafe(method(windowCycleAction:))]
         fn window_cycle_action(&self,_:Option<&AnyObject>){
             let next=self.ivars().window_cycle_queue.borrow_mut().pop_front();
-            let Some((reverse,finish))=next else{return;};
-            if finish {self.ivars().window_cycle.borrow_mut().finish();} else if self.ivars().runtime_settings.borrow().window_switcher && !self.ivars().picking.get(){self.ivars().startup_pending.set(false);let result=self.ivars().window_cycle.borrow_mut().cycle(true,reverse);self.status(&result.unwrap_or_else(|e|e));}
+            let Some((steps,finish))=next else{return;};
+            if steps!=0 && self.ivars().runtime_settings.borrow().window_switcher && !self.ivars().picking.get(){
+                self.ivars().startup_pending.set(false);
+                let result=self.ivars().window_cycle.borrow_mut().cycle_steps(true,steps<0,steps.unsigned_abs() as usize);
+                self.status(&result.unwrap_or_else(|e|e));
+            }
+            if finish {self.ivars().window_cycle.borrow_mut().finish();}
+
         }
         #[unsafe(method(resumePersonalInputs:))]
         fn resume_personal_inputs_poll(&self,_:Option<&AnyObject>){self.resume_personal_inputs();}
@@ -2428,10 +2451,17 @@ pub fn queue_window_cycle(reverse: bool, finish: bool) -> bool {
         let Ok(mut queue) = c.ivars().window_cycle_queue.try_borrow_mut() else {
             return false;
         };
-        if queue.len() >= 16 {
-            return false;
+        if finish {
+            if let Some(last) = queue.back_mut() {
+                last.1 = true;
+            } else {
+                queue.push_back((0, true));
+            }
+        } else if let Some(last) = queue.back_mut().filter(|last| !last.1) {
+            last.0 = last.0.saturating_add(if reverse { -1 } else { 1 });
+        } else if queue.len() < 16 {
+            queue.push_back((if reverse { -1 } else { 1 }, false));
         }
-        queue.push_back((reverse, finish));
         drop(queue);
         c.schedule_capture(sel!(windowCycleAction:), 0.0);
         true

@@ -32,7 +32,10 @@ réarmement sans lever et interface Studio.
   nécessite de sélectionner sa nouvelle cible. Un raccourci désactivé n’agit pas.
 - Le remplacement ⌘Tab est désactivé par défaut et ne coexiste pas avec une
   autre affectation ⌘Tab. Il ne consomme que cette combinaison et son relâchement,
-  sans enregistrer les autres touches. La liste est figée pendant l’enchaînement,
+  sans enregistrer les autres touches. Le callback utilise une boucle d’événements
+  dédiée pour que les lectures AX du moteur ne bloquent pas le clavier ; les
+  commandes seules sont transmises au thread principal, regroupées dans une file
+  bornée. La liste est figée pendant l’enchaînement,
   regroupe les applications récemment activées et ne fournit pas de vignettes
   d’écran. Les fenêtres inaccessibles restent hors liste. Ce n’est pas une
   promesse de reproduire l’interface graphique du sélecteur Windows.
