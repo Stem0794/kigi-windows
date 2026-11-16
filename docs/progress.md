@@ -916,3 +916,12 @@ Package0.8.0/build27 :1017561 octets, SHA256
 [PR#8](https://github.com/Stem0794/kigi-windows/pull/8) consolide PR#1–#7 vers main,
 fusion autorisée par la demande de poursuivre les points1–3 après ces contrôles.
 Les essais physiques du M5 restent distincts des contrôles macOS Intel du runner.
+
+Intégration effectuée : [PR#8](https://github.com/Stem0794/kigi-windows/pull/8)
+fusionnée sur main au commite07beadabf26dfe227bda8d04edd51bacedbffca.
+Comparaison après fusion : aucun écart sur src/ui/scripts/Cargo/resources/workflow
+par rapport au source natif validé9b621b7 ; seuls les suivis documentaires diffèrent.
+Pas de nouvelle campagne identique sur le commit de merge. PR préparatoires1–7
+intégrées dans cette consolidation et fermées ; historique conservé. Package final
+0.8.0 identique au binaire universel vérifié ci-dessus. Le retrait de l’ancien écran
+et les options du point3 sont livrés ; le test physique M5 reste à confirmer.

@@ -46,7 +46,7 @@ permet de la restaurer après confirmation ; l’ancien fichier invalide est con
 
 Studio s’ouvre normalement au lancement ; `--studio-ui` reste un alias compatible. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
 Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
-auxiliaires WebKit non mesurés. Les changements Studio sont regroupés pour intégration sur main après revue et validation native.
+auxiliaires WebKit non mesurés. Studio0.8.0 est intégré sur `main` après revue et validation native.
 
 ## Installer et utiliser
 
