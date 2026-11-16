@@ -39,6 +39,7 @@ if CommandLine.arguments.contains("--window-frames") {
 }
 class Fixture: NSObject, NSApplicationDelegate {
     var window: NSWindow!
+    var meetingWindow: NSWindow?
     var attempts = 0
     let source = CommandLine.arguments.contains("--source")
     let fullscreen = CommandLine.arguments.contains("--fullscreen")
@@ -49,6 +50,14 @@ class Fixture: NSObject, NSApplicationDelegate {
         window.collectionBehavior = [.fullScreenPrimary]
         if CommandLine.arguments.contains("--minimum") { window.contentMinSize = NSSize(width: screen.width * 0.55, height: 200) }
         if source { window.setFrame(screen, display: true) }
+        if CommandLine.arguments.contains("--teams-pair") {
+            window.title = "Kigi chat fixture"
+            let meeting = NSWindow(contentRect: NSRect(x: 200, y: 140, width: 650, height: 450), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+            meeting.title = "Kigi meeting fixture"
+            meeting.isReleasedWhenClosed = false
+            meeting.makeKeyAndOrderFront(nil)
+            meetingWindow = meeting
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if fullscreen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.window.toggleFullScreen(nil) } }

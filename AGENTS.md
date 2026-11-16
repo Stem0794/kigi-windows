@@ -192,3 +192,15 @@ Surveillance de l’entrée. Conserver la demande native unique par session et l
 précontrôles réels. Aucune ouverture sur simple affichage/bootstrap ; aucun reset
 TCC, aucune URL libre ni contournement des droits. Correctif de maintenance à intégrer
 sur main après vérifications ciblées, dans la continuité de l’intégration autorisée.
+
+## Automatisme Teams0.9.0 autorisé
+
+L’utilisateur demande explicitement le retour de son scénario : chat Teams à gauche
+50 %, fenêtre réunion à droite50 %, chat à100 % après fermeture. Implémenter le
+profil Teams opt-in avec identification native des deux fenêtres et repères locaux
+éditables/testables, sans prétendre connaître une signature universelle. Côtés,
+ratio et retour configurables. Débounce1s, disparition confirmée puis2s, aucune
+restauration après action manuelle, ambiguïté, remplacement de réunion ou
+révocation AX. API publiques seulement, aucun contenu d’échange ni titre dans les
+logs. Tests ciblés sur fenêtres dédiées, validation Teams physique encore requise.
+Intégration sur main après vérifications natives, dans la continuité autorisée.

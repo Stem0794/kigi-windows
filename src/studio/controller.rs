@@ -4,6 +4,68 @@ use crate::studio::{bridge::Failure, system::SystemCommand as S};
 use serde_json::{json, Value};
 
 impl Controller {
+    pub(super) fn inhibit_teams(&self) {
+        if self.ivars().teams_settings.borrow().enabled {
+            self.ivars().teams_automation.borrow_mut().inhibit();
+        }
+    }
+    pub(super) fn load_teams_settings(&self) {
+        if let Some(raw) =
+            NSUserDefaults::standardUserDefaults().stringForKey(ns_string!("teamsAutomationV1"))
+        {
+            match serde_json::from_str::<crate::meetings::Settings>(&raw.to_string())
+                .map_err(|_| "Profil Teams illisible ; automatisme désactivé.".to_string())
+                .and_then(|settings| {
+                    settings.validate()?;
+                    Ok(settings)
+                }) {
+                Ok(settings) => {
+                    self.ivars().teams_settings.replace(settings);
+                }
+                Err(message) => {
+                    self.ivars().teams_automation.borrow_mut().status = message;
+                }
+            }
+        }
+        if self.ivars().teams_settings.borrow().enabled {
+            self.schedule_capture(sel!(teamsPoll:), 1.0);
+        }
+    }
+    fn teams_revision(&self) -> String {
+        format!(
+            "{}:{}",
+            std::process::id(),
+            self.ivars().teams_revision.get()
+        )
+    }
+    pub(super) fn studio_meetings_data(&self) -> Value {
+        json!({"settings":*self.ivars().teams_settings.borrow(),"revision":self.teams_revision(),"status":self.ivars().teams_automation.borrow().status,"accessibility":windows::trusted()})
+    }
+    fn identify_teams(&self) -> Result<Value, Failure> {
+        self.inhibit_teams();
+        let mut choices = windows::teams_choices().map_err(Failure::invalid)?;
+        self.ivars().picking.set(true);
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+        let result = (|| {
+            let Some(chat) = choose_window(self.mtm(), "Chat Teams à identifier", &choices, false)
+            else {
+                return Ok(json!({"canceled":true}));
+            };
+            let chat = choices.remove(chat);
+            let Some(meeting) =
+                choose_window(self.mtm(), "Réunion Teams à identifier", &choices, false)
+            else {
+                return Ok(json!({"canceled":true}));
+            };
+            Ok(
+                json!({"canceled":false,"chatTitle":chat.label,"meetingTitle":choices[meeting].label}),
+            )
+        })();
+        self.ivars().picking.set(false);
+        result
+    }
+
     fn open_permission_settings(
         &self,
         section: &crate::studio::system::Section,
@@ -305,6 +367,57 @@ impl Controller {
             return Err(Failure::new("BUSY", "Terminez le dialogue en cours."));
         }
         match op {
+            S::Meetings(_) => Ok(self.studio_meetings_data()),
+            S::MeetingsIdentify(_) => self.identify_teams(),
+            S::MeetingsProbe(input) => {
+                input.settings.validate().map_err(Failure::invalid)?;
+                Ok(
+                    json!({"message":windows::teams_probe(&input.settings).map_err(Failure::invalid)?}),
+                )
+            }
+            S::MeetingsPause(_) => {
+                self.inhibit_teams();
+                Ok(self.studio_meetings_data())
+            }
+            S::MeetingsSave(input) => {
+                if input.expected_revision != self.teams_revision() {
+                    return Err(Failure::new(
+                        "STALE_REVISION",
+                        "Les réglages Teams ont changé. Actualisez avant de réessayer.",
+                    ));
+                }
+                input.settings.validate().map_err(Failure::invalid)?;
+                if input.settings.enabled {
+                    windows::teams_verify(&input.settings).map_err(Failure::invalid)?;
+                }
+                self.inhibit_teams();
+                let raw = serde_json::to_string(&input.settings)
+                    .map_err(|_| Failure::invalid("Profil Teams invalide."))?;
+                // NSString is a valid property-list object owned through the call.
+                unsafe {
+                    NSUserDefaults::standardUserDefaults().setObject_forKey(
+                        Some(&*NSString::from_str(&raw)),
+                        ns_string!("teamsAutomationV1"),
+                    );
+                }
+                self.ivars().teams_settings.replace(input.settings.clone());
+                self.ivars()
+                    .teams_revision
+                    .set(self.ivars().teams_revision.get().wrapping_add(1));
+                // Reconfiguration never restores or repositions an in-progress meeting.
+                if !input.settings.enabled {
+                    self.ivars()
+                        .teams_automation
+                        .replace(windows::TeamsAutomation::default());
+                }
+                unsafe {
+                    let _: () = msg_send![objc2::class!(NSObject),cancelPreviousPerformRequestsWithTarget:self,selector:sel!(teamsPoll:),object:std::ptr::null::<AnyObject>()];
+                }
+                if input.settings.enabled {
+                    self.schedule_capture(sel!(teamsPoll:), 1.0);
+                }
+                Ok(self.studio_meetings_data())
+            }
             S::ShortcutsList(_) => Ok(self.studio_shortcuts_data()),
             S::Gestures(_) => Ok(self.studio_gestures_data()),
             S::Mouse(_) => Ok(self.studio_mouse_data()),

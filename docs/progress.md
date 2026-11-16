@@ -951,3 +951,16 @@ Package0.8.1/build28 :1018517 octets, SHA256
 6e7b604d5fc853ef7cc0824a921dc775ad860d0f9a2721667452c01ab406b87a.
 CRC/plist/architectures et cinq ressources UI vérifiés. [PR#9](https://github.com/Stem0794/kigi-windows/pull/9)
 correctif de maintenance ; source validé inchangé par la mise à jour documentaire.
+
+## 2026-11-16 —0.9.0, profil de réunion Teams configurable
+
+- Demande explicite : chat gauche50 %, réunion droite50 %, chat100 % à la fermeture.
+- Profil opt-in identifié dans un sélecteur Teams natif, repères locaux éditables,
+  test sans déplacement, côtés/ratio/retour persistants dans Studio. Aucune signature
+  universelle de Teams ni création de pop-out annoncées.
+- Détection bornée1Hz, stabilité1s, identité AX exacte, fin confirmée puis2s,
+  lecture de retour, priorité manuelle et suspension conservatrice.
+- Validation en cours : tests purs et compilation ARM ; fixture native de
+  placement/fermeture/déplacement manuel ajoutée. Résultats CI à consigner.
+- Validation réelle Teams/M5 et repères stables du pilote restent nécessaires.
+  Détails et limites : docs/teams-automation.md.

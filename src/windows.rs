@@ -1104,3 +1104,7 @@ pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
     window.raise()?;
     Ok("Travail : Chrome au premier plan à 100 %, Teams conservé derrière.".into())
 }
+
+#[path = "teams_windows.rs"]
+mod teams;
+pub use teams::{teams_choices, teams_fixture_check, teams_probe, teams_verify, TeamsAutomation};

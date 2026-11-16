@@ -157,6 +157,7 @@ pub fn parse(raw: &str) -> Result<Request, Value> {
     if raw.method.starts_with("shortcuts.")
         || raw.method.starts_with("gestures.")
         || raw.method.starts_with("mouse.")
+        || raw.method.starts_with("meetings.")
         || matches!(
             raw.method.as_str(),
             "permissions.requestAccessibility"
@@ -308,6 +309,11 @@ mod tests {
                 r#"{"section":"https://example.org"}"#,
                 false,
             ),
+            ("meetings.get", "{}", true),
+            ("meetings.identify", "{}", true),
+            ("meetings.pause", "{}", true),
+            ("meetings.get", r#"{"bundle":"arbitrary"}"#, false),
+            ("meetings.execute", "{}", false),
             ("shortcuts.startCapture", "{}", true),
             ("shortcuts.exec", r#"{"shell":"bad"}"#, false),
         ] {
