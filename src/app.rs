@@ -399,6 +399,7 @@ define_class!(
         }
         #[unsafe(method(testWindow:))]
         fn test_window(&self, _: Option<&AnyObject>) {
+            self.inhibit_teams();
             if self.ivars().picking.get() { return; }
             self.cancel_open();
             self.cancel_gesture_dispatch();
@@ -630,7 +631,15 @@ impl Controller {
         }
     }
     fn execute_command(&self, command: Command) {
-        self.inhibit_teams();
+        if !matches!(
+            command,
+            Command::Application {
+                maximize: false,
+                ..
+            } | Command::ChatGpt
+        ) {
+            self.inhibit_teams();
+        }
         match command {
             Command::Application {
                 bundle, maximize, ..
@@ -1012,7 +1021,9 @@ impl Controller {
         };
     }
     fn execute(&self, action: Action) {
-        self.inhibit_teams();
+        if !matches!(action, Action::Teams | Action::ChatGpt) {
+            self.inhibit_teams();
+        }
         if self.ivars().picking.get() {
             return;
         }

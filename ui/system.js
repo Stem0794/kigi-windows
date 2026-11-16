@@ -185,7 +185,7 @@ window.KigiSystem = (() => {
     for (const [value, label] of [['maximize', 'Remettre le chat à 100 %'], ['restore', 'Rétablir la position initiale du chat']]) { const option = ctx.el('option', '', label); option.value = value; end.append(option); }
     end.value = meetingDraft.maximizeAfter ? 'maximize' : 'restore'; end.addEventListener('change', () => { meetingDraft.maximizeAfter = end.value === 'maximize'; dirtyChanged(); }); field(content, 'À la fermeture de la réunion', end);
     check(content, 'Activer la disposition automatique', meetingDraft.enabled, enabled => { meetingDraft.enabled = enabled; dirtyChanged(); }, 'meetings-enabled');
-    content.append(ctx.el('p', 'muted', 'L’activation vérifie les repères sur les deux fenêtres actuellement ouvertes. Après un changement manuel, un raccourci ou un geste, cette réunion reste sous votre contrôle. Une fenêtre minimisée ou en plein écran suspend l’automatisme.'));
+    content.append(ctx.el('p', 'muted', 'L’activation vérifie les repères sur les deux fenêtres actuellement ouvertes. Après un déplacement manuel ou une autre disposition appliquée par Kigi, cette réunion reste sous votre contrôle. Une fenêtre minimisée ou en plein écran suspend l’automatisme.'));
     const actions = ctx.el('div', 'system-actions'); const save = ctx.button('Enregistrer', saveMeetings, 'primary'); save.id = 'save-meetings';
     const mark = ctx.el('span', 'tag', 'Modifié'); mark.id = 'meeting-dirty';
     actions.append(save, ctx.button('Tester la détection', async () => { const result = await operation('meetings.probe', {settings: meetingDraft}); if (result) ctx.status(result.message); }, 'subtle'), mark); content.append(actions);

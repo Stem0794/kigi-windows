@@ -153,7 +153,7 @@ impl TeamsAutomation {
             return;
         }
         if busy {
-            self.inhibit();
+            self.unknown(now, "Action en cours : automatisme en attente.");
             return;
         }
         if !trusted() {

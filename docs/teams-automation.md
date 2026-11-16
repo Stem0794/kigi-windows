@@ -38,10 +38,13 @@ L’invalidation AX est acceptée mais non exigée : Teams peut garder un objet
 fenêtre vivant après sa fermeture. Un timeout/permission absente est « inconnu » : aucun
 retour. La position du chat et l’écran sont revérifiés avant le retour.
 
-Une action manuelle Kigi (raccourci, geste, scène, restauration), un déplacement
+Une disposition manuelle Kigi (maximisation, partage, scène, restauration), un déplacement
 mesuré, une minimisation/plein écran, la veille, une fenêtre de réunion de
 remplacement ou le bouton **Suspendre cette réunion** cède le contrôle à
-l’utilisateur jusqu’à la fermeture de la fenêtre suivie. Désactiver ne restaure
+l’utilisateur jusqu’à la fermeture de la fenêtre suivie. Une simple activation
+d’application, notamment ⌥T sans maximisation, conserve le retour automatique.
+Les dialogues et activations en cours différèrent la détection sans déplacer de
+fenêtre. Désactiver ne restaure
 rien. Modifier le profil pendant une réunion active ne la réapplique pas. Les
 scènes manuelles et leur retour existant restent prioritaires. Aucun recentrage
 ou nouvel essai répété après échec. Un placement partiel tente de rétablir les
