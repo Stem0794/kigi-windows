@@ -61,6 +61,9 @@
     const permissions = await Kigi.request('permissions.get'); assert(permissions.chromeAutomation === 'unknown', 'Chrome permission invented');
     const copy = await Kigi.request('diagnostics.copy'); assert(copy.copied, 'Backend report not copied');
     let invalid = false; try { await Kigi.request('permissions.openSettings', {section: 'https://example.org'}); } catch (_) { invalid = true; } assert(invalid, 'Arbitrary settings URL accepted');
-    window.__kigiEditorCheck = {success: true, captureCanceled: true, captureCompleted: true, carbonRollback: true, systemPages: true};
+    const inputSettings = await Kigi.request('permissions.openSettings', {section: 'InputMonitoring'});
+    assert(inputSettings.settingsRequested && typeof inputSettings.settingsTargeted === 'boolean' && inputSettings.message.includes('Surveillance de l’entrée'), 'Input settings route not requested');
+    const afterSettings = await Kigi.request('permissions.get'); assert(afterSettings.accessibility === permissions.accessibility && afterSettings.inputMonitoring === permissions.inputMonitoring, 'Opening Settings changed permissions');
+    window.__kigiEditorCheck = {inputSettingsRequested: true, success: true, captureCanceled: true, captureCompleted: true, carbonRollback: true, systemPages: true};
   } catch (error) { window.__kigiEditorCheck = {success: false, message: String(error.message)}; }
 })();

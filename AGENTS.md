@@ -204,3 +204,12 @@ restauration après action manuelle, ambiguïté, remplacement de réunion ou
 révocation AX. API publiques seulement, aucun contenu d’échange ni titre dans les
 logs. Tests ciblés sur fenêtres dédiées, validation Teams physique encore requise.
 Intégration sur main après vérifications natives, dans la continuité autorisée.
+
+## Navigation permissions0.9.1
+
+L’utilisateur demande d’ouvrir directement la bonne rubrique pour « Demander
+l’entrée ». Utiliser uniquement les trois destinations fixes des rubriques AX,
+Surveillance de l’entrée et Automatisation via NSWorkspace.openURL ; aucune URL
+fournie par Studio ni modification des autorisations. Repli sur Réglages si le
+lien est refusé. L’acceptation du lien ne prouve pas la rubrique affichée par macOS.
+Conserver la réouverture à chaque clic lorsque l’accès manque.

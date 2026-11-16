@@ -41,6 +41,29 @@ pub enum Section {
     InputMonitoring,
     Automation,
 }
+impl Section {
+    /// Native-only allowlist; the bridge accepts enum values, never arbitrary URLs.
+    pub fn settings_url(&self) -> &'static str {
+        match self {
+            Self::Accessibility => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+            Self::InputMonitoring => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            }
+            Self::Automation => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            }
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accessibility => "Accessibilité",
+            Self::InputMonitoring => "Surveillance de l’entrée",
+            Self::Automation => "Automatisation",
+        }
+    }
+}
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
