@@ -937,3 +937,17 @@ le résultat réel et la rubrique à choisir. Régression de clics refusés rép
 états accordés couverte par le test PermissionFlow.29 tests hôte et check ARM passent.
 Le scénario TCC refusé/fermeture réelle reste à confirmer sur le Mac pilote ; aucun
 reset de permission sur le runner pour simuler ce cas.
+
+Validation0.8.1 : [run43844989776](https://github.com/Stem0794/kigi-windows/actions/runs/43844989776)
+réussi au commit0904a756c5accd1c1a2725e01b5b6c6a34b0887e, macOS15.7.9 Intel.
+32 tests natifs dont régression PermissionFlow : premier clic demande+réglages,
+second clic réglages sans nouveau prompt, budget épuisé encore réouvrable et accès
+déjà accordé sans demande. Tous parcours existants capture/preview/restauration,
+raccourcis et recovery passent. Clippy : les5 avertissements historiques seulement.
+Aucune autorisation système révoquée pour le test ; fermeture/refus TCC réel à
+confirmer sur le Mac utilisateur.
+
+Package0.8.1/build28 :1018517 octets, SHA256
+6e7b604d5fc853ef7cc0824a921dc775ad860d0f9a2721667452c01ab406b87a.
+CRC/plist/architectures et cinq ressources UI vérifiés. [PR#9](https://github.com/Stem0794/kigi-windows/pull/9)
+correctif de maintenance ; source validé inchangé par la mise à jour documentaire.
