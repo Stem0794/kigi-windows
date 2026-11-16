@@ -36,14 +36,22 @@ struct PermissionFlow {
     requested: bool,
     polls_left: u8,
 }
+#[derive(Debug, PartialEq)]
+struct PermissionAttempt {
+    request_prompt: bool,
+    open_settings: bool,
+}
 impl PermissionFlow {
-    fn request_once(&mut self, trusted: bool) -> bool {
-        if trusted || self.requested {
-            return false;
+    fn click(&mut self, trusted: bool) -> PermissionAttempt {
+        let request_prompt = !trusted && !self.requested;
+        if request_prompt {
+            self.requested = true;
+            self.polls_left = 15;
         }
-        self.requested = true;
-        self.polls_left = 15;
-        true
+        PermissionAttempt {
+            request_prompt,
+            open_settings: !trusted,
+        }
     }
     fn next_poll(&mut self, trusted: bool) -> bool {
         if trusted {
@@ -98,6 +106,7 @@ struct State {
     hotkey_count: Cell<u64>,
     permission_notice: Cell<bool>,
     permission_flow: RefCell<PermissionFlow>,
+    input_permission_flow: RefCell<PermissionFlow>,
     last_permission: Cell<Option<bool>>,
     local_window: RefCell<Option<Retained<NSWindow>>>,
     activation_anchor: Cell<Option<i32>>,
@@ -342,21 +351,6 @@ define_class!(
             NSUserDefaults::standardUserDefaults().setBool_forKey(self.ivars().personal_enabled.get(), ns_string!("personalHotkeysEnabled"));
             self.cancel_open();
             self.register_hotkeys();
-        }
-        #[unsafe(method(permission:))]
-        fn permission(&self, _: Option<&AnyObject>) {
-            let trusted = self.refresh_permission();
-            if trusted { self.status("Accessibilité reconnue pour ce processus. Vous pouvez tester la fenêtre."); return; }
-            let request = self.ivars().permission_flow.borrow_mut().request_once(trusted);
-            if request {
-                let immediate = windows::request_permission();
-                diagnostics::record("permission.ax.request", format!("immediate_result={immediate} asynchronous=true"));
-                if self.refresh_permission() { return; }
-                self.status("Demande envoyée. Activez la copie actuelle dans Accessibilité ; l'état sera revérifié sans nouvelle demande.");
-                self.schedule_permission_poll();
-            } else {
-                self.status("Vérification sans nouvelle demande : macOS ne reconnaît pas encore l'accès pour ce processus. Utilisez le diagnostic Accessibilité.");
-            }
         }
         #[unsafe(method(permissionPoll:))]
         fn permission_poll(&self, _: Option<&AnyObject>) {
@@ -2196,21 +2190,51 @@ pub fn run() {
 mod tests {
     use super::PermissionFlow;
     #[test]
-    fn permission_is_requested_once_then_checks_stop_after_grant_or_budget() {
+    fn repeated_denied_clicks_reopen_settings_without_repeating_prompts() {
         let mut flow = PermissionFlow::default();
-        assert!(flow.request_once(false));
-        assert!(!flow.request_once(false));
+        assert_eq!(
+            flow.click(false),
+            super::PermissionAttempt {
+                request_prompt: true,
+                open_settings: true
+            }
+        );
+        assert_eq!(
+            flow.click(false),
+            super::PermissionAttempt {
+                request_prompt: false,
+                open_settings: true
+            }
+        );
         assert!(flow.next_poll(false));
         assert!(!flow.next_poll(true));
         assert!(!flow.next_poll(false));
-        assert!(!flow.request_once(false));
+        assert_eq!(
+            flow.click(false),
+            super::PermissionAttempt {
+                request_prompt: false,
+                open_settings: true
+            }
+        );
         let mut denied = PermissionFlow::default();
-        assert!(denied.request_once(false));
+        assert_eq!(
+            denied.click(false),
+            super::PermissionAttempt {
+                request_prompt: true,
+                open_settings: true
+            }
+        );
         for _ in 0..14 {
             assert!(denied.next_poll(false));
         }
         assert!(!denied.next_poll(false));
         assert!(!denied.next_poll(false));
-        assert!(!PermissionFlow::default().request_once(true));
+        assert_eq!(
+            PermissionFlow::default().click(true),
+            super::PermissionAttempt {
+                request_prompt: false,
+                open_settings: false
+            }
+        );
     }
 }

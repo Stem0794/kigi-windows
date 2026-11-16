@@ -1,4 +1,4 @@
-# Kigi Windows — Studio 0.8.0 (pilote)
+# Kigi Windows — Studio 0.8.1 (pilote)
 
 Application macOS native en Rust, un seul crate et un seul processus. Binaires
 Intel + Apple Silicon ; cible macOS 11 non encore validée sur matériel ancien.
@@ -45,8 +45,12 @@ Si le catalogue est absent/illisible avec une sauvegarde valide, **Récupérer l
 permet de la restaurer après confirmation ; l’ancien fichier invalide est conservé.
 
 Studio s’ouvre normalement au lancement ; `--studio-ui` reste un alias compatible. Fermer Studio conserve les fonctions de fond ; Dock/menu le réouvre.
+Dans Autorisations, chaque clic sur **Demander l’accès** rouvre Réglages Système
+tant que l’autorisation manque, même après fermeture sans validation. La demande
+native reste limitée et l’état affiché dépend des contrôles réels de macOS.
+
 Les ressources sont locales et hors ligne. Mesures mémoire : processus Rust,
-auxiliaires WebKit non mesurés. Studio0.8.0 est intégré sur `main` après revue et validation native.
+auxiliaires WebKit non mesurés. Studio est intégré sur `main` après revue et validation native.
 
 ## Installer et utiliser
 

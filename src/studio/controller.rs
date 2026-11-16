@@ -4,6 +4,24 @@ use crate::studio::{bridge::Failure, system::SystemCommand as S};
 use serde_json::{json, Value};
 
 impl Controller {
+    fn open_permission_settings(
+        &self,
+        section: &crate::studio::system::Section,
+    ) -> Result<(), Failure> {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let url = workspace
+            .URLForApplicationWithBundleIdentifier(ns_string!("com.apple.systempreferences"))
+            .ok_or_else(|| Failure::invalid("Réglages Système introuvable."))?;
+        if !workspace.openURL(&url) {
+            return Err(Failure::invalid("Ouverture de Réglages Système refusée."));
+        }
+        diagnostics::record(
+            "permissions.settings.request",
+            format!("section={section:?}"),
+        );
+        Ok(())
+    }
+
     pub(super) fn studio_capture_layout(&self, revision: &str) -> Result<Value, Failure> {
         let path = studio_path().map_err(Failure::invalid)?;
         self.ivars()
@@ -467,23 +485,51 @@ impl Controller {
                 Ok(self.studio_mouse_data())
             }
             S::Accessibility(_) => {
-                self.permission(sel!(permission:), None);
-                Ok(json!({"requested":true,"accessibility":windows::trusted()}))
-            }
-            S::Input(_) => Ok(json!({"requested":true,"inputAccess":Tap::request_input()})),
-            S::OpenSettings(input) => {
-                let _ = &input.section;
-                let workspace = NSWorkspace::sharedWorkspace();
-                let url = workspace
-                    .URLForApplicationWithBundleIdentifier(ns_string!(
-                        "com.apple.systempreferences"
-                    ))
-                    .ok_or_else(|| Failure::invalid("Réglages Système introuvable."))?;
-                if !workspace.openURL(&url) {
-                    return Err(Failure::invalid("Ouverture de Réglages Système refusée."));
+                let trusted = self.refresh_permission();
+                let action = self.ivars().permission_flow.borrow_mut().click(trusted);
+                if action.request_prompt {
+                    let immediate = windows::request_permission();
+                    diagnostics::record(
+                        "permission.ax.request",
+                        format!("immediate_result={immediate} asynchronous=true"),
+                    );
+                    if !self.refresh_permission() {
+                        self.schedule_permission_poll();
+                    }
+                }
+                let trusted = windows::trusted();
+                let settings_requested = action.open_settings && !trusted;
+                if settings_requested {
+                    self.open_permission_settings(&crate::studio::system::Section::Accessibility)?;
                 }
                 Ok(
-                    json!({"requested":true,"message":"Ouverture demandée. Sélectionnez la rubrique dans Confidentialité et sécurité."}),
+                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"accessibility":trusted,"message":if trusted{"Accessibilité accordée à cette copie."}else{"Ouverture de Réglages Système demandée. Dans Confidentialité et sécurité, activez Kigi dans Accessibilité, puis actualisez."}}),
+                )
+            }
+            S::Input(_) => {
+                let action = self
+                    .ivars()
+                    .input_permission_flow
+                    .borrow_mut()
+                    .click(Tap::input_trusted());
+                if action.request_prompt {
+                    let _ = Tap::request_input();
+                }
+                let trusted = Tap::input_trusted();
+                let settings_requested = action.open_settings && !trusted;
+                if settings_requested {
+                    self.open_permission_settings(
+                        &crate::studio::system::Section::InputMonitoring,
+                    )?;
+                }
+                Ok(
+                    json!({"requested":action.request_prompt,"settingsRequested":settings_requested,"inputAccess":trusted,"message":if trusted{"Surveillance de l’entrée accordée à cette copie."}else{"Ouverture de Réglages Système demandée. Dans Confidentialité et sécurité, activez Kigi dans Surveillance de l’entrée, puis actualisez."}}),
+                )
+            }
+            S::OpenSettings(input) => {
+                self.open_permission_settings(&input.section)?;
+                Ok(
+                    json!({"requested":true,"settingsRequested":true,"message":"Ouverture demandée. Sélectionnez la rubrique dans Confidentialité et sécurité."}),
                 )
             }
             S::Copy(_) => {
