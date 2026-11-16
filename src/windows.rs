@@ -1107,4 +1107,6 @@ pub fn work_browser(mtm: MainThreadMarker) -> Result<String, String> {
 
 #[path = "teams_windows.rs"]
 mod teams;
-pub use teams::{teams_choices, teams_fixture_check, teams_probe, teams_verify, TeamsAutomation};
+pub use teams::{
+    teams_choices, teams_fixture_check, teams_probe, teams_verify, teams_version, TeamsAutomation,
+};

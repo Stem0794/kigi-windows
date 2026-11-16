@@ -2,7 +2,7 @@
 // Configuration views only. All registration, permissions, reports and input stay native.
 window.KigiSystem = (() => {
   let ctx, draft = null, original = null, selected = 0, revision = null, filter = '', scope = 'all', timer, until = 0, generation = 0, captureRequired = false;
-  let meetingDraft = null, meetingOriginal = null, meetingRevision = null;
+  let meetingDraft = null, meetingOriginal = null, meetingRevision = null, meetingTimer;
   const meetingDirty = () => meetingDraft != null && JSON.stringify(meetingDraft) !== JSON.stringify(meetingOriginal);
   const copy = value => value == null ? null : JSON.parse(JSON.stringify(value));
   const isDirty = () => meetingDirty() || (draft != null && (original == null || JSON.stringify(draft) !== JSON.stringify(original)));
@@ -12,7 +12,7 @@ window.KigiSystem = (() => {
   const rowState = binding => !binding.enabled ? 'Désactivé' : !settings().globalEnabled ? 'Globaux désactivés' : settings().capturing ? 'Capture en cours' : settings().registrationFailed || !settings().registered ? 'À vérifier' : 'Enregistré';
   const dirtyChanged = () => { ctx.syncDirty(); const meetingSave = document.getElementById('save-meetings'); if (meetingSave) meetingSave.disabled = !meetingDirty() || ctx.busy(); const meetingMark = document.getElementById('meeting-dirty'); if (meetingMark) meetingMark.hidden = !meetingDirty(); const save = document.getElementById('save-shortcut'); if (save) save.disabled = captureRequired || !isDirty() || !settings().canWrite || ctx.busy(); const mark = document.getElementById('shortcut-dirty'); if (mark) mark.hidden = !isDirty(); const test = document.getElementById('test-shortcut'); if (test) test.disabled = isDirty() || selected == null || ctx.busy(); };
   function reset() { meetingDraft = null; meetingOriginal = null; meetingRevision = null; captureRequired = false; draft = null; original = null; revision = null; ctx?.syncDirty(); }
-  function stopPolling() { clearTimeout(timer); until = 0; generation++; }
+  function stopPolling() { clearTimeout(meetingTimer); meetingTimer = null; clearTimeout(timer); until = 0; generation++; }
   async function refreshData() { const data = await Kigi.request('app.bootstrap'); ctx.replace(data); }
   async function operation(method, params = {}, message = '') {
     if (ctx.busy()) return null;
@@ -146,6 +146,24 @@ window.KigiSystem = (() => {
     } catch (error) { ctx.fail(error); return false; }
     finally { ctx.setBusy(false); ctx.render(); }
   }
+  function pollMeetings() {
+    if (meetingTimer || ctx.route() !== 'meetings') return;
+    const token = generation;
+    meetingTimer = setTimeout(async () => {
+      meetingTimer = null;
+      if (token !== generation || ctx.route() !== 'meetings') return;
+      if (!ctx.busy()) {
+        try {
+          const data = await Kigi.request('meetings.get');
+          if (token !== generation || ctx.route() !== 'meetings') return;
+          ctx.data().meetings = data;
+          const status = document.getElementById('meeting-live-status');
+          if (status) status.textContent = data.status || 'Configurez et activez le profil pour commencer.';
+        } catch (_) { /* The explicit refresh action reports persistent bridge errors. */ }
+      }
+      pollMeetings();
+    }, 2000);
+  }
   function meetings(content, inspector) {
     const data = ctx.data().meetings;
     if (!meetingDraft) { meetingDraft = copy(data.settings); meetingOriginal = copy(data.settings); meetingRevision = data.revision; }
@@ -173,10 +191,11 @@ window.KigiSystem = (() => {
     actions.append(save, ctx.button('Tester la détection', async () => { const result = await operation('meetings.probe', {settings: meetingDraft}); if (result) ctx.status(result.message); }, 'subtle'), mark); content.append(actions);
     inspector.replaceChildren(ctx.el('h2', '', 'AUTOMATISME TEAMS'));
     ctx.field(inspector, 'Préférence enregistrée', data.settings.enabled ? 'Activée' : 'Désactivée');
-    inspector.append(ctx.el('p', 'report', data.status || 'Configurez et activez le profil pour commencer.'));
+    ctx.field(inspector, 'Version Teams détectée', data.teamsVersion || 'Teams non lancé / version indisponible');
+    const liveStatus = ctx.el('p', 'report', data.status || 'Configurez et activez le profil pour commencer.'); liveStatus.id = 'meeting-live-status'; inspector.append(liveStatus);
     tools(inspector, [['Actualiser l’état', () => operation('meetings.get')], ['Suspendre cette réunion', () => operation('meetings.pause', {}, 'Automatisme suspendu jusqu’à la fermeture de la réunion')]]);
     inspector.append(ctx.el('p', 'muted', 'Une seconde de stabilité avant le placement. Deux secondes après la disparition confirmée de la fenêtre réunion. Aucun déplacement si la détection est ambiguë. À valider sur votre version de Teams.'));
-    dirtyChanged();
+    dirtyChanged(); pollMeetings();
   }
   function permissions(content, inspector) {
     const data = ctx.data().permissions; ctx.heading(content, 'Autorisations', 'L’affichage ne déclenche aucune demande. Tant que l’accès manque, chaque clic sur Demander l’accès rouvre Réglages Système.');

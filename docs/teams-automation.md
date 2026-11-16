@@ -32,8 +32,10 @@ fenêtres sont relevées uniquement si Teams est déjà au premier plan.
 
 Le moteur garde les objets AX exacts, les positions initiales et appliquées et
 l’écran. Un changement de titre de la réunion active ne suffit jamais à annoncer
-la fin. Il faut un inventaire complet et une invalidation AX confirmée de la
-fenêtre, puis2s de stabilité. Un timeout/permission absente est « inconnu » : aucun
+la fin. Il faut une absence confirmée dans un inventaire complet de fenêtres pendant2s.
+Une fenêtre encore minimisée ou en plein écran ne compte pas comme fermée.
+L’invalidation AX est acceptée mais non exigée : Teams peut garder un objet
+fenêtre vivant après sa fermeture. Un timeout/permission absente est « inconnu » : aucun
 retour. La position du chat et l’écran sont revérifiés avant le retour.
 
 Une action manuelle Kigi (raccourci, geste, scène, restauration), un déplacement

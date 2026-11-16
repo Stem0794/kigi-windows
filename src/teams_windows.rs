@@ -9,6 +9,18 @@ struct Entry {
 fn same(a: &Element, b: &Element) -> bool {
     unsafe { CFEqual(a.0, b.0) != 0 }
 }
+fn normal_or_closed(window: &Element) -> Result<bool, String> {
+    if window.confirmed_gone() {
+        return Ok(true);
+    }
+    for name in ["AXMinimized", "AXFullScreen"] {
+        let value = window.attribute(name)?;
+        if unsafe { CFBooleanGetValue(value.0) } != 0 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 fn inventory(app: &NSRunningApplication) -> Result<Vec<Entry>, String> {
     let array = Element::app(app.processIdentifier()).attribute("AXWindows")?;
     let count = unsafe { CFArrayGetCount(array.0) };
@@ -44,6 +56,15 @@ fn selected(entries: &[Entry], settings: &Settings) -> Result<Option<(usize, usi
 
 fn app() -> Result<Option<objc2::rc::Retained<NSRunningApplication>>, String> {
     crate::applications::teams_bundle().map(crate::applications::running)
+}
+pub fn teams_version() -> Option<String> {
+    let url = app().ok()??.bundleURL()?;
+    let bundle = objc2_foundation::NSBundle::bundleWithURL(&url)?;
+    bundle
+        .objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?
+        .downcast::<NSString>()
+        .ok()
+        .map(|s| s.to_string())
 }
 pub fn teams_probe(settings: &Settings) -> Result<String, String> {
     require_permission()?;
@@ -106,10 +127,12 @@ pub struct TeamsAutomation {
     candidate: Option<[Element; 2]>,
     session: Option<Session>,
     blocker: Option<Element>,
+    blocker_missing_since: Option<u64>,
     pub status: String,
 }
 impl TeamsAutomation {
     pub fn inhibit(&mut self) {
+        self.blocker_missing_since = None;
         self.gate.inhibit();
         if let Some(session) = self.session.take() {
             self.blocker = Some(session.meeting);
@@ -137,7 +160,19 @@ impl TeamsAutomation {
             self.unknown(now, "Accessibilité requise. Aucun déplacement automatique.");
             return;
         }
-        let entries = match app().and_then(|a| a.map(|a| inventory(&a)).transpose()) {
+        let running = match app() {
+            Ok(app) => app,
+            Err(message) => {
+                self.unknown(now, &message);
+                return;
+            }
+        };
+        if running.as_ref().is_some_and(|a| a.isHidden()) {
+            self.inhibit();
+            self.status = "Teams est masqué : automatisme suspendu.".into();
+            return;
+        }
+        let entries = match running.as_ref().map(|a| inventory(a)).transpose() {
             Ok(Some(entries)) => entries,
             Ok(None) => Vec::new(),
             Err(message) => {
@@ -157,11 +192,22 @@ impl TeamsAutomation {
     }
     fn advance(&mut self, mtm: MainThreadMarker, settings: &Settings, now: u64, entries: &[Entry]) {
         if let Some(blocker) = self.blocker.as_ref() {
-            if entries.iter().any(|e| same(&e.window, blocker)) || !blocker.confirmed_gone() {
-                self.status =
-                    "Votre disposition est conservée jusqu’à la fermeture de la réunion.".into();
+            let present = entries.iter().any(|e| same(&e.window, blocker));
+            match normal_or_closed(blocker) {
+                Ok(normal) if !present && normal => {}
+                _ => {
+                    self.blocker_missing_since = None;
+                    self.status =
+                        "Votre disposition est conservée jusqu’à la fermeture de la réunion."
+                            .into();
+                    return;
+                }
+            }
+            let since = *self.blocker_missing_since.get_or_insert(now);
+            if now.saturating_sub(since) < 2000 {
                 return;
             }
+            self.blocker_missing_since = None;
             self.blocker = None;
             // Do not rearm while a replacement matching meeting still exists.
             if entries
@@ -175,12 +221,18 @@ impl TeamsAutomation {
         if let Some(session) = self.session.as_ref() {
             // The exact meeting remains active even if its title changes or it is minimized.
             let present = entries.iter().any(|e| same(&e.window, &session.meeting));
-            if !present && !session.meeting.confirmed_gone() {
-                self.unknown(
-                    now,
-                    "Disparition de fenêtre non confirmée : retour suspendu.",
-                );
-                return;
+            if !present {
+                match normal_or_closed(&session.meeting) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        self.inhibit();
+                        return;
+                    }
+                    Err(_) => {
+                        self.unknown(now, "État de fenêtre inconnu : retour suspendu.");
+                        return;
+                    }
+                }
             }
             let replacements = entries.iter().any(|e| {
                 !same(&e.window, &session.meeting)
@@ -399,12 +451,18 @@ pub fn teams_fixture_check(mtm: MainThreadMarker, manual: bool) -> Result<(), St
     check(unsafe { AXUIElementPerformAction(button.0, name_ref(&action)) })?;
     // Give the separate fixture process time to deliver its own close callback.
     for _ in 0..20 {
-        if entries[meeting].window.confirmed_gone() {
+        if !inventory(&app)?
+            .iter()
+            .any(|e| same(&e.window, &entries[meeting].window))
+        {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    if !entries[meeting].window.confirmed_gone() {
+    if inventory(&app)?
+        .iter()
+        .any(|e| same(&e.window, &entries[meeting].window))
+    {
         return Err("Fermeture fixture non confirmée.".into());
     }
     automation.advance(mtm, &settings, 3000, &inventory(&app)?);

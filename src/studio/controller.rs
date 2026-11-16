@@ -39,7 +39,7 @@ impl Controller {
         )
     }
     pub(super) fn studio_meetings_data(&self) -> Value {
-        json!({"settings":*self.ivars().teams_settings.borrow(),"revision":self.teams_revision(),"status":self.ivars().teams_automation.borrow().status,"accessibility":windows::trusted()})
+        json!({"settings":*self.ivars().teams_settings.borrow(),"revision":self.teams_revision(),"status":self.ivars().teams_automation.borrow().status,"accessibility":windows::trusted(),"teamsVersion":windows::teams_version()})
     }
     fn identify_teams(&self) -> Result<Value, Failure> {
         self.inhibit_teams();
