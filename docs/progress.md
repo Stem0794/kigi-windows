@@ -960,7 +960,16 @@ correctif de maintenance ; source validé inchangé par la mise à jour document
   universelle de Teams ni création de pop-out annoncées.
 - Détection bornée1Hz, stabilité1s, identité AX exacte, fin confirmée puis2s,
   lecture de retour, priorité manuelle et suspension conservatrice.
-- Validation en cours : tests purs et compilation ARM ; fixture native de
-  placement/fermeture/déplacement manuel ajoutée. Résultats CI à consigner.
+- Validation :33 tests hôte,36 tests natifs macOS15.7.9 Intel, fmt et compilation
+  ARM. Clippy ne signale que les5 avertissements souris préexistants. Les deux
+  fixtures placement/fermeture et priorité manuelle passent ; tous les parcours
+  Studio, raccourcis/Carbon, capture, espaces/preview/restauration et recovery passent.
+- Source validé :02444e211c32f4a2b41db354cd8a6bf2fcd533d2, run43851215786.
+  Les corrections intermédiaires des attentes de navigation/version sont incluses.
+  L’archivage compare désormais les versions au manifeste source.
+- Package0.9.0/build29 :1084516 octets, SHA256
+  f408b3c30c5ce2aafdedf4c29b54cc2ee2d84b0b35f8e7e7baa1a37adc6a7aa6.
+  CRC, plist, Intel+ARM et les cinq ressources UI vérifiés. PR#10.
+  Cette mise à jour de suivi ne modifie aucun fichier livré.
 - Validation réelle Teams/M5 et repères stables du pilote restent nécessaires.
   Détails et limites : docs/teams-automation.md.
