@@ -4,7 +4,7 @@ use crate::studio::bridge::Failure;
 use serde_json::{json, Value};
 impl Controller {
     pub(super) fn studio_runtime_data(&self) -> Value {
-        json!({"settings":*self.ivars().runtime_settings.borrow(),"revision":format!("{}:{}",std::process::id(),self.ivars().runtime_revision.get()),"switcherActive":windows::trusted()&&self.ivars().window_hotkey.borrow().as_ref().is_some_and(|t|t.active()),"loginEnabled":crate::login_item::path().is_ok_and(|path|crate::login_item::enabled(&path))})
+        json!({"settings":*self.ivars().runtime_settings.borrow(),"revision":format!("{}:{}",std::process::id(),self.ivars().runtime_revision.get()),"switcherActive":self.ivars().personal_enabled.get()&&windows::trusted()&&self.ivars().window_hotkey.borrow().as_ref().is_some_and(|t|t.active()),"loginEnabled":crate::login_item::path().is_ok_and(|path|crate::login_item::enabled(&path))})
     }
     pub(super) fn save_runtime_settings(
         &self,
@@ -115,6 +115,16 @@ impl Controller {
         }
         self.schedule_capture(sel!(resumePersonalInputs:), delay);
     }
+    pub(super) fn sync_window_shortcut(&self) {
+        self.ivars().window_resume_attempts.set(0);
+        if self.ivars().personal_enabled.get() {
+            self.resume_personal_inputs();
+        } else {
+            self.ivars().window_hotkey.borrow_mut().take();
+            self.ivars().window_cycle_queue.borrow_mut().clear();
+            self.ivars().window_cycle.borrow_mut().finish();
+        }
+    }
     pub(super) fn resume_personal_inputs(&self) {
         if self.ivars().inputs_suspended.get() {
             return;
@@ -127,7 +137,8 @@ impl Controller {
             }
             return;
         }
-        if self.ivars().runtime_settings.borrow().window_switcher
+        if self.ivars().personal_enabled.get()
+            && self.ivars().runtime_settings.borrow().window_switcher
             && self
                 .ivars()
                 .window_hotkey

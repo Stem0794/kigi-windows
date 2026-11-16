@@ -585,7 +585,7 @@ define_class!(
         fn window_cycle_action(&self,_:Option<&AnyObject>){
             let next=self.ivars().window_cycle_queue.borrow_mut().pop_front();
             let Some((steps,finish))=next else{return;};
-            if steps!=0 && self.ivars().runtime_settings.borrow().window_switcher && !self.ivars().picking.get(){
+            if steps!=0 && self.ivars().personal_enabled.get() && self.ivars().runtime_settings.borrow().window_switcher && !self.ivars().picking.get(){
                 self.ivars().startup_pending.set(false);
                 let result=self.ivars().window_cycle.borrow_mut().cycle_steps(true,steps<0,steps.unsigned_abs() as usize);
                 self.status(&result.unwrap_or_else(|e|e));
@@ -962,6 +962,7 @@ impl Controller {
         );
         diagnostics::record("shortcut.registration", &keys.report);
         self.ivars().hotkeys.replace(Some(keys));
+        self.sync_window_shortcut();
         self.update_shortcut_label();
     }
     fn cancel_open(&self) {
@@ -2438,7 +2439,10 @@ pub fn queue_window_cycle(reverse: bool, finish: bool) -> bool {
         let Some(c) = slot.as_ref() else {
             return false;
         };
-        if c.ivars().picking.get() || c.ivars().inputs_suspended.get() {
+        if !c.ivars().personal_enabled.get()
+            || c.ivars().picking.get()
+            || c.ivars().inputs_suspended.get()
+        {
             return false;
         }
         if c.ivars().last_permission.get() == Some(false) {

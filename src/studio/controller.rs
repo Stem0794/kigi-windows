@@ -549,6 +549,7 @@ impl Controller {
                 }
                 self.ivars().personal_enabled.set(input.enabled);
                 self.ivars().hotkeys.replace(Some(keys));
+                self.sync_window_shortcut();
                 if !std::env::args().any(|a| a == "--studio-system-check") {
                     NSUserDefaults::standardUserDefaults()
                         .setBool_forKey(input.enabled, ns_string!("personalHotkeysEnabled"));

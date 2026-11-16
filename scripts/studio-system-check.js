@@ -66,6 +66,10 @@
     const switcherEnabled=await Kigi.request('runtime.get');const switcherPermissions=await Kigi.request('permissions.get');
     assert(switcherEnabled.settings.windowSwitcher,'Window switcher not persisted');
     if(switcherPermissions.accessibility==='granted')assert(switcherEnabled.switcherActive,'Dedicated CmdTab event loop did not start');
+    await Kigi.request('shortcuts.setGlobalEnabled',{enabled:false});
+    assert(!(await Kigi.request('runtime.get')).switcherActive,'Global disable retained CmdTab');
+    await Kigi.request('shortcuts.setGlobalEnabled',{enabled:true});
+    if(switcherPermissions.accessibility==='granted')assert((await Kigi.request('runtime.get')).switcherActive,'Global reenable did not resume CmdTab');
     switcher=q('#window-switcher');switcher.checked=false;switcher.dispatchEvent(new Event('change',{bubbles:true}));
     q('#save-runtime').click();await wait(()=>!q('#refresh').disabled&&q('#save-runtime').disabled);
     assert(!(await Kigi.request('runtime.get')).switcherActive,'System shortcut was not released');
