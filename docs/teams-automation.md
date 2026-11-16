@@ -49,7 +49,7 @@ rien. Modifier le profil pendant une réunion active ne la réapplique pas. Les
 scènes manuelles et leur retour existant restent prioritaires. Aucun recentrage
 ou nouvel essai répété après échec. Une contrainte de taille compatible avec l’écran conserve désormais la largeur
 réelle et aligne la fenêtre sur son bord (chat gauche/réunion droite par défaut,
-tolérance de position1px). La réduction est demandée une seule fois ; la position
+tolérance de position1point AX). La réduction est demandée une seule fois ; la position
 est recalculée après lecture de la taille imposée, puis contrôlée. Si Teams impose
 plus de50 %, le profil affiche les pourcentages réels et signale un chevauchement
 possible ; il ne prétend pas obtenir50/50. Une taille dépassant l’écran ou un
