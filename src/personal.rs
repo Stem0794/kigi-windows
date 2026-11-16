@@ -94,7 +94,9 @@ impl Controller {
         self.stop_tap();
         self.ivars().input_resume_attempts.set(0);
         if enabled {
+            let was_picking = self.ivars().picking.replace(true);
             let result = Tap::configured(&self.ivars().runtime_settings.borrow(), prompt);
+            self.ivars().picking.set(was_picking);
             match result {
                 Ok(tap) => {
                     self.ivars().tap.replace(Some(tap));
@@ -301,9 +303,8 @@ impl Controller {
         self.ivars().window_resume_attempts.set(0);
         if input.settings.gestures_enabled && !Tap::input_trusted() {
             self.set_gestures_requested(true, true);
-        } else {
-            self.resume_personal_inputs();
         }
+        self.resume_personal_inputs();
         Ok(self.studio_runtime_data())
     }
 }

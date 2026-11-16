@@ -2105,7 +2105,10 @@ pub fn run() {
                     std::process::exit(0);
                 }
                 Err(message) => {
-                    eprintln!("KIGI_NAVIGATION_CHECK {message}");
+                    eprintln!(
+                        "KIGI_NAVIGATION_CHECK {message}\n{}",
+                        diagnostics::report("navigation fixture")
+                    );
                     std::process::exit(1);
                 }
             }

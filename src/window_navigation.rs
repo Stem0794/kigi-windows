@@ -151,6 +151,15 @@ impl WindowCycle {
             (self.index + steps) % self.choices.len()
         };
         let choice = &self.choices[self.index];
+        diagnostics::record(
+            "window.cycle.selection",
+            format!(
+                "all={all} index={} count={} pid={}",
+                self.index,
+                self.choices.len(),
+                choice.app.processIdentifier()
+            ),
+        );
         choice.window.unminimize()?;
         let _ = crate::applications::request_activation(&choice.app);
         focus_window(&choice.app, &choice.window)?;
@@ -205,6 +214,14 @@ pub fn navigation_fixture_check(mtm: MainThreadMarker) -> Result<(), String> {
     let before = preferred_window(&source)?;
     let _ = crate::applications::request_activation(&source);
     focus_window(&source, &before)?;
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRunLoopRunInMode(mode: Ref, seconds: f64, return_after_source: bool) -> i32;
+        static kCFRunLoopDefaultMode: Ref;
+    }
+    let pump = || unsafe {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.03, false);
+    };
     let wait = |pid| {
         for _ in 0..30 {
             if NSWorkspace::sharedWorkspace()
@@ -213,7 +230,7 @@ pub fn navigation_fixture_check(mtm: MainThreadMarker) -> Result<(), String> {
             {
                 return true;
             }
-            std::thread::sleep(Duration::from_millis(30));
+            pump();
         }
         false
     };
