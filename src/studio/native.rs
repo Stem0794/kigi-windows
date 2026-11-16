@@ -356,8 +356,8 @@ impl Studio {
 impl Drop for Studio {
     fn drop(&mut self) {
         unsafe {
-            self.view.stopLoading();
             self.view.setNavigationDelegate(None);
+            self.view.stopLoading();
             self.content.removeScriptMessageHandlerForName_contentWorld(
                 &NSString::from_str("kigi"),
                 &WKContentWorld::pageWorld(self.window.mtm()),
