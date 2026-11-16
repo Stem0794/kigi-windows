@@ -1,4 +1,4 @@
-# Parité du workflow personnel —0.10.0
+# Parité du workflow personnel — 0.10.0
 
 Référence : `examples/hammerspoon-reference.lua`, `docs/migration-audit.md` et
 les demandes ultérieures de raccourcis modifiables, gestes horizontaux à10 %,
@@ -31,7 +31,9 @@ réarmement sans lever et interface Studio.
   commande de ⌥T est immédiatement suivi ; changer/supprimer la combinaison
   nécessite de sélectionner sa nouvelle cible. Un raccourci désactivé n’agit pas.
 - Le remplacement ⌘Tab est désactivé par défaut et ne coexiste pas avec une
-  autre affectation ⌘Tab. Il ne consomme que cette combinaison et son relâchement,
+  affectation de ⌘Tab ou ⌘⇧Tab. Désactiver les raccourcis globaux libère aussi
+  ce remplacement ; les réactiver le reprend si les autorisations le permettent.
+  Il ne consomme que ces combinaisons et leur relâchement,
   sans enregistrer les autres touches. Le callback utilise une boucle d’événements
   dédiée pour que les lectures AX du moteur ne bloquent pas le clavier ; les
   commandes seules sont transmises au thread principal, regroupées dans une file
@@ -74,3 +76,9 @@ frappe globale. Studio vérifie les options, la révision et la relecture après
 La veille suspend le suivi Teams, puis les géométries sont revérifiées au réveil
 avant de restaurer. Les gestes physiques, les onglets réels et une session utilisateur complète avec
 veille/reconnexion restent à confirmer sur le Mac pilote.
+
+Validation de livraison : 40 tests hôte, 43 tests natifs et tous les parcours
+macOS/Studio réussis dans le [run 43923722491](https://github.com/Stem0794/kigi-windows/actions/runs/43923722491).
+Source du binaire : eaf571047a66ec0cef1452cd6d7f4feb20ef4582 ; bundle 0.10.0/build 32.
+Les architectures Intel et Apple Silicon sont liées ; l’exécution native contrôlée
+porte sur macOS 15.7.9 Intel.

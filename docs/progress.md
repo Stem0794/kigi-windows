@@ -1033,7 +1033,27 @@ lancement et lancement des apps absentes d’un espace. Ajoute Général, un lan
 à la connexion appartenant à Kigi et les options de signature/fin Teams héritées.
 Aucun index de raccourci fragile, script libre, service séparé ou modification Lua.
 
-40 tests purs locaux passent ; compilation ARM et syntaxe JS/Python vérifiées.
-Contrôles natifs et package en cours. Contrat précis, compatibilités et limites :
-docs/personal-parity.md. La mesure comparative de légèreté et les essais M5/Teams/
-trackpad physique ne sont pas inventés.
+Validation réussie : 40 tests hôte, 43 tests natifs sur macOS 15.7.9 Intel,
+compilation et lien Release Intel+ARM. Les quatre scénarios Teams (normal,
+priorité au déplacement manuel, minimum 60 %, réapplication préservant le retour)
+passent. Navigation même app/toutes apps, moitié droite et ouverture de deux apps
+fermées vérifiées avec fenêtres dédiées. Les fixtures sont installées dans le
+dossier Applications du runner et leur enregistrement Launch Services est
+contrôlé avant l’essai ; aucune frappe globale synthétique.
+
+Les parcours Studio passent : 9 rubriques, cycle fermer/rouvrir, édition,
+persistance, récupération, géométrie réelle, minimum/restore, conflit Carbon,
+capture/annulation, réglages runtime et reprise de ⌘Tab après désactivation
+puis réactivation globale. ⌘Tab et ⌘⇧Tab partagent le contrôle de conflit,
+y compris au rechargement. Deux relances gardent les mêmes précontrôles de droits.
+Run [43923722491](https://github.com/Stem0794/kigi-windows/actions/runs/43923722491),
+source eaf571047a66ec0cef1452cd6d7f4feb20ef4582.
+
+Package 0.10.0/build 32 : 1 251 532 octets, SHA256
+77ead707abd7af6237012f2f366544b446067f7a94bdddc2e15c297ccbed419c.
+CRC, versions, architectures Intel+ARM et les 5 ressources UI comparées à la
+source validées. PR #13 ; seules les précisions documentaires changent après
+validation. Contrat précis : docs/personal-parity.md. La mémoire du moteur au
+démarrage (environ 43–45 Mo sur ce runner) exclut les processus WebKit ; aucune
+comparaison Hammerspoon n’est revendiquée. Les gestes physiques, les onglets réels
+et la session M5/Teams avec veille/reconnexion restent à confirmer sur le Mac pilote.
