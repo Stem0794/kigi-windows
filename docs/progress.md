@@ -925,3 +925,15 @@ Pas de nouvelle campagne identique sur le commit de merge. PR préparatoires1–
 intégrées dans cette consolidation et fermées ; historique conservé. Package final
 0.8.0 identique au binaire universel vérifié ci-dessus. Le retrait de l’ancien écran
 et les options du point3 sont livrés ; le test physique M5 reste à confirmer.
+
+## 2026-11-16 —0.8.1, réouverture des autorisations
+
+Après fermeture des réglages sans accord, le bouton AX ne faisait plus que vérifier
+l’état (garde de demande unique) ; le bouton Entrée n’ouvrait pas explicitement les
+réglages. Politique partagée : prompt natif une fois, ouverture explicite des Réglages
+à chaque clic tant que le précontrôle reste refusé. Helper natif partagé avec Ouvrir
+Réglages, destination installée allowlist ; lecture seule inchangée. UI affiche
+le résultat réel et la rubrique à choisir. Régression de clics refusés répétés et
+états accordés couverte par le test PermissionFlow.29 tests hôte et check ARM passent.
+Le scénario TCC refusé/fermeture réelle reste à confirmer sur le Mac pilote ; aucun
+reset de permission sur le runner pour simuler ce cas.

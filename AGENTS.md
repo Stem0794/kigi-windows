@@ -183,3 +183,12 @@ raccourcis depuis un espace enregistré, sans combinaison fictive ni activation
 implicite. Vérifications ciblées et parcours Mac de capture/annulation, essai/restore,
 relecture et raccourci associé. Revue de l’ensemble puis fusion sur main autorisée
 après contrôles natifs réussis. Ne pas prétendre avoir testé physiquement le Mac M5.
+
+## Correctif permissions0.8.1
+
+L’utilisateur signale que fermer Réglages sans autoriser rend le bouton inefficace.
+Chaque clic explicite doit rouvrir Réglages tant que l’accès manque, pour AX et
+Surveillance de l’entrée. Conserver la demande native unique par session et les
+précontrôles réels. Aucune ouverture sur simple affichage/bootstrap ; aucun reset
+TCC, aucune URL libre ni contournement des droits. Correctif de maintenance à intégrer
+sur main après vérifications ciblées, dans la continuité de l’intégration autorisée.
